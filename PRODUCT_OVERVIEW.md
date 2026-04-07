@@ -1,65 +1,51 @@
-# 🌌 Nexus OS: The High-Reasoning Agentic Operating System (v2.0)
+# 🌌 Nexus OS: The High-Reasoning Agentic Operating System (v2.5)
 
 Nexus OS is a **Generation 2 (G2) Proactive Agentic Operating System**. Unlike standard AI assistants that wait for prompts, Nexus OS is a self-reflective entity that identifies risks, capitalizes on opportunities, and manages complex multi-mission architectures with industrial-grade durability.
 
 ---
 
-## 🎯 1. The Core Vision: From Chat to Command
-Nexus OS transforms the AI experience from a "text box" into a **Command Center**. It is designed for founders, developers, and high-performance individuals who need **Autonomous Orchestration** rather than just "content generation."
+## 🚀 1. The v2.5 "Galactic" Command Center
+The interface has evolved from a dashboard into a **Fixed 4-Zone Command Center**, designed for zero-latency orchestration and total visibility.
 
-### Why Nexus OS v2.0?
-- **Proactive Intelligence**: The system scans your entire workspace every 5 minutes to find strategic insights you might have missed.
-- **Industrial Durability**: Every mission is now "Durable"—it survives server restarts, network drops, and browser crashes.
-- **Multi-Persona Versatility**: Specialized modes (Founder, Developer, Student) that change the system's "IQ" and priority logic.
+### 🔭 Zone A: Omni-Bar (The Neural Spotlight)
+A persistent, floating centerpiece with **Predictive Intent Detection**. 
+- **Mission Previews**: Detects prompts (Founder/Dev/Student) and previews the Agent Roster before execution.
+- **Glassmorphic HUD**: Minimalist, premium inputs for high-velocity commanding.
+
+### 🧬 Zone B: Execution Canvas (The Reasoning HUD)
+A live, high-fidelity visualization of the **Agent Thought Process**.
+- **Flowing Edges**: Animated pathways showing data lineage between units.
+- **Node Sync**: Real-time status indicators (Working/Complete/Error) for every agent in the mission DAG.
+
+### 🧪 Zone C: Adaptive Sandbox (The Work Surface)
+The heart of the OS where intelligence meets action.
+- **Sandbox Router**: Intelligently switches between **OmniChat**, **Workspace Surface**, and **Artifact Viewer** depending on the context of the mission.
+- **Context Awareness**: The UI morphs to fit the data—Research becomes a document, Code becomes an editor.
+
+### 🗃️ Zone D: Vault & Roster (The Persistent Engine)
+Total personnel and memory monitoring.
+- **Agent Roster**: A live list of all spawned units and their telemetry.
+- **Semantic Vault**: A clickable museum of all artifacts, decisions, and strategic logs.
 
 ---
 
-## 🧠 2. The Architecture: "Master Brain V2"
+## 🧠 2. The Architecture: "Master Brain v2.5"
 At the heart of the OS is the **Master Brain**, a centralized reasoning engine that manages the lifecycle of all agents.
 
 ### The Intelligence Pillars:
 | Pillar | Logic Engine | Responsibility |
 | :--- | :--- | :--- |
 | **Global Reflection** | Groq (Llama-3 70B) | Runs 24/7 background audits to identify cross-mission opportunities. |
-| **Neural HUD** | SSE Interrupt Stack | A proactive alert system that pauses execution for critical human-in-the-loop (HITL) checks. |
-| **Durable Task Queue** | Worker/Bus Engine | Ensures that if a background agent hits a rate limit or a crash, it automatically retries and resumes without losing state. |
-| **Council of Three** | Multi-Model Consensus | Executes tasks using two specialists and one logical judge to eliminate hallucinations. |
+| **Neural HUD** | SSE Interrupt Stack | A proactive alert system that pauses execution for human-in-the-loop (HITL). |
+| **Durable Task Queue** | Worker/Bus Engine | Retries and resumes Missions even after crashes or rate limits. |
+| **Council of Three** | Multi-Model Consensus | Two specialists + one judge to eliminate hallucinations. |
 
 ---
 
-## 🚀 3. Key Ecosystem Features
-
-### 📡 Master Brain Command Center (UI)
-The premium, glassmorphic dashboard provides total observability:
-- **Telemetry HUD**: Real-time stats on active missions, finished tasks, and system health.
-- **Strategic Insights**: A dedicated feed for **Alpha Opportunities** and **Strategic Risks**.
-- **Unit Deployment Center**: A one-click terminal to "spawn" specialized units (Researchers, Analysts, Architects) for ad-hoc work.
-
-### ⛓️ Durable Mission Engine (Backend)
-The v2.0 backend has migrated to a job-based architecture:
-- **Event Bus**: Decouples the UI from the execution logic, allowing real-time streaming of deep-reasoning logs.
-- **Mission Storage**: All missions are now stored in a persistent cache, allowing you to resume work weeks later with full context.
-- **Wait-for-Approval Nodes**: High-risk actions (spending money, sending emails) automatically trigger a "Neural Interrupt" and wait for your signature.
-
----
-
-## 📔 4. System Operation Modes
-
-### 🚀 Founder Mode
-Focuses on **Growth & Strategy**. Highly prioritized on market research, SWOT analysis, and financial modeling. The Master Brain will flag "Market Risks" and "Revenue Opportunities" first.
-
-### 💻 Developer Mode
-Optimized for **Technical Precision**. It understands codebase structures, performs cross-file auditing, and handles ad-hoc "Code Engineering" deployments.
-
-### 🎓 Student Mode
-Designed for **Cognitive Learning**. It breaks down complex subjects into "Pedagogical Nodes," provides source-backed research, and uses a "Chain of Thought" learned-synthesis engine.
-
----
-
-## 🛰️ 5. Deployment & Reliability
-- **Zero-Cost Inference**: Powered by Groq for lightning-fast, free cloud inference.
-- **Resilient SSE**: A custom SSE-Bus that survives intermittent internet connectivity.
-- **Typed Contract Core**: The entire system is built on a shared `@nexus-os/types` package, ensuring absolute data integrity between the Brain and the UI.
+## 🛠️ 3. Advanced Persistence & Tooling
+- **E2B Code Interpreter**: Native integration for agents to execute real-time code in secure sandboxes.
+- **Vector Memory**: Every strategic decision is embedded into a high-dimensional vector store for long-term recall.
+- **Resilient SSE-Bus**: Survived internet drops and ensures the stream of thought is never lost.
 
 ---
 

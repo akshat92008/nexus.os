@@ -110,17 +110,17 @@ app.post('/api/state/:userId', async (req, res) => {
  * Orchestration (Durable DAG Execution)
  */
 app.post('/api/orchestrate', async (req: Request<{}, {}, OrchestrateRequest>, res: Response) => {
-  const { goal, userId, workspaceId } = req.body;
+  const { goal, userId, workspaceId, archMode = 'legacy' } = req.body;
 
   if (!goal || !userId) {
     return res.status(400).json({ error: 'Goal and userId are required.' });
   }
 
-  console.log(`[API] 🎯 Orchestrating mission for user ${userId}: "${goal}"`);
+  console.log(`[API] 🎯 Orchestrating mission for user ${userId}: "${goal}" (Arch: ${archMode.toUpperCase()})`);
 
   try {
     // 1. Plan the mission (DAG Generation)
-    const dag = await planMission(goal);
+    const dag = await planMission(goal, archMode);
 
     // 2. Start Durable Mission (DB Persistence + Queue Enqueuing)
     await startDurableMission({

@@ -151,6 +151,12 @@ interface NexusStore {
   synthesis: SynthesisResult;    // NEW
   toasts:    Array<{ id: string; message: string; count: number; timestamp: number }>; // Grouped toast system
   pendingApproval: { taskId: string; taskLabel: string; reason: string } | null;
+  execution: {
+    isExecuting: boolean;
+    currentCommand: string;
+    logs: string[];
+    taskId: string | null;
+  };
 
   
   // Workspace System (V3)
@@ -317,6 +323,11 @@ interface NexusStore {
   fetchFsItems:          (parentId?: string) => Promise<void>;
   uploadFsFile:          (name: string, content: string, parentId?: string) => Promise<void>;
   searchFs:              (query: string) => Promise<void>;
+
+  // Actions — Execution (V2.6)
+  setExecuting: (isExecuting: boolean, taskId?: string, cmd?: string) => void;
+  appendExecutionLog: (log: string) => void;
+  clearExecutionLogs: () => void;
 }
 
 const toWorkspaceRecord = (workspaces: Workspace[]) =>
@@ -442,6 +453,12 @@ export const useNexusStore = create<NexusStore>()(
       },
       toasts:    [],
       pendingApproval: null,
+      execution: {
+        isExecuting: false,
+        currentCommand: '',
+        logs: [],
+        taskId: null,
+      },
 
       addToast: (message) => {
         const { toasts } = get();
@@ -997,6 +1014,27 @@ export const useNexusStore = create<NexusStore>()(
             content:  event.message || 'An unexpected error occurred during mission execution.',
             priority: 'critical'
           });
+          break;
+        }
+
+        case 'sandbox_stdout': {
+          get().appendExecutionLog(`[STDOUT] ${event.data}`);
+          break;
+        }
+
+        case 'sandbox_stderr': {
+          get().appendExecutionLog(`[STDERR] ${event.data}`);
+          break;
+        }
+
+        case 'sandbox_started': {
+          get().clearExecutionLogs();
+          get().setExecuting(true, event.taskId, event.command);
+          break;
+        }
+
+        case 'sandbox_finished': {
+          get().setExecuting(false);
           break;
         }
 
@@ -1717,6 +1755,33 @@ export const useNexusStore = create<NexusStore>()(
         set({ isFsLoading: false });
       }
     },
+
+    // ── Execution Actions (V2.6) ──────────────────────────────────────────
+    setExecuting: (isExecuting, taskId, cmd) =>
+      set((s) => ({
+        execution: {
+          ...s.execution,
+          isExecuting,
+          taskId: taskId || null,
+          currentCommand: cmd || s.execution.currentCommand,
+        }
+      })),
+
+    appendExecutionLog: (log) =>
+      set((s) => ({
+        execution: {
+          ...s.execution,
+          logs: [...s.execution.logs, log].slice(-500)
+        }
+      })),
+
+    clearExecutionLogs: () =>
+      set((s) => ({
+        execution: {
+          ...s.execution,
+          logs: []
+        }
+      })),
   })),
   {
     name: 'nexus-workspace-storage',

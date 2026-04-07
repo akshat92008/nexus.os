@@ -24,6 +24,7 @@ export type AgentType =
 export type AgentStatus = 'idle' | 'spawned' | 'working' | 'handoff' | 'complete' | 'error' | 'skipped';
 export type TaskMode = 'parallel' | 'sequential' | 'wave'; // wave is new
 export type ExportFormat = 'pdf' | 'markdown' | 'json' | 'excel';
+export type ArchitectureMode = 'legacy' | 'os';
 
 /** Legacy SubTask — still used by planner fallback and old frontend paths */
 export interface SubTask {
@@ -659,6 +660,30 @@ export interface AwaitingApprovalEvent {
   taskLabel: string;
   reason?: string;
 }
+
+export interface SandboxStdoutEvent {
+  type: 'sandbox_stdout';
+  taskId: string;
+  data: string;
+}
+
+export interface SandboxStderrEvent {
+  type: 'sandbox_stderr';
+  taskId: string;
+  data: string;
+}
+
+export interface SandboxStartedEvent {
+  type: 'sandbox_started';
+  taskId: string;
+  command: string;
+}
+
+export interface SandboxFinishedEvent {
+  type: 'sandbox_finished';
+  taskId: string;
+  exitCode?: number;
+}
  
 export type NexusSSEEvent =
   | ConnectedEvent
@@ -675,13 +700,19 @@ export type NexusSSEEvent =
   | DoneEvent
   | ErrorEvent
   | SystemPauseEvent
-  | AwaitingApprovalEvent;
+  | AwaitingApprovalEvent
+  | SandboxStdoutEvent
+  | SandboxStderrEvent
+  | SandboxStartedEvent
+  | SandboxFinishedEvent;
 
 // ── API Request / Response ─────────────────────────────────────────────────
 
 export interface OrchestrateRequest {
   goal: string;
   userId: string;
+  workspaceId?: string;
+  archMode?: ArchitectureMode;
 }
 
 // ── NexusFS Smart File System ──────────────────────────────────────────────

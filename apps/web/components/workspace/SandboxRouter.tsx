@@ -8,13 +8,15 @@ import { OmniChatView } from './OmniChatView';
 import { ArtifactViewer } from './ArtifactViewer';
 import { SearchView } from './SearchView';
 import { AgentMarketplace } from '../market/AgentMarketplace';
+import { TerminalView } from './TerminalView';
 
 export function SandboxRouter() {
   const { 
     ui, 
     activeWorkspaceId, 
     workspaces,
-    artifacts
+    artifacts,
+    execution
   } = useNexusStore();
 
   const activeArtifactId = ui.activeArtifactId;
@@ -23,7 +25,17 @@ export function SandboxRouter() {
   return (
     <div className="w-full h-full relative overflow-hidden flex flex-col">
       <AnimatePresence mode="wait">
-        {activeArtifact ? (
+        {execution.isExecuting ? (
+          <motion.div 
+            key="terminal"
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 1.02 }}
+            className="w-full h-full"
+          >
+            <TerminalView />
+          </motion.div>
+        ) : activeArtifact ? (
           <motion.div 
             key="artifact"
             initial={{ opacity: 0, x: 20 }}

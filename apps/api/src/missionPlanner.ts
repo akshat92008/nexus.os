@@ -12,6 +12,8 @@ import {
   AgentType,
 } from '../../../packages/types/index.js';
 import { findBestAgentForType } from './agents/agentRegistry.js';
+import { universalPlanner } from './core/universalPlanner.js';
+import type { ArchitectureMode } from '@nexus-os/types';
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -293,10 +295,19 @@ function buildFallbackPlan(goal: string): TaskDAG {
 
 // ── Main Export ────────────────────────────────────────────────────────────
 
-export async function planMission(goal: string): Promise<TaskDAG> {
+export async function planMission(
+  goal: string, 
+  archMode: ArchitectureMode = 'legacy'
+): Promise<TaskDAG> {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) throw new Error('GROQ_API_KEY not set');
 
+  // 0. OS Mode: Delegate to the Universal Planner (Primitive-first)
+  if (archMode === 'os') {
+    return await universalPlanner.plan(goal, 'os');
+  }
+
+  // 1. Legacy Mode: Keep existing AI-driven planner
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       // 1. Detect Goal Type

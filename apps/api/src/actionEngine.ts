@@ -66,3 +66,30 @@ export function generateNextActions(workspace: Workspace): NextAction[] {
   // Cap to top 5 actions to keep it actionable
   return actions.slice(0, 5);
 }
+
+/**
+ * OS Hook: Pre-integration for sandboxed code execution.
+ * Detects if the artifact content contains executable blocks (JS/TS/Python).
+ */
+export function detectExecutableCode(artifact: any): boolean {
+  if (!artifact || typeof artifact.content !== 'string') return false;
+  
+  const codeRegex = /```(javascript|typescript|python|bash|sh|node)\s*[\s\S]*?```/gi;
+  return codeRegex.test(artifact.content);
+}
+
+/**
+ * OS Hook: Placeholder for future sandboxed execution.
+ * This is the Layer 4 primitive that will be used by the MCP/Sandbox layer.
+ */
+export async function executeCodePlaceholder(code: string, language: string): Promise<any> {
+  console.log(`[ActionEngine] ⚡ Placeholder for ${language.toUpperCase()} execution:`, code.slice(0, 50) + '...');
+  
+  // For now, this just logs and returns a mock result
+  return {
+    status: 'pending_sandbox_implementation',
+    message: 'Code execution primitive ready for Sandbox integration.',
+    codeLength: code.length,
+    language
+  };
+}

@@ -75,16 +75,36 @@ export const taskWorker = new Worker<TaskJobData>(
 
       let finalArtifact = result.artifact as TypedArtifact;
 
-      // ── PHASE 1: Sandboxed Code Execution ─────────────────────────────────
-      
       if (finalArtifact.format === 'code') {
         const codeArt = finalArtifact as CodeArtifact;
         console.log(`[Worker] 💻 Code detected in task ${taskId}. Sending to sandbox...`);
 
+        // Emit sandbox_started event
+        await eventBus.publish(missionId, {
+          type: 'sandbox_started',
+          taskId,
+          command: codeArt.language === 'python' ? 'python3 execution' : `${codeArt.language} execution`,
+        } as any);
+
         const sandboxResult = await sandboxManager.runCode(
           codeArt.language as any,
-          codeArt.code
+          codeArt.code,
+          async (type, data) => {
+            // Stream real-time logs to the Commander
+            await eventBus.publish(missionId, {
+              type: type === 'stdout' ? 'sandbox_stdout' : 'sandbox_stderr',
+              taskId,
+              data
+            } as any);
+          }
         );
+
+        // Emit sandbox_finished event
+        await eventBus.publish(missionId, {
+          type: 'sandbox_finished',
+          taskId,
+          exitCode: sandboxResult.exitCode,
+        } as any);
 
         // Append execution results to the artifact
         finalArtifact = {
@@ -93,7 +113,7 @@ export const taskWorker = new Worker<TaskJobData>(
           rawContent: `${codeArt.rawContent || ''}\n\n--- Execution Result ---\n${JSON.stringify(sandboxResult, null, 2)}`
         } as any;
 
-        // Emit execution event
+        // Emit execution summary event
         await eventBus.publish(missionId, {
           type: 'agent_working',
           taskId,
