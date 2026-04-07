@@ -519,6 +519,7 @@ async function runGroq(opts: {
   maxTokens: number;
   temperature: number;
   jsonMode?: boolean;
+  signal?: AbortSignal;
 }) {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) throw new Error('GROQ_API_KEY not set');
@@ -539,7 +540,7 @@ async function runGroq(opts: {
         { role: 'user', content: opts.user },
       ],
     }),
-    signal: AbortSignal.timeout(25000),
+    signal: opts.signal || AbortSignal.timeout(30000), // Default 30s timeout (Process Kill)
   });
 
   if (response.status === 429) {

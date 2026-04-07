@@ -6,6 +6,7 @@
  */
 
 import type { AgentType } from '@nexus-os/types';
+import type { BaseAgentDriver } from './BaseAgentDriver.js';
 
 export interface AgentDefinition {
   id: string;
@@ -20,6 +21,7 @@ export interface AgentDefinition {
   author: string;
   isBuiltIn: boolean;
   costPerTask?: number; // Estimated credits or USD
+  driver?: BaseAgentDriver; // Optional dynamic driver
 }
 
 export const AGENT_REGISTRY: Record<string, AgentDefinition> = {
@@ -89,6 +91,14 @@ export const AGENT_REGISTRY: Record<string, AgentDefinition> = {
     isBuiltIn: true,
   }
 };
+
+/**
+ * Register a new Agent at runtime (Ecosystem SDK)
+ */
+export function registerAgent(definition: AgentDefinition): void {
+  console.log(`[AgentRegistry] 🦾 Registering neural unit: ${definition.id} (${definition.name})`);
+  AGENT_REGISTRY[definition.id] = definition;
+}
 
 /**
  * Retrieves an agent definition by its ID.

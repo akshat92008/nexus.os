@@ -9,6 +9,7 @@
 
 import type { TaskDAG } from '../../../packages/types/index.js';
 import { nexusStateStore } from './storage/nexusStateStore.js';
+import { StateCache } from './storage/StateCache.js';
 import type { OngoingMission } from '@nexus-os/types';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -72,7 +73,7 @@ export interface Risk {
 }
 
 export interface GlobalBrainState {
-  missions:       Map<string, MissionState>;
+  missions:       StateCache<MissionState>;
   globalActions:  ScoredAction[];
   globalOpportunities: Opportunity[];
   globalRisks:    Risk[];
@@ -120,9 +121,18 @@ function priorityFromScore(score: number): ScoredAction['priority'] {
 
 // ── Master Brain Singleton ────────────────────────────────────────────────────
 
+export interface NeuralInterrupt {
+  id:        string;
+  title:     string;
+  content:   string;
+  priority:  'low' | 'medium' | 'high' | 'critical';
+  action?:   string; // actionId to trigger if user clicks
+  timestamp: number;
+}
+
 class MasterBrainV2 {
   private state: GlobalBrainState = {
-    missions:            new Map(),
+    missions:            new StateCache<MissionState>(6 * 3600_000), // 6h TTL
     globalActions:       [],
     globalOpportunities: [],
     globalRisks:         [],
@@ -130,7 +140,32 @@ class MasterBrainV2 {
     lastEvaluatedAt:     Date.now(),
   };
 
+  private neuralInterrupts: NeuralInterrupt[] = [];
+
   private loopInterval: NodeJS.Timeout | null = null;
+
+  // ── Neural Interrupts (Proactive UI Layer) ──────────────────────────────
+
+  pushInterrupt(interrupt: Omit<NeuralInterrupt, 'id' | 'timestamp'>): void {
+    const id = `int_${crypto.randomUUID().slice(0, 8)}`;
+    const newInterrupt: NeuralInterrupt = { ...interrupt, id, timestamp: Date.now() };
+    this.neuralInterrupts.push(newInterrupt);
+    console.log(`[MasterBrain] 🔔 New Neural Interrupt: ${interrupt.title}`);
+
+    // Prune old interrupts
+    if (this.neuralInterrupts.length > 50) {
+      this.neuralInterrupts.shift();
+    }
+  }
+
+  getInterrupts(): NeuralInterrupt[] {
+    return this.neuralInterrupts;
+  }
+
+  clearInterrupt(id: string): void {
+    this.neuralInterrupts = this.neuralInterrupts.filter(i => i.id !== id);
+  }
+
   private globalReflectionInterval: NodeJS.Timeout | null = null;
 
   private trimMissionState(mission: MissionState): void {
@@ -183,7 +218,8 @@ class MasterBrainV2 {
   }
 
   private async persistMissionsForUser(userId: string): Promise<void> {
-    const userMissions = Array.from(this.state.missions.values()).filter(m => m.userId === userId);
+    const missions = Array.from(this.state.missions.values());
+    const userMissions = missions.filter(m => m.userId === userId);
     const ongoing: OngoingMission[] = userMissions.map(m => ({
       id: m.missionId,
       goal: m.goal,
@@ -212,7 +248,6 @@ class MasterBrainV2 {
       risks:        [],
     };
     this.state.missions.set(missionId, state);
-    this.pruneState();
     void this.persistMissionsForUser(userId);
     console.log(`[MasterBrain] 🧠 Mission registered: ${missionId} — "${goal.slice(0, 50)}"`);
     return state;
@@ -224,17 +259,13 @@ class MasterBrainV2 {
     mission.status = status;
     if (dag) mission.dag = dag;
     if (status === 'complete') mission.completedAt = Date.now();
-    this.pruneState();
     void this.persistMissionsForUser(mission.userId);
   }
 
-  depositArtifact(missionId: string, taskId: string, content: string): void {
+  updateMissionArtifacts(missionId: string, taskId: string, content: string): void {
     const mission = this.state.missions.get(missionId);
     if (!mission) return;
     mission.artifacts[taskId] = content;
-    this.detectOpportunities(mission);
-    this.detectRisks(mission);
-    this.pruneState();
   }
 
   pauseMission(missionId: string): void {
@@ -247,7 +278,7 @@ class MasterBrainV2 {
     console.log(`[MasterBrain] ▶️  Mission resumed: ${missionId}`);
   }
 
-  getMissionState(missionId: string): MissionState | undefined {
+  getMission(missionId: string): MissionState | undefined {
     return this.state.missions.get(missionId);
   }
 
@@ -499,13 +530,13 @@ class MasterBrainV2 {
   }
 
   get stats() {
+    const missions = Array.from(this.state.missions.values());
     return {
-      totalMissions:   this.state.missions.size,
-      activeMissions:  this.getActiveMissions().length,
-      queuedActions:   this.state.globalActions.length,
-      opportunities:   this.state.globalOpportunities.length,
-      decisionCycles:  this.state.decisionCycle,
-      lastEvaluatedAt: this.state.lastEvaluatedAt,
+      totalMissions:  missions.length,
+      activeMissions: missions.filter(m => m.status === 'running' || m.status === 'planning').length,
+      globalActions:  this.state.globalActions.length,
+      opportunities:  this.state.globalOpportunities.length,
+      risks:          this.state.globalRisks.length,
     };
   }
 }

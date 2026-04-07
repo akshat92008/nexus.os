@@ -490,6 +490,8 @@ export interface MemoryEntry {
   data: TypedArtifact;
   writtenAt: number;
   tokensUsed: number;
+  tags?: string[];       // Semantic tags for graph retrieval
+  semanticHash?: string; // Optional: vector representation identifier
 }
 
 export interface AgentContext {

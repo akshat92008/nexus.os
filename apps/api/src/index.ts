@@ -207,6 +207,33 @@ app.get('/api/agents', (_req: Request, res: Response) => {
 });
 
 
+app.post('/api/context/ingest', async (req: Request, res: Response) => {
+  const { userId, context } = req.body as { 
+    userId: string; 
+    context: { 
+      appName: string; 
+      windowTitle: string; 
+      content?: string; 
+    } 
+  };
+
+  if (!userId || !context) {
+    res.status(400).json({ error: 'Missing userId or context.' });
+    return;
+  }
+
+  console.log(`[Server] 🧠 Ingesting external context from ${context.appName}: "${context.windowTitle}"`);
+
+  // Feed to Master Brain for background reflection
+  masterBrain.pushInterrupt({
+    title: `Proactive Context: ${context.appName}`,
+    content: `User is active in ${context.appName} - ${context.windowTitle}. Reflection engine activated.`,
+    priority: 'low',
+  });
+
+  res.json({ success: true });
+});
+
 app.post('/api/agents/spawn', async (req: Request, res: Response) => {
   const { agentType, goal, userId = 'user_anonymous', workspaceId } = req.body as {
     agentType: AgentType;

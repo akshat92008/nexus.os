@@ -482,18 +482,35 @@ const TOOLS: Tool[] = [
 
 // ── Tool Registry ─────────────────────────────────────────────────────────────
 
-const toolRegistry = new Map(TOOLS.map(t => [t.id, t]));
+const toolRegistry = new Map<string, Tool>(TOOLS.map(t => [t.id, t]));
+
+/**
+ * Register a new Tool Driver at runtime.
+ * This is the core of the "Windows-level" driver ecosystem.
+ */
+export function registerToolDriver(tool: Tool): void {
+  console.log(`[Integration] 🔌 Registering dynamic tool driver: ${tool.id} (${tool.name})`);
+  toolRegistry.set(tool.id, tool);
+}
+
+/**
+ * Unregister a Tool Driver.
+ */
+export function unregisterToolDriver(toolId: string): void {
+  console.log(`[Integration] 🔌 Unregistering tool driver: ${toolId}`);
+  toolRegistry.delete(toolId);
+}
 
 export function getTool(id: string): Tool | undefined {
   return toolRegistry.get(id);
 }
 
 export function listTools(): Tool[] {
-  return TOOLS;
+  return Array.from(toolRegistry.values());
 }
 
 export function listToolsByCategory(category: ToolCategory): Tool[] {
-  return TOOLS.filter(t => t.category === category);
+  return listTools().filter(t => t.category === category);
 }
 
 // ── Main Execute Entry Point ──────────────────────────────────────────────────

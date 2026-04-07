@@ -342,6 +342,13 @@ export class MissionMemory {
     isAborted: () => boolean = () => false
   ): Promise<void> {
     const key = `artifact:${taskId}`;
+    
+    // Auto-generate basic semantic tags
+    const tags = [agentType, artifact.format];
+    if (artifact.format === 'prose' && (artifact as any).keywords) {
+       tags.push(...(artifact as any).keywords);
+    }
+
     const entry: MemoryEntry = {
       key,
       taskId,
@@ -349,10 +356,11 @@ export class MissionMemory {
       data: artifact,
       writtenAt: Date.now(),
       tokensUsed,
+      tags,
     };
     this.store.set(key, entry);
 
-    console.log(`[Memory] 📦 Written — ${agentType}:${taskId} (${tokensUsed} tokens)`);
+    console.log(`[Memory] 📦 Written — ${agentType}:${taskId} (${tokensUsed} tokens) [Tags: ${tags.join(',')}]`);
 
     // Graph Upkeep: Convert artifact to Graph Node
     const nodeId = `node_${taskId}`;
@@ -361,7 +369,7 @@ export class MissionMemory {
       type: 'Artifact',
       content: artifact.rawContent ?? JSON.stringify(artifact).substring(0, 500),
       createdAt: Date.now(),
-      metadata: { agentType, taskId }
+      metadata: { agentType, taskId, tags }
     });
     this.addEdge(nodeId, `goal_${this.sessionId}`, 'derived_from', 1.0);
     this.pruneMemory();

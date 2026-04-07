@@ -11,6 +11,25 @@ import type {
   WorkspaceSection,
 } from '@nexus-os/types';
 
+// ── Multi-Tenant Supabase Integration ───────────────────────────────────────
+
+let supabaseClient: any = null;
+
+async function getSupabase() {
+  if (supabaseClient) return supabaseClient;
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_KEY;
+  if (!url || !key) return null;
+  try {
+    const { createClient } = await import('@supabase/supabase-js');
+    supabaseClient = createClient(url, key);
+    return supabaseClient;
+  } catch (err) {
+    console.warn('[NexusStateStore] Supabase client initialization failed:', err);
+    return null;
+  }
+}
+
 interface DatabaseShape {
   version: number;
   users: Record<string, UserStateSnapshot>;
@@ -314,23 +333,58 @@ class NexusStateStore {
     await writeFile(DB_FILE, JSON.stringify(this.db, null, 2), 'utf8');
   }
 
-  private async mutate<T>(mutator: () => T | Promise<T>): Promise<T> {
+  private async mutate<T>(mutator: () => T | Promise<T>, userId?: string): Promise<T> {
     await this.ensureLoaded();
 
     let result!: T;
     this.writeQueue = this.writeQueue.then(async () => {
       result = await mutator();
+      
+      // Save locally (Standard OS file system)
       await this.flush();
+
+      // Sync to Cloud (Multi-tenant persistence)
+      if (userId) {
+        const client = await getSupabase();
+        if (client) {
+          const userState = this.db.users[userId];
+          const { error } = await client
+            .from('user_states')
+            .upsert({ 
+              id: userId, 
+              state: userState, 
+              updated_at: new Date().toISOString() 
+            });
+          if (error) console.error('[NexusStateStore] Supabase sync failed:', error);
+        }
+      }
     });
 
     await this.writeQueue;
     return result;
   }
 
-  private getUserRef(userId: string): UserStateSnapshot {
+  private async getUserRef(userId: string): Promise<UserStateSnapshot> {
+    // Check local memory cache first
     if (!this.db.users[userId]) {
-      this.db.users[userId] = createDefaultUserState(userId);
-      return this.db.users[userId];
+      // Try to rehydrate from Supabase if possible
+      const client = await getSupabase();
+      if (client) {
+        const { data, error } = await client
+          .from('user_states')
+          .select('state')
+          .eq('id', userId)
+          .single();
+        if (data?.state) {
+          this.db.users[userId] = data.state;
+          console.log(`[NexusStateStore] 📡 Rehydrated user state from Supabase: ${userId}`);
+        }
+      }
+      
+      // Still no state? Create default
+      if (!this.db.users[userId]) {
+        this.db.users[userId] = createDefaultUserState(userId);
+      }
     }
 
     const current = this.db.users[userId];
@@ -350,21 +404,21 @@ class NexusStateStore {
   }
 
   async syncOngoingMissions(userId: string, missions: OngoingMission[]): Promise<void> {
-    await this.mutate(() => {
-      const state = this.getUserRef(userId);
+    await this.mutate(async () => {
+      const state = await this.getUserRef(userId);
       state.ongoingMissions = missions;
       state.updatedAt = Date.now();
-    });
+    }, userId);
   }
 
   async getUserState(userId: string): Promise<UserStateSnapshot> {
     await this.ensureLoaded();
-    return clone(this.getUserRef(userId));
+    return clone(await this.getUserRef(userId));
   }
 
   async syncUserState(userId: string, patch: Partial<UserStateSnapshot>): Promise<UserStateSnapshot> {
-    return this.mutate(() => {
-      const state = this.getUserRef(userId);
+    return this.mutate(async () => {
+      const state = await this.getUserRef(userId);
 
       state.activeWorkspaceId = patch.activeWorkspaceId ?? state.activeWorkspaceId;
       state.workspaces = (patch.workspaces ?? state.workspaces).map(ensureWorkspaceDefaults);
@@ -376,12 +430,12 @@ class NexusStateStore {
       state.updatedAt = Date.now();
 
       return clone(state);
-    });
+    }, userId);
   }
 
   async upsertWorkspace(userId: string, workspace: Workspace): Promise<UserStateSnapshot> {
-    return this.mutate(() => {
-      const state = this.getUserRef(userId);
+    return this.mutate(async () => {
+      const state = await this.getUserRef(userId);
       const nextWorkspace = ensureWorkspaceDefaults(workspace);
       const existingIndex = state.workspaces.findIndex((candidate) => candidate.id === workspace.id);
 
@@ -393,7 +447,7 @@ class NexusStateStore {
 
       state.updatedAt = Date.now();
       return clone(state);
-    });
+    }, userId);
   }
 
   async createWorkspaceWindow(params: {
@@ -402,8 +456,8 @@ class NexusStateStore {
     goalType: Workspace['goalType'];
     windowType: AppWindowState['windowType'];
   }): Promise<{ state: UserStateSnapshot; workspace: Workspace; window: AppWindowState }> {
-    return this.mutate(() => {
-      const state = this.getUserRef(params.userId);
+    return this.mutate(async () => {
+      const state = await this.getUserRef(params.userId);
       const workspace = createWorkspaceShell({
         title: params.title,
         goalType: params.goalType,
@@ -425,12 +479,12 @@ class NexusStateStore {
       state.updatedAt = Date.now();
 
       return { state: clone(state), workspace: clone(workspace), window: clone(window) };
-    });
+    }, params.userId);
   }
 
   async deleteWorkspace(userId: string, workspaceId: string): Promise<UserStateSnapshot> {
-    return this.mutate(() => {
-      const state = this.getUserRef(userId);
+    return this.mutate(async () => {
+      const state = await this.getUserRef(userId);
 
       state.workspaces = state.workspaces.filter((workspace) => workspace.id !== workspaceId);
       state.appWindows = state.appWindows.filter((window) => window.workspaceId !== workspaceId);
@@ -443,30 +497,30 @@ class NexusStateStore {
 
       state.updatedAt = Date.now();
       return clone(state);
-    });
+    }, userId);
   }
 
   async setActiveWorkspace(userId: string, workspaceId: string | null): Promise<UserStateSnapshot> {
-    return this.mutate(() => {
-      const state = this.getUserRef(userId);
+    return this.mutate(async () => {
+      const state = await this.getUserRef(userId);
       state.activeWorkspaceId = workspaceId;
       state.updatedAt = Date.now();
       return clone(state);
-    });
+    }, userId);
   }
 
   async upsertWindow(userId: string, window: AppWindowState): Promise<UserStateSnapshot> {
-    return this.mutate(() => {
-      const state = this.getUserRef(userId);
+    return this.mutate(async () => {
+      const state = await this.getUserRef(userId);
       state.appWindows = [window, ...state.appWindows.filter((candidate) => candidate.workspaceId !== window.workspaceId)];
       state.updatedAt = Date.now();
       return clone(state);
-    });
+    }, userId);
   }
 
   async closeWindow(userId: string, workspaceId: string): Promise<UserStateSnapshot> {
-    return this.mutate(() => {
-      const state = this.getUserRef(userId);
+    return this.mutate(async () => {
+      const state = await this.getUserRef(userId);
       state.appWindows = state.appWindows.filter((window) => window.workspaceId !== workspaceId);
 
       if (state.activeWorkspaceId === workspaceId) {
@@ -475,12 +529,12 @@ class NexusStateStore {
 
       state.updatedAt = Date.now();
       return clone(state);
-    });
+    }, userId);
   }
 
   async upsertSchedule(userId: string, schedule: ScheduleSnapshot): Promise<UserStateSnapshot> {
-    return this.mutate(() => {
-      const state = this.getUserRef(userId);
+    return this.mutate(async () => {
+      const state = await this.getUserRef(userId);
       const existingIndex = state.schedules.findIndex((candidate) => candidate.scheduleId === schedule.scheduleId);
 
       if (existingIndex >= 0) {
@@ -491,16 +545,16 @@ class NexusStateStore {
 
       state.updatedAt = Date.now();
       return clone(state);
-    });
+    }, userId);
   }
 
   async removeSchedule(userId: string, scheduleId: string): Promise<UserStateSnapshot> {
-    return this.mutate(() => {
-      const state = this.getUserRef(userId);
+    return this.mutate(async () => {
+      const state = await this.getUserRef(userId);
       state.schedules = state.schedules.filter((schedule) => schedule.scheduleId !== scheduleId);
       state.updatedAt = Date.now();
       return clone(state);
-    });
+    }, userId);
   }
 
   async listAllSchedules(): Promise<Array<{ userId: string; schedule: ScheduleSnapshot }>> {
@@ -520,12 +574,12 @@ class NexusStateStore {
   }
 
   async installAgent(userId: string, agentId: string): Promise<UserStateSnapshot> {
-    return this.mutate(() => {
-      const state = this.getUserRef(userId);
+    return this.mutate(async () => {
+      const state = await this.getUserRef(userId);
       state.installedAgentIds = Array.from(new Set([...state.installedAgentIds, agentId]));
       state.updatedAt = Date.now();
       return clone(state);
-    });
+    }, userId);
   }
 
   async addInboxEntry(
@@ -535,8 +589,8 @@ class NexusStateStore {
       read?: boolean;
     }
   ): Promise<UserStateSnapshot> {
-    return this.mutate(() => {
-      const state = this.getUserRef(userId);
+    return this.mutate(async () => {
+      const state = await this.getUserRef(userId);
       const nextEntry: NexusInboxEntry = {
         id: `inbox_${crypto.randomUUID()}`,
         type: entry.type,
@@ -550,27 +604,27 @@ class NexusStateStore {
       state.inbox = [nextEntry, ...state.inbox].slice(0, 50);
       state.updatedAt = Date.now();
       return clone(state);
-    });
+    }, userId);
   }
 
   async markInboxRead(userId: string, entryId: string): Promise<UserStateSnapshot> {
-    return this.mutate(() => {
-      const state = this.getUserRef(userId);
+    return this.mutate(async () => {
+      const state = await this.getUserRef(userId);
       state.inbox = state.inbox.map((entry) =>
         entry.id === entryId ? { ...entry, read: true } : entry
       );
       state.updatedAt = Date.now();
       return clone(state);
-    });
+    }, userId);
   }
 
   async clearInbox(userId: string): Promise<UserStateSnapshot> {
-    return this.mutate(() => {
-      const state = this.getUserRef(userId);
+    return this.mutate(async () => {
+      const state = await this.getUserRef(userId);
       state.inbox = [];
       state.updatedAt = Date.now();
       return clone(state);
-    });
+    }, userId);
   }
 
   async completeNextAction(
@@ -579,8 +633,8 @@ class NexusStateStore {
     actionId: string,
     message?: string
   ): Promise<Workspace | null> {
-    return this.mutate(() => {
-      const state = this.getUserRef(userId);
+    return this.mutate(async () => {
+      const state = await this.getUserRef(userId);
       const workspace = state.workspaces.find((candidate) => candidate.id === workspaceId);
 
       if (!workspace) return null;
@@ -601,7 +655,7 @@ class NexusStateStore {
 
       state.updatedAt = Date.now();
       return clone(ensureWorkspaceDefaults(workspace));
-    });
+    }, userId);
   }
 }
 

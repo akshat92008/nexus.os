@@ -44,6 +44,7 @@ import { formatStudentOutput } from './formatters/studentFormatter.js';
 import { ledger } from './ledger.js';
 import { nexusStateStore } from './storage/nexusStateStore.js';
 import { approvalGuard } from './ApprovalGuard.js';
+import { masterBrain } from './masterBrain.js';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -305,6 +306,16 @@ async function executeTask(
     // Write to typed mission memory
     await memory.write(task.id, task.agentType, finalResult.artifact, finalResult.tokensUsed, res, isAborted);
 
+    // ── Neural Interrupt (Proactive OS Feature) ──────────────────────
+    if (finalResult.artifact.format === 'structured_json' && (finalResult.artifact as any).criticalInsight) {
+       masterBrain.pushInterrupt({
+         title: `Critical Insight: ${task.label}`,
+         content: (finalResult.artifact as any).criticalInsight,
+         priority: 'high',
+         action: `view_artifact_${task.id}`
+       });
+    }
+
     // Mark completed in registry
     const outputKey = `artifact:${task.id}`;
     registry.markCompleted(task.id, outputKey);
@@ -376,11 +387,35 @@ async function executeWave(
   return { succeeded, failed };
 }
 
+// ── Mission Control & Process Isolation ────────────────────────────────────
+
+const activeMissionAbortControllers = new Map<string, AbortController>();
+
+/**
+ * Kill a mission "process" immediately.
+ * This is the OS "End Task" equivalent for AI agents.
+ */
+export function abortMission(missionId: string): void {
+  const controller = activeMissionAbortControllers.get(missionId);
+  if (controller) {
+    console.log(`[Orchestrator] 🛑 Force-killing mission process: ${missionId}`);
+    controller.abort();
+    activeMissionAbortControllers.delete(missionId);
+  }
+}
+
 // ── Main Orchestrator ──────────────────────────────────────────────────────
 
 export async function orchestrateDAG(deps: OrchestratorDeps): Promise<void> {
-  const { dag, memory, registry, governor, userId, sessionId, res, isAborted } = deps;
+  const { dag, memory, registry, governor, userId, sessionId, res, isAborted: initialIsAborted } = deps;
   const startMs = Date.now();
+
+  // ── Mission Process Registration (OS Process Table) ───────────────────────
+  const abortController = new AbortController();
+  const missionId = dag.missionId;
+  activeMissionAbortControllers.set(missionId, abortController);
+
+  const isAborted = () => initialIsAborted() || abortController.signal.aborted;
 
   // Init all tasks in registry
   dag.nodes.forEach((n) => registry.initTask(n.id));
@@ -413,8 +448,11 @@ export async function orchestrateDAG(deps: OrchestratorDeps): Promise<void> {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     safeEmit(res, { type: 'error', message: `DAG computation failed: ${msg}` }, isAborted);
+    activeMissionAbortControllers.delete(missionId);
     return;
   }
+
+  const updatedDeps = { ...deps, isAborted };
 
   console.log(`[Orchestrator] 🚀 Mission "${dag.goal.slice(0, 50)}..." — ${waves.length} waves, ${dag.nodes.length} tasks`);
 
@@ -459,7 +497,7 @@ export async function orchestrateDAG(deps: OrchestratorDeps): Promise<void> {
         continue;
       }
 
-      await executeWave(pending, waveIndex, deps);
+      await executeWave(pending, waveIndex, updatedDeps);
 
       // ── Dynamic DAG Expansion (Structural Intelligence) ──────────────────
       // After each wave, we check if we need to inject new tasks.
@@ -496,6 +534,7 @@ export async function orchestrateDAG(deps: OrchestratorDeps): Promise<void> {
   } finally {
     clearInterval(statusMonitor);
     watchdogAgent.stopMonitoring(sessionId);
+    activeMissionAbortControllers.delete(missionId);
   }
 
   // ── PARTIAL RECOVERY — retry failed non-critical tasks ─────────────────
