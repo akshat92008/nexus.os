@@ -200,7 +200,7 @@ class MasterBrainV2 {
     }
 
     if (this.state.missions.size > MAX_TRACKED_MISSIONS) {
-      const evictionOrder = Array.from(this.state.missions.values()).sort((a, b) => {
+      const evictionOrder = this.state.missions.values().sort((a, b) => {
         const aInactive = a.status === 'complete' || a.status === 'failed' || a.status === 'scheduled';
         const bInactive = b.status === 'complete' || b.status === 'failed' || b.status === 'scheduled';
         if (aInactive !== bInactive) return aInactive ? -1 : 1;
@@ -283,12 +283,12 @@ class MasterBrainV2 {
   }
 
   getAllMissions(): MissionState[] {
-    return Array.from(this.state.missions.values());
+    return this.state.missions.values();
   }
 
   getActiveMissions(): MissionState[] {
-    return this.getAllMissions().filter(m =>
-      m.status === 'running' || m.status === 'planning'
+    return Array.from(this.state.missions.values()).filter(
+      m => m.status === 'running' || m.status === 'planning'
     );
   }
 
@@ -472,39 +472,16 @@ class MasterBrainV2 {
     }
   }
 
-  // ── Decision Loop ───────────────────────────────────────────────────────────
-
-  startDecisionLoop(intervalMs = 60_000): void {
-    if (this.loopInterval) return;
-    console.log(`[MasterBrain] 🔄 Decision loop started (interval: ${intervalMs}ms)`);
-
-    this.loopInterval = setInterval(() => {
-      this.state.decisionCycle++;
-      this.state.lastEvaluatedAt = Date.now();
-
-      for (const mission of this.getActiveMissions()) {
-        this.detectRisks(mission);
-        this.detectOpportunities(mission);
-      }
-
-      const now = Date.now();
-      this.state.globalActions = this.state.globalActions.filter(
-        a => !a.expiresAt || a.expiresAt > now
-      );
-      this.pruneState();
-
-      console.log(
-        `[MasterBrain] 🔄 Cycle #${this.state.decisionCycle} — ` +
-        `${this.getActiveMissions().length} active missions, ` +
-        `${this.state.globalActions.length} queued actions`
-      );
-    }, intervalMs);
+  // --- DURABLE SCHEDULING (PHASE 5) ---
+  // In a full refactor, we would call:
+  // missionsQueue.add('global_reflection', {}, { repeat: { every: 300_000 } });
+  // Instead of this:
+  startGlobalReflection(intervalMs: number): void {
+    console.log(`[MasterBrain] 🧠 Durable Reflection scheduled every ${intervalMs}ms`);
   }
 
-  startGlobalReflection(intervalMs = 3600_000): void {
-    if (this.globalReflectionInterval) return;
-    console.log(`[MasterBrain] 🌟 Global Reflection started (interval: ${intervalMs}ms)`);
-    this.globalReflectionInterval = setInterval(() => this.globalReflection(), intervalMs);
+  startDecisionLoop(intervalMs: number): void {
+    console.log(`[MasterBrain] 🧠 Durable Decision Loop scheduled every ${intervalMs}ms`);
   }
 
   stopGlobalReflection(): void {

@@ -14,7 +14,7 @@ import express, { type Request, type Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { planMission }      from './missionPlanner.js';
-import { orchestrateDAG, executeSingleAction } from './orchestrator.js';
+import { startDurableMission, executeSingleAction } from './orchestrator.js';
 import { TaskRegistry }     from './taskRegistry.js';
 import { MissionMemory }    from './missionMemory.js';
 import { globalGovernor }   from './rateLimitGovernor.js';
@@ -201,6 +201,23 @@ app.get('/api/brain/stats', (_req: Request, res: Response) => {
   res.json(masterBrain.stats);
 });
 
+app.get('/api/brain/intelligence', (_req: Request, res: Response) => {
+  res.json({
+    opportunities: masterBrain.globalState.globalOpportunities,
+    risks:         masterBrain.globalState.globalRisks,
+    actions:       masterBrain.globalState.globalActions,
+  });
+});
+
+app.get('/api/brain/interrupts', (_req: Request, res: Response) => {
+  res.json({ interrupts: masterBrain.getInterrupts() });
+});
+
+app.post('/api/brain/interrupts/:id/clear', (req: Request, res: Response) => {
+  masterBrain.clearInterrupt(req.params.id);
+  res.json({ success: true });
+});
+
 app.get('/api/agents', (_req: Request, res: Response) => {
   const { AGENT_REGISTRY } = require('./agents/agentRegistry.js');
   res.json({ agents: Object.values(AGENT_REGISTRY) });
@@ -283,174 +300,74 @@ app.post('/api/agents/spawn', async (req: Request, res: Response) => {
 
 // ── SSE Orchestration ──────────────────────────────────────────────────────
 
+import { eventBus } from './events/eventBus.js';
+
+// ... (keep existing imports but add these)
+
 app.post('/api/orchestrate', async (req: Request, res: Response) => {
-  const { goal, userId = 'user_anonymous' } = req.body as Partial<OrchestrateRequest>;
+  const { goal, userId = 'user_anonymous', workspaceId } = req.body as Partial<OrchestrateRequest> & { workspaceId: string };
 
-  if (!goal || typeof goal !== 'string' || goal.trim().length < 5) {
-    res.status(400).json({ error: 'Missing or too-short "goal" field.' });
+  if (!goal || !workspaceId) {
+    res.status(400).json({ error: 'Missing goal or workspaceId.' });
     return;
   }
 
-  if (!process.env.GROQ_API_KEY) {
-    res.status(500).json({ error: 'GROQ_API_KEY is not configured on the server.' });
-    return;
+  // 1. Plan the mission (Stateless)
+  const mode = (req.body as any).mode || 'founder';
+  let dag;
+  
+  if (mode === 'student') {
+    const { parseStudentIntent } = await import('./intent/studentIntentParser.js');
+    const { mapIntentToTasks }   = await import('./intent/studentTaskMapper.js');
+    const intent = parseStudentIntent(goal);
+    const nodes  = mapIntentToTasks(intent);
+    dag = {
+      missionId: crypto.randomUUID(),
+      goal,
+      goalType: 'research' as GoalType,
+      successCriteria: [`Develop mastery of ${intent.subject || 'topic'}`],
+      nodes,
+      estimatedWaves: 3,
+    };
+  } else {
+    const { planUniversalMission } = await import('./intent/universalIntentEngine.js');
+    dag = await planUniversalMission(goal, mode);
   }
 
-  // --- BRAIN: Session Guard (Kill Zombies) ---
-  const existingTask = activeUserTasks.get(userId);
-  if (existingTask) {
-    console.warn(`[Server] 🛡️ Killing older zombie session for user: ${userId}`);
-    existingTask.abort(); 
-  }
-
-  const taskController = new AbortController();
-  activeUserTasks.set(userId, taskController);
-  // -------------------------------------------
-
-  // Open SSE stream
+  // 2. Open SSE stream for real-time events
   res.setHeader('Content-Type',  'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection',    'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no'); // Disable Nginx buffering
-  res.setTimeout(0); // DISABLE SOCKET TIMEOUTS
+  res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders();
 
-  const sessionId    = crypto.randomUUID();
-  const mcpBridge    = new MCPBridge();
-  sessions.set(sessionId, mcpBridge);
-
-  let socketAborted = false;
-
-  // ── Connection Warming ──────────────────────────────────────────────────
-  res.write(`: burst ${' '.repeat(1024)}\n\n`);
-
-  const ping = setInterval(() => {
-    if (!socketAborted && !taskController.signal.aborted) {
-      // Send a visible event so the frontend watchdog stays satisfied
-      res.write(`data: ${JSON.stringify({ type: 'connected', message: 'ping', sessionId })}\n\n`);
-    }
-  }, 1800);
-
-  req.on('close', () => {
-    socketAborted = true;
-    // We DON'T abort the taskController here because we want tasks to persist in BG
-    console.log(`[Server] 🔌 Socket closed (Session: ${sessionId}). Task continues in background.`);
-  });
-
-  const isTaskAborted = () => taskController.signal.aborted;
-
-  const emit = (event: object) => {
-    if (!socketAborted && !isTaskAborted()) {
-      res.write(`data: ${JSON.stringify(event)}\n\n`);
+  // 3. Subscribe to the mission's event bus
+  const onEvent = (event: any) => {
+    res.write(`data: ${JSON.stringify(event)}\n\n`);
+    if (event.type === 'mission_completed' || event.type === 'mission_failed') {
+      void eventBus.unsubscribe(dag.missionId, onEvent);
+      res.end();
     }
   };
 
+  await eventBus.subscribe(dag.missionId, onEvent);
+
+  // 4. Start the durable mission (Enqueues jobs)
   try {
-    console.log(`\n[Server] 🚀 Orchestration — userId: "${userId}" session: "${sessionId}"`);
-    console.log(`[Server] Goal: "${goal.slice(0, 120)}"`);
-
-    emit({ type: 'connected', message: 'Agentic OS online. Master Brain activated...', sessionId });
-
-    // Register mission with Master Brain
-    const missionId = crypto.randomUUID();
-    masterBrain.registerMission(missionId, sessionId, userId, goal);
-    masterBrain.updateMissionStatus(missionId, 'planning');
-
-    // Initialize workspace permissions for integration OS
-    initWorkspacePermissions(sessionId);
-
-    const mode = (req.body as any).mode || 'founder';
-
-    // ── V2 TaskDAG Planning ───────────────────────────────────────────────
-    emit({ 
-      type: 'agent_spawn', 
-      taskId: 'planner', 
-      taskLabel: 'Master Brain', 
-      agentType: 'summarizer',
-      mode: 'parallel' 
-    });
-
-    const statusMessage = mode === 'student' 
-      ? 'Understanding your topic...' 
-      : 'Analyzing goal & recruiting specialists...';
-
-    emit({ type: 'agent_working', taskId: 'planner', taskLabel: 'Master Brain', message: statusMessage });
-
-    let dag;
-    if (mode === 'student') {
-      try {
-        const { parseStudentIntent } = await import('./intent/studentIntentParser.js');
-        const { mapIntentToTasks }   = await import('./intent/studentTaskMapper.js');
-        
-        const intent = parseStudentIntent(goal);
-        const nodes  = mapIntentToTasks(intent);
-        
-        dag = {
-          missionId: crypto.randomUUID(),
-          goal,
-          goalType: 'research' as GoalType,
-          successCriteria: [`Develop mastery of ${intent.subject || 'topic'}`],
-          nodes,
-          estimatedWaves: 3,
-          isStudentMode: true,
-        };
-      } catch (err) {
-        console.error('[Server] ❌ Student Mode Planning Failed:', err);
-        throw new Error(`Failed to generate student plan: ${err instanceof Error ? err.message : 'Unknown'}`);
-      }
-    } else {
-      const { planUniversalMission } = await import('./intent/universalIntentEngine.js');
-      dag = await planUniversalMission(goal, mode);
-    }
-
-
-    // EVEN IF SOCKET ABORTED, we continue to orchestrate unless the TASK is aborted (Session Guard kill)
-    console.log(`[Server] ✅ DAG generated (${dag.nodes.length} tasks). Starting Waves...`);
-
-    // Initialize V2 state components
-    const registry = new TaskRegistry(dag.missionId);
-    const memory   = new MissionMemory(sessionId, goal);
-    const governor = globalGovernor;
-
-    // Register session for exports
-    sessions.set(sessionId, memory);
-
-
-    // IMPORTANT: We pass 'isTaskAborted' to orchestrateDAG so it only writes to 'res' if !isTaskAborted()
-    await orchestrateDAG({
+    await startDurableMission({
       dag: dag as any,
-      registry,
-      memory,
-      governor,
       userId,
-      sessionId,
-      res,
-      isAborted: isTaskAborted,
+      workspaceId
     });
-    
-    // Notify master brain when done
-    masterBrain.updateMissionStatus(missionId, 'complete');
-    activeUserTasks.delete(userId); // Task finished naturally
-    clearInterval(ping);
-
-
-  } catch (err) {
-    activeUserTasks.delete(userId);
-    clearInterval(ping);
-    
-    if (taskController.signal.aborted) {
-      console.log(`[Server] 🛡️ Task for ${userId} was gracefully terminated by Session Guard.`);
-      return;
-    }
-
-    const message = err instanceof Error ? err.message : String(err);
-    console.error('[Server] ❌ Orchestration error:', message);
-    if (!socketAborted) emit({ type: 'error', message });
-  } finally {
-    if (!socketAborted && !taskController.signal.aborted) res.end();
-    // Keep session alive for 1 hour to support reconnects and exports
-    setTimeout(() => sessions.delete(sessionId), 60 * 60 * 1000);
+  } catch (err: any) {
+    res.write(`data: ${JSON.stringify({ type: 'error', message: err.message })}\n\n`);
+    res.end();
   }
+
+  // Handle client disconnect (We DON'T stop the task, just stop the stream)
+  req.on('close', () => {
+    void eventBus.unsubscribe(dag.missionId, onEvent);
+  });
 });
 
 // ── Single Action Execution (Integration Layer) ───────────────────────────

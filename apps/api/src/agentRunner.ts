@@ -502,7 +502,7 @@ export interface RunAgentOptions {
   goal: string;
   goalType: GoalType;
   context: AgentContext;
-  sseRes: Response;
+  sseRes?: Response; // Optional for decoupled worker
   isAborted: () => boolean;
 }
 
@@ -572,9 +572,26 @@ async function runGroq(opts: {
   };
 }
 
+/**
+ * Core Agent Runner
+ * Executes a single task for a specific agent type.
+ */
 export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
   const { task, goal, goalType, context, sseRes, isAborted } = opts;
-  
+  const startMs = Date.now();
+
+  console.log(`[AgentRunner] 🤖 ${task.agentType.toUpperCase()} starting task: ${task.id}`);
+
+  // SSE status update (if res available)
+  if (sseRes) {
+    sseRes.write(`data: ${JSON.stringify({
+      type: 'agent_status',
+      agentId: task.id,
+      status: 'working',
+      agentType: task.agentType,
+    })}\n\n`);
+  }
+
   // ── Step 1: Semantic Context Compression (Information Density) ─────────────
   // Instead of raw context, we use the SemanticBridge to digest it.
   const briefing = context.entries.length > 0
@@ -661,6 +678,8 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
   });
 
   const artifact = parseTypedArtifact(content, task);
+  const duration = Date.now() - startMs;
+  console.log(`[AgentRunner] ✅ ${task.agentType.toUpperCase()} finished task: ${task.id} (${duration}ms)`);
 
   return { artifact, tokensUsed: tokens, rawContent: content };
 }

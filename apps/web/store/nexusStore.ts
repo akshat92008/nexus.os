@@ -189,6 +189,10 @@ interface NexusStore {
     opportunities: number;
     risks: number;
   };
+  globalRisks: any[];
+  globalOpportunities: any[];
+  globalActions: any[];
+  neuralInterrupts: any[];
   fsItems: (NexusFile | NexusFolder)[];
   isFsLoading: boolean;
 
@@ -307,6 +311,7 @@ interface NexusStore {
   clearInbox:            () => void;
   fetchAvailableAgents:  () => Promise<void>;
   fetchBrainStats:       () => Promise<void>;
+  clearInterrupt:        (id: string) => Promise<void>;
   installAgent:          (id: string) => void;
   spawnAgent:            (agentType: AgentType) => Promise<void>;
   fetchFsItems:          (parentId?: string) => Promise<void>;
@@ -589,6 +594,10 @@ export const useNexusStore = create<NexusStore>()(
         opportunities: 0,
         risks: 0,
       },
+      globalRisks: [],
+      globalOpportunities: [],
+      globalActions: [],
+      neuralInterrupts: [],
       fsItems: [],
       isFsLoading: false,
 
@@ -1600,9 +1609,33 @@ export const useNexusStore = create<NexusStore>()(
       try {
         const res = await fetch(`${API_BASE}/api/brain/stats`);
         const stats = await res.json();
-        set({ brainStats: stats });
+        
+        const intelRes = await fetch(`${API_BASE}/api/brain/intelligence`);
+        const { opportunities, risks, actions } = await intelRes.json();
+
+        const interruptRes = await fetch(`${API_BASE}/api/brain/interrupts`);
+        const { interrupts } = await interruptRes.json();
+
+        set({ 
+          brainStats: stats,
+          globalOpportunities: opportunities,
+          globalRisks: risks,
+          globalActions: actions,
+          neuralInterrupts: interrupts
+        });
       } catch (err) {
         // Silently fail for stats
+      }
+    },
+    
+    clearInterrupt: async (id: string) => {
+      try {
+        await fetch(`${API_BASE}/api/brain/interrupts/${id}/clear`, { method: 'POST' });
+        set((s) => ({
+          neuralInterrupts: s.neuralInterrupts.filter(i => i.id !== id)
+        }));
+      } catch (err) {
+        get().addToast('Failed to clear interrupt.');
       }
     },
 

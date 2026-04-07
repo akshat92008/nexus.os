@@ -80,7 +80,10 @@ export async function startDurableMission(params: {
 
   console.log(`[Orchestrator] 🚀 Starting durable mission: ${dag.missionId} — "${dag.goal}"`);
 
-  // 2. Enqueue the Mission "Job" for tracking
+  // 2. Persist Mission to DB (stateless)
+  // await db.missions.create({ ... });
+
+  // 3. Enqueue the Mission "Job" for tracking
   await missionsQueue.add(`mission_${dag.missionId}`, {
     missionId:   dag.missionId,
     userId,
@@ -89,7 +92,7 @@ export async function startDurableMission(params: {
     goalType:    dag.goalType
   });
 
-  // 3. Dispatch the first wave of tasks (Durable Execution Engine)
+  // 4. Dispatch the first wave of tasks (Durable Execution Engine)
   const waves = computeExecutionWaves(dag.nodes);
   if (waves.length > 0) {
     const firstWave = waves[0];
@@ -105,29 +108,11 @@ export async function startDurableMission(params: {
     }
   }
 
-  // 4. Publish start event (Stateless API will pick this up via SSE)
+  // 5. Publish start event (Stateless API will pick this up via SSE)
   await eventBus.publish(dag.missionId, {
     type: 'mission_started',
     missionId: dag.missionId,
     userId,
     goal: dag.goal
   });
-}
-
-/**
- * Executes a single ad-hoc action from the UI.
- */
-export async function executeSingleAction(
-  actionId: string,
-  workspaceId: string,
-  userId: string,
-  res: any,
-  isAborted: () => boolean
-): Promise<void> {
-  console.log(`[Orchestrator] ⚡ Executing ad-hoc action: ${actionId}`);
-  // Ad-hoc actions remain HTTP-coupled for now as they are synchronous UI triggers
-  // but in a full refactor these would also be jobs.
-  res.write(`data: ${JSON.stringify({ type: 'agent_working', taskId: actionId, message: 'Executing...' })}\n\n`);
-  await new Promise(r => setTimeout(r, 1000));
-  res.write(`data: ${JSON.stringify({ type: 'agent_complete', taskId: actionId })}\n\n`);
 }

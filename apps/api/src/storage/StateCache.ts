@@ -48,6 +48,11 @@ export class StateCache<T> {
     }
   }
 
+  entries(): Array<[string, T]> {
+    this.prune();
+    return Array.from(this.cache.entries()).map(([key, entry]) => [key, entry.data]);
+  }
+
   get size(): number {
     return this.cache.size;
   }

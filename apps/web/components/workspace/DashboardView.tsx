@@ -18,7 +18,11 @@ import {
   PieChart,
   BarChart3,
   Calendar,
-  ChevronRight
+  ChevronRight,
+  AlertTriangle,
+  Lightbulb,
+  Bot,
+  ShieldAlert
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { UniversalCommandBar } from './UniversalCommandBar';
@@ -34,6 +38,11 @@ export function DashboardView() {
   const invoicing = useNexusStore((s) => s.invoicing);
   const brainStats = useNexusStore((s) => s.brainStats);
   const fetchBrainStats = useNexusStore((s) => s.fetchBrainStats);
+  const neuralInterrupts = useNexusStore((s) => s.neuralInterrupts);
+  const globalRisks = useNexusStore((s) => s.globalRisks);
+  const globalOpportunities = useNexusStore((s) => s.globalOpportunities);
+  const clearInterrupt = useNexusStore((s) => s.clearInterrupt);
+  const spawnAgent = useNexusStore((s) => s.spawnAgent);
 
   useEffect(() => {
     fetchBrainStats();
@@ -179,34 +188,67 @@ export function DashboardView() {
   }
 
   return (
-    <div className="flex-1 max-w-6xl mx-auto w-full flex flex-col gap-10 pb-20 pt-4 fade-in">
+    <div className="flex-1 max-w-6xl mx-auto w-full flex flex-col gap-12 pb-24 pt-6 fade-in text-zinc-100">
       
-      {/* 1. Brand Header */}
-      <div className="flex items-start justify-between bg-gradient-to-r from-violet-900/20 to-cyan-900/10 p-8 rounded-3xl border border-zinc-800/60 backdrop-blur-md relative overflow-hidden">
-        {/* Decorative Glow */}
-        <div className="absolute -top-20 -right-20 w-64 h-64 bg-violet-600/20 blur-[100px] rounded-full pointer-events-none" />
-        
-        <div className="relative z-10">
-          <div className="flex items-center gap-2 mb-3">
-             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_10px_rgba(16,185,129,0.8)]" />
-             <span className="text-xs font-bold uppercase tracking-widest text-emerald-400">System Online</span>
+      {/* 🚀 NEURAL HUD: Proactive Brain Alerts */}
+      {neuralInterrupts.length > 0 && (
+        <section className="space-y-4">
+          <div className="flex items-center gap-2 text-amber-400/80 px-2">
+            <Activity size={14} className="animate-pulse" />
+            <h3 className="text-[10px] font-black uppercase tracking-[0.2em]">Neural Interrupts</h3>
           </div>
-          <h2 className="text-4xl font-extrabold tracking-tight text-white mb-2">Morning Brief</h2>
-          <p className="text-base text-zinc-400 max-w-xl leading-relaxed">
-            Welcome back. Here is your daily productivity digest and items requiring your attention.
-          </p>
+          <div className="flex flex-col gap-3">
+            {neuralInterrupts.map((int: any) => (
+              <motion.div 
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                key={int.id} 
+                className="group relative bg-zinc-950/40 border border-amber-500/20 rounded-2xl p-5 flex items-center justify-between backdrop-blur-xl overflow-hidden hover:border-amber-500/40 transition-all"
+              >
+                <div className="absolute inset-0 bg-gradient-to-r from-amber-500/5 to-transparent pointer-events-none" />
+                <div className="flex gap-4 items-center relative z-10">
+                  <div className="w-10 h-10 rounded-full bg-amber-500/10 flex items-center justify-center border border-amber-500/20">
+                    <AlertTriangle size={18} className="text-amber-400" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-amber-200">{int.title}</h4>
+                    <p className="text-xs text-zinc-500 mt-1">{int.content}</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => clearInterrupt(int.id)}
+                  className="px-4 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-xs font-bold text-zinc-400 hover:text-amber-400 hover:border-amber-500/40 transition-all opacity-0 group-hover:opacity-100"
+                >
+                  Dismiss
+                </button>
+              </motion.div>
+            ))}
+          </div>
+        </section>
+      )}
 
-          <div className="flex gap-4 mt-6">
+      {/* 1. Brand Header / Command Center HUD */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="md:col-span-2 bg-gradient-to-br from-zinc-900/40 to-zinc-950/60 p-10 rounded-[40px] border border-zinc-800/60 backdrop-blur-3xl relative overflow-hidden flex flex-col justify-between min-h-[340px]">
+          <div className="absolute -top-32 -right-32 w-96 h-96 bg-violet-600/10 blur-[150px] rounded-full pointer-events-none" />
+          
+          <div>
+            <div className="flex items-center gap-3 mb-6">
+               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_15px_rgba(16,185,129,0.5)]" />
+               <span className="text-[10px] font-black uppercase tracking-[0.3em] text-emerald-400">Master Brain V2.0 Online</span>
+            </div>
+            <h2 className="text-6xl font-black tracking-tighter text-white mb-4">Command Center</h2>
+            <p className="text-lg text-zinc-400 max-w-lg leading-relaxed font-medium">
+              Autonomous reflection cycle complete. {globalOpportunities.length} new insights detected.
+            </p>
+          </div>
+
+          <div className="flex gap-4 mt-8">
             <button 
-              disabled={recentWorkspaces.length === 0}
               onClick={() => recentWorkspaces[0] && setActiveWorkspace(recentWorkspaces[0].id)}
-              className={`px-5 py-2.5 rounded-xl font-semibold text-sm transition-all shadow-lg active:scale-95 ${
-                recentWorkspaces.length > 0
-                  ? 'bg-violet-600 text-white hover:bg-violet-500 shadow-violet-500/20'
-                  : 'bg-zinc-800 text-zinc-600 cursor-not-allowed'
-              }`}
+              className="px-8 py-4 rounded-2xl bg-white text-zinc-950 font-black text-sm hover:scale-[1.03] transition-all shadow-xl shadow-white/5 active:scale-95"
             >
-              Continue Work
+              Resume Critical Mission
             </button>
             <button 
               onClick={() => {
@@ -214,151 +256,128 @@ export function DashboardView() {
                 useNexusStore.getState().resetWorkspace();
                 useNexusStore.getState().setCommandBarFocused(true);
               }}
-              className="px-5 py-2.5 rounded-xl bg-zinc-800 text-zinc-300 font-semibold text-sm hover:bg-zinc-700 transition-colors border border-zinc-700 shadow-lg"
+              className="px-8 py-4 rounded-2xl bg-zinc-800/40 text-zinc-300 font-bold text-sm border border-zinc-700/50 hover:bg-zinc-800 hover:text-white transition-all active:scale-95"
             >
-              Start New Goal
+              Issue Direct Order
             </button>
           </div>
         </div>
 
-        <div className="flex gap-4 relative z-10">
-          <div className="bg-zinc-950/80 border border-zinc-800/80 rounded-2xl px-6 py-4 flex flex-col items-center justify-center min-w-[140px] shadow-lg">
-            <div className="flex items-center gap-2 text-violet-400 mb-1"><Activity size={16} /><span className="text-3xl font-black">{brainStats.activeMissions || activeOngoing.length}</span></div>
-            <div className="text-[10px] text-zinc-500 uppercase tracking-widest font-semibold text-center">Active Streams</div>
+        <div className="grid grid-rows-2 gap-6">
+          <div className="bg-zinc-900/30 border border-zinc-800/50 rounded-[40px] p-8 flex flex-col items-center justify-center text-center backdrop-blur-md">
+            <div className="w-12 h-12 rounded-full bg-violet-500/10 border border-violet-500/20 flex items-center justify-center mb-4">
+              <Activity size={24} className="text-violet-400" />
+            </div>
+            <span className="text-4xl font-black text-white">{brainStats.activeMissions}</span>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mt-2">Active Streams</span>
           </div>
-          <div className="bg-zinc-950/80 border border-zinc-800/80 rounded-2xl px-6 py-4 flex flex-col items-center justify-center min-w-[140px] shadow-lg">
-            <div className="flex items-center gap-2 text-cyan-400 mb-1"><Target size={16} /><span className="text-3xl font-black">{brainStats.totalMissions || totalCompletedTasks}</span></div>
-            <div className="text-[10px] text-zinc-500 uppercase tracking-widest font-semibold text-center">Tasks Completed</div>
+          <div className="bg-zinc-900/30 border border-zinc-800/50 rounded-[40px] p-8 flex flex-col items-center justify-center text-center backdrop-blur-md">
+            <div className="w-12 h-12 rounded-full bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center mb-4">
+              <CheckCircle size={24} className="text-cyan-400" />
+            </div>
+            <span className="text-4xl font-black text-white">{brainStats.totalMissions}</span>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mt-2">Closed Objectives</span>
           </div>
         </div>
       </div>
 
+      {/* 🔮 STRATEGIC INTELLIGENCE: Risks & Opportunities */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         
-        {/* 🚀 Ongoing Missions (Overnight Progress) */}
-        <section className="space-y-4">
-          <div className="flex items-center gap-2 text-rose-400 border-b border-zinc-800 pb-3">
-            <Flame size={18} />
-            <h3 className="font-bold tracking-wide uppercase text-xs">While you were away</h3>
+        {/* ALPHA OPPORTUNITIES */}
+        <section className="space-y-6">
+          <div className="flex items-center justify-between border-b border-zinc-800/80 pb-4 px-2">
+            <div className="flex items-center gap-3 text-cyan-400">
+               <Zap size={18} className="fill-cyan-400/20" />
+               <h3 className="text-xs font-black uppercase tracking-[0.2em]">Alpha Opportunities</h3>
+            </div>
+            <span className="text-[10px] font-bold text-zinc-500 bg-zinc-900 px-2 py-1 rounded">Decision Quality: High</span>
           </div>
           
-          <div className="flex flex-col gap-3">
-            {activeOngoing.length === 0 ? (
-              <div className="text-sm text-zinc-500 p-6 border border-zinc-800/50 border-dashed rounded-2xl text-center bg-zinc-900/20">
-                No active background tasks. Start a new goal to see autonomous progress here.
+          <div className="grid gap-4">
+            {globalOpportunities.length === 0 ? (
+              <div className="p-8 rounded-3xl border border-zinc-800 border-dashed text-center text-zinc-600 italic text-sm bg-zinc-900/10">
+                Next reflection cycle in progress...
               </div>
             ) : (
-              activeOngoing.map(mission => (
-                <div key={mission.id} className="p-5 rounded-2xl border border-zinc-800 bg-zinc-900/40 hover:border-violet-500/50 hover:bg-zinc-900/60 transition-all cursor-pointer group shadow-md" onClick={() => setActiveWorkspace(mission.workspaceId)}>
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-[10px] font-bold text-rose-400 bg-rose-400/10 px-2 py-1 rounded text-center uppercase tracking-widest border border-rose-500/20 flex items-center gap-1.5">
-                       <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse" /> Running
-                    </span>
-                    <span className="text-xs text-zinc-500 font-mono flex items-center gap-1.5 bg-zinc-950 px-2 py-1 rounded border border-zinc-800">
-                       <Clock size={12} className="text-zinc-600" /> Next: {new Date(mission.nextRun).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                    </span>
-                  </div>
-                  <h4 className="text-base font-semibold text-zinc-200 group-hover:text-violet-300 transition-colors leading-tight mb-2">{mission.goal}</h4>
+              globalOpportunities.map((opp: any) => (
+                <div key={opp.id} className="group p-6 rounded-3xl bg-zinc-900/20 border border-zinc-800/60 hover:border-cyan-500/30 hover:bg-zinc-900/40 transition-all cursor-pointer relative overflow-hidden">
+                  <div className="absolute right-0 top-0 bottom-0 w-1 bg-cyan-500/30 group-hover:bg-cyan-500 transition-all" />
+                  <h4 className="font-bold text-zinc-100 group-hover:text-cyan-400 transition-colors mb-2">{opp.title}</h4>
+                  <p className="text-xs text-zinc-500 leading-relaxed mb-4">{opp.description}</p>
+                  <button className="text-[10px] font-black uppercase tracking-widest text-cyan-500 hover:text-cyan-300 transition-colors">Capitalize Intelligence →</button>
                 </div>
               ))
             )}
           </div>
         </section>
 
-        {/* 📊 Business Performance Summary */}
-        <section className="space-y-4">
-          <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-            <div className="flex items-center gap-2 text-emerald-400">
-              <TrendingUp size={18} />
-              <h3 className="font-bold tracking-wide uppercase text-xs">Business Performance</h3>
+        {/* STRATEGIC RISKS */}
+        <section className="space-y-6">
+          <div className="flex items-center justify-between border-b border-zinc-800/80 pb-4 px-2">
+            <div className="flex items-center gap-3 text-rose-500">
+               <Flame size={18} className="fill-rose-500/20" />
+               <h3 className="text-xs font-black uppercase tracking-[0.2em]">Strategic Risks</h3>
             </div>
-            <button onClick={toggleFinancialView} className="text-[10px] font-bold text-zinc-500 hover:text-zinc-300 uppercase tracking-widest transition-colors">View All</button>
+            <span className="text-[10px] font-bold text-rose-500/60 bg-rose-500/5 px-2 py-1 rounded">OS Integrity: 98%</span>
           </div>
           
-          <div className="grid grid-cols-2 gap-4">
-            <div className="p-4 rounded-2xl bg-zinc-900/40 border border-zinc-800">
-              <div className="text-[10px] uppercase tracking-widest text-zinc-500 mb-1 font-bold">Revenue</div>
-              <div className="text-xl font-bold text-zinc-100">${(finances?.revenue ?? 0).toLocaleString()}</div>
-              <div className="text-[10px] text-emerald-400 mt-1 font-bold">↑ 15% this month</div>
-            </div>
-            <div className="p-4 rounded-2xl bg-zinc-900/40 border border-zinc-800">
-              <div className="text-[10px] uppercase tracking-widest text-zinc-500 mb-1 font-bold">Outstanding</div>
-              <div className="text-xl font-bold text-zinc-100">
-                ${(invoicing?.invoices || []).filter(i => i?.status !== 'paid').reduce((acc, i) => acc + (i?.amount || 0), 0).toLocaleString()}
-              </div>
-              <div className="text-[10px] text-rose-400 mt-1 font-bold">{(invoicing?.invoices || []).filter(i => i?.status === 'overdue').length} Overdue</div>
-            </div>
-          </div>
-        </section>
-
-        {/* 📅 Schedule & Productivity */}
-        <section className="space-y-4">
-          <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-            <div className="flex items-center gap-2 text-violet-400">
-              <Calendar size={18} />
-              <h3 className="font-bold tracking-wide uppercase text-xs">Schedule & Productivity</h3>
-            </div>
-            <div className="flex gap-4">
-               <button onClick={toggleCalendarView} className="text-[10px] font-bold text-zinc-500 hover:text-zinc-300 uppercase tracking-widest transition-colors">Calendar</button>
-               <button onClick={toggleTimeTrackingView} className="text-[10px] font-bold text-zinc-500 hover:text-zinc-300 uppercase tracking-widest transition-colors">Time</button>
-            </div>
-          </div>
-          
-          <div className="space-y-3">
-            {(calendar?.events || []).slice(0, 2).map(event => (
-              <div key={event.id} className="p-4 rounded-2xl bg-zinc-900/40 border border-zinc-800 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className={`w-1 h-6 rounded-full ${event?.type === 'meeting' ? 'bg-violet-500' : 'bg-cyan-500'}`} />
-                  <div>
-                    <div className="text-sm font-bold text-zinc-200">{event?.title}</div>
-                    <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">{event?.startTime ? new Date(event.startTime).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}) : 'No Time'}</div>
-                  </div>
-                </div>
-              </div>
-            ))}
-            <div className="p-4 rounded-2xl bg-violet-600/10 border border-violet-500/20 flex items-center justify-between">
-               <div className="flex items-center gap-3">
-                  <Clock size={16} className="text-violet-400" />
-                  <div className="text-sm font-bold text-violet-300">
-                    {timeTracking?.activeEntry ? 'Timer Running' : 'Ready to start tracking'}
-                  </div>
-               </div>
-               {timeTracking?.activeEntry && <div className="text-sm font-bold text-white animate-pulse">00:45:12</div>}
-            </div>
-          </div>
-        </section>
-
-        {/* 🎯 Next Actions (Manual) */}
-        <section className="space-y-4">
-          <div className="flex items-center gap-2 text-cyan-400 border-b border-zinc-800 pb-3">
-            <Target size={18} />
-            <h3 className="font-bold tracking-wide uppercase text-xs">Action Required</h3>
-          </div>
-          
-          <div className="flex flex-col gap-3">
-            {allActions.length === 0 ? (
-              <div className="text-sm text-zinc-500 p-6 border border-zinc-800/50 border-dashed rounded-2xl text-center bg-zinc-900/20">
-                You're all caught up! No actions required right now.
+          <div className="grid gap-4">
+            {globalRisks.length === 0 ? (
+              <div className="p-8 rounded-3xl border border-zinc-800 border-dashed text-center text-zinc-600 italic text-sm bg-zinc-900/10">
+                No critical threats detected.
               </div>
             ) : (
-              allActions.slice(0, 3).map(action => (
-                <div key={action.id} className="p-4 rounded-2xl border border-zinc-800 bg-zinc-900/20 group relative overflow-hidden flex items-center justify-between">
-                  <div className="flex flex-col">
-                    <h4 className="font-bold text-zinc-200 text-sm group-hover:text-cyan-400 transition-colors">{action.title}</h4>
-                    <p className="text-[10px] text-zinc-500 mt-1 uppercase tracking-widest font-bold">{action.goal}</p>
+              globalRisks.map((risk: any) => (
+                <div key={risk.id} className="p-6 rounded-3xl bg-zinc-900/20 border border-zinc-800/60 hover:border-rose-500/30 transition-all relative overflow-hidden">
+                  <div className="absolute left-0 top-0 bottom-0 w-1 bg-rose-500/30" />
+                  <div className="flex items-start justify-between mb-2">
+                    <h4 className="font-bold text-zinc-100">{risk.title}</h4>
+                    <span className="text-[8px] font-black uppercase tracking-tighter px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400 border border-rose-500/30">{risk.severity}</span>
                   </div>
-                  <button 
-                    onClick={() => completeAction(action.workspaceId, action.id)}
-                    className="p-2 rounded-xl bg-zinc-800 text-zinc-400 hover:bg-emerald-600 hover:text-white transition-all"
-                  >
-                    <CheckCircle size={16} />
-                  </button>
+                  <p className="text-xs text-zinc-500 mb-4">{risk.description}</p>
+                  <div className="flex flex-wrap gap-2">
+                    {(risk.mitigations || []).map((m: string, i: number) => (
+                      <span key={i} className="text-[9px] font-bold text-zinc-400 bg-zinc-800/50 px-2 py-1 rounded-lg border border-zinc-700/30">{m}</span>
+                    ))}
+                  </div>
                 </div>
               ))
             )}
           </div>
         </section>
       </div>
+
+      {/* 🦾 UNIT DEPLOYMENT: Autonomous Agent Spawning */}
+      <section className="space-y-6">
+        <div className="flex items-center gap-3 text-violet-400 border-b border-zinc-800/80 pb-4 px-2">
+           <Bot size={18} className="fill-violet-400/20" />
+           <h3 className="text-xs font-black uppercase tracking-[0.2em]">Unit Deployment Center</h3>
+        </div>
+        
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+           {[
+             { type: 'researcher', icon: <BookOpen />, label: 'Deep Research', color: 'violet' },
+             { type: 'analyst', icon: <TrendingUp />, label: 'Strategic Analysis', color: 'cyan' },
+             { type: 'code_architect', icon: <Activity />, label: 'Code Engineering', color: 'emerald' },
+             { type: 'summarizer', icon: <Inbox />, label: 'Data Synthesis', color: 'amber' }
+           ].map(unit => (
+             <button 
+              key={unit.type}
+              onClick={() => spawnAgent(unit.type as any)}
+              className="p-6 rounded-3xl bg-zinc-900/30 border border-zinc-800/60 hover:border-zinc-700 hover:bg-zinc-800/40 transition-all flex flex-col items-center gap-4 text-center group"
+             >
+                <div className={`w-12 h-12 rounded-2xl bg-zinc-800 border border-zinc-700 flex items-center justify-center group-hover:scale-110 transition-transform`}>
+                   {unit.icon}
+                </div>
+                <div>
+                   <div className="text-sm font-black text-zinc-200">{unit.label}</div>
+                   <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mt-1">Deploy Unit</div>
+                </div>
+             </button>
+           ))}
+        </div>
+      </section>
 
     </div>
   );
