@@ -1,0 +1,19 @@
+{
+  "name": "nexus-os",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Nexus OS — The OS Layer for Artificial Intelligence",
+  "packageManager": "pnpm@9.5.0",
+  "scripts": {
+    "dev":       "concurrently -n API,WEB -c magenta,cyan \"pnpm --filter @nexus-os/api dev\" \"pnpm --filter @nexus-os/web dev\"",
+    "dev:api":   "pnpm --filter @nexus-os/api dev",
+    "dev:web":   "pnpm --filter @nexus-os/web dev",
+    "build":     "pnpm --filter @nexus-os/api build && pnpm --filter @nexus-os/web build",
+    "lint":      "pnpm -r lint",
+    "typecheck": "pnpm -r exec tsc --noEmit"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "typescript":   "^5.5.3"
+  }
+}
