@@ -1,79 +1,67 @@
-# 🌌 Nexus OS: The High-Reasoning Agentic Operating System
+# 🌌 Nexus OS: The High-Reasoning Agentic Operating System (v2.0)
 
-Nexus OS is not just an AI wrapper; it is a **Distributed Agentic Reasoning Engine**. It is designed to orchestrate complex, multi-step missions by recruiting specialized AI agents, coordinating their logic in a Directed Acyclic Graph (DAG), and performing "Deep Semantic Audits" to ensure absolute strategic accuracy.
-
----
-
-## 🎯 1. Product Vision (The "Why")
-
-### For the Customer
-In a world of "Generatve AI" that often hallucinations or provides shallow answers, Nexus OS provides **Verified Intelligence**. 
-- **Goal-Oriented**: You don't "chat" with Nexus; you give it a **Goal**.
-- **Self-Correcting**: It identifies its own logical gaps and injects "Correction Waves" automatically.
-- **Transparent**: The **Reasoning Canvas** lets you see every thought, node, and decision in real-time.
-
-### For the Marketing Team (The "Nexus Alpha")
-Nexus OS wins because it is the only platform that uses the **"Council of Three"** pattern. While competitors rely on a single LLM call, Nexus uses a trio of models—two specialists and a judge—to synthesize truth. This is the **Agentic Alpha** that creates enterprise-grade trust.
+Nexus OS is a **Generation 2 (G2) Proactive Agentic Operating System**. Unlike standard AI assistants that wait for prompts, Nexus OS is a self-reflective entity that identifies risks, capitalizes on opportunities, and manages complex multi-mission architectures with industrial-grade durability.
 
 ---
 
-## 🧠 2. Functional Core (How It Works)
+## 🎯 1. The Core Vision: From Chat to Command
+Nexus OS transforms the AI experience from a "text box" into a **Command Center**. It is designed for founders, developers, and high-performance individuals who need **Autonomous Orchestration** rather than just "content generation."
 
-Nexus OS operates through three primary "Intelligence Blocks":
+### Why Nexus OS v2.0?
+- **Proactive Intelligence**: The system scans your entire workspace every 5 minutes to find strategic insights you might have missed.
+- **Industrial Durability**: Every mission is now "Durable"—it survives server restarts, network drops, and browser crashes.
+- **Multi-Persona Versatility**: Specialized modes (Founder, Developer, Student) that change the system's "IQ" and priority logic.
 
-| Component | Logic Pattern | Primary Function |
+---
+
+## 🧠 2. The Architecture: "Master Brain V2"
+At the heart of the OS is the **Master Brain**, a centralized reasoning engine that manages the lifecycle of all agents.
+
+### The Intelligence Pillars:
+| Pillar | Logic Engine | Responsibility |
 | :--- | :--- | :--- |
-| **Master Brain** | Global Reflection | Scans all missions 24/7 to find cross-mission insights. |
-| **Agent Runner** | Council of Three | Executes critical tasks using 2 specialists + 1 logical judge. |
-| **Chief Analyst** | Semantic Auditor | Cross-examines all findings for strategic contradictions. |
-
-### The "Autonomous Remediation" Loop
-If the **Chief Analyst** detects a contradiction (e.g., a "Market Researcher" says a price point is too high, but the "Financial Analyst" says it's optimal), Nexus OS doesn't stop. It automatically spawns a **Correction Wave** to resolve the conflict and refine the strategy before the mission concludes.
+| **Global Reflection** | Groq (Llama-3 70B) | Runs 24/7 background audits to identify cross-mission opportunities. |
+| **Neural HUD** | SSE Interrupt Stack | A proactive alert system that pauses execution for critical human-in-the-loop (HITL) checks. |
+| **Durable Task Queue** | Worker/Bus Engine | Ensures that if a background agent hits a rate limit or a crash, it automatically retries and resumes without losing state. |
+| **Council of Three** | Multi-Model Consensus | Executes tasks using two specialists and one logical judge to eliminate hallucinations. |
 
 ---
 
-## 🛠️ 3. Technical Architecture (For the Tech Team)
+## 🚀 3. Key Ecosystem Features
 
-### Typed DAG Orchestration
-Nexus OS translates goals into a **TaskDAG**. Tasks are executed in "Waves" based on their dependency tree.
-- **Typed Artifacts**: Every agent output is constrained by a TypeScript interface (e.g., `ResearchArtifact`, `LeadListArtifact`).
-- **SSE Streaming**: Progress is streamed via Server-Sent Events (SSE) with a **Watchdog Resilience** layer to handle network drops.
+### 📡 Master Brain Command Center (UI)
+The premium, glassmorphic dashboard provides total observability:
+- **Telemetry HUD**: Real-time stats on active missions, finished tasks, and system health.
+- **Strategic Insights**: A dedicated feed for **Alpha Opportunities** and **Strategic Risks**.
+- **Unit Deployment Center**: A one-click terminal to "spawn" specialized units (Researchers, Analysts, Architects) for ad-hoc work.
 
-### Graph-Based Mission Memory
-Unlike standard chat history, Nexus uses a **Context Graph**.
-- **Node Weighting**: Data is weighted by "Temporal Relevance" and "Goal Proximity."
-- **Pruning**: When memory hits its limit (100 entries), it uses an importance-based pruning algorithm to keep the most critical findings while archiving noise.
-
-### Global Rate-Limit Governor
-Stability is maintained by a centralized **Governor**.
-- **Backpressure**: Prevents "429 Rate Limit Storms" by pausing all concurrent agents when an API limit is hit.
-- **Recovery Waves**: Implements a prioritized re-queueing system with exponential backoff and jitter.
+### ⛓️ Durable Mission Engine (Backend)
+The v2.0 backend has migrated to a job-based architecture:
+- **Event Bus**: Decouples the UI from the execution logic, allowing real-time streaming of deep-reasoning logs.
+- **Mission Storage**: All missions are now stored in a persistent cache, allowing you to resume work weeks later with full context.
+- **Wait-for-Approval Nodes**: High-risk actions (spending money, sending emails) automatically trigger a "Neural Interrupt" and wait for your signature.
 
 ---
 
-## 📔 4. User Manual & Manual Operations
+## 📔 4. System Operation Modes
 
-### System Modes
-1.  🚀 **Founder Mode**: High-level strategy, market analysis, and growth modeling.
-2.  💻 **Developer Mode**: Technical specs, code generation, and architectural cross-referencing.
-3.  🎓 **Student Mode**: Pedagogical breakdowns, research synthesis, and "Chain of Thought" learning.
+### 🚀 Founder Mode
+Focuses on **Growth & Strategy**. Highly prioritized on market research, SWOT analysis, and financial modeling. The Master Brain will flag "Market Risks" and "Revenue Opportunities" first.
 
-### Strategic Operations
-- **Initiating a Mission**: Type a goal like *"Create a 12-month GTM strategy for a SaaS tool in the ESG space"* into the Command Bar.
-- **Reasoning Canvas**: Use the interactive graph to monitor agent lineage.
-- **HITL Checkpoints**: Nexus will pause for "High-Risk" tasks (e.g., sending an email or spending budget). You must click **Approve** on the node to resume.
-- **Dossier Export**: Once complete, hit "Export" to download a unified Markdown report containing every verified artifact.
+### 💻 Developer Mode
+Optimized for **Technical Precision**. It understands codebase structures, performs cross-file auditing, and handles ad-hoc "Code Engineering" deployments.
+
+### 🎓 Student Mode
+Designed for **Cognitive Learning**. It breaks down complex subjects into "Pedagogical Nodes," provides source-backed research, and uses a "Chain of Thought" learned-synthesis engine.
 
 ---
 
-## 🚀 5. Why People Buy Nexus OS
-
-1. **Precision over Prediction**: Nexus doesn't guess; it **Audits**.
-2. **Infinite Context**: Through its Graph Memory, it remembers the core strategy across thousands of tasks.
-3. **Enterprise Stability**: The Global Governor ensures it runs 24/7 without crashing on API limits.
-4. **Beautiful Observability**: The premium workspace makes complex AI orchestration feel like playing a high-stakes strategy game.
+## 🛰️ 5. Deployment & Reliability
+- **Zero-Cost Inference**: Powered by Groq for lightning-fast, free cloud inference.
+- **Resilient SSE**: A custom SSE-Bus that survives intermittent internet connectivity.
+- **Typed Contract Core**: The entire system is built on a shared `@nexus-os/types` package, ensuring absolute data integrity between the Brain and the UI.
 
 ---
 
-**Nexus OS v1.0.0 — The Future of Agentic Orchestration.**
-[GitHub Repository](https://github.com/akshat92008/nexus.os)
+**Nexus OS — Orchestrating the Autonomous Future.**
+[GitHub: akshat92008/nexus.os](https://github.com/akshat92008/nexus.os)

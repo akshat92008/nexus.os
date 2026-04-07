@@ -24,6 +24,11 @@ export const missionsQueue = new Queue('missions', { connection });
  */
 export const tasksQueue = new Queue('tasks', { connection });
 
+/**
+ * System Queue: Handles periodic maintenance, master brain loops, and schedules
+ */
+export const systemQueue = new Queue('system', { connection });
+
 // ── Job Types ────────────────────────────────────────────────────────────────
 
 export interface MissionJobData {

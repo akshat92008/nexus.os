@@ -1,266 +1,86 @@
 /**
- * Agentic OS — Scheduler Engine
+ * Agentic OS — Scheduler Engine (BullMQ-Backed)
  *
  * Converts the one-shot DAG into a Living Execution Graph.
- * Supports time-based, data-change-based, and user-action-based triggers.
- *
- * Features:
- *   - scheduleWorkspace(): register a recurring mission
- *   - cancelSchedule(): remove a schedule
- *   - StaleDataDetector: auto-triggers when workspace data is >24h old
- *   - EventTriggerSystem: fires on user_action and external data changes
+ * Replaces the old setInterval tick with durable BullMQ repeatable jobs.
  */
 
-// ── Types ────────────────────────────────────────────────────────────────────
+import { systemQueue } from './queue/queue.js';
+import { nexusStateStore } from './storage/nexusStateStore.js';
+import type { FrequencyType, ScheduleSnapshot } from '@nexus-os/types';
 
-export type TriggerType = 'time' | 'data_change' | 'user_action' | 'manual';
-export type FrequencyType = 'hourly' | 'daily' | 'weekly' | 'monthly' | 'custom';
+// ── Frequency to Cron Map ──────────────────────────────────────────────────
 
-export interface ScheduleConfig {
-  scheduleId:    string;
-  workspaceId:   string;
-  goal:          string;
-  userId:        string;
-  triggerType:   TriggerType;
-  frequency:     FrequencyType;
-  /** cron-like: ms interval for 'custom', or computed from frequency */
-  intervalMs:    number;
-  lastRun:       number | null;
-  nextRun:       number;
-  enabled:       boolean;
-  createdAt:     number;
-  runCount:      number;
-  maxRuns?:      number; // optional cap
-}
-
-export interface ScheduleEvent {
-  scheduleId:  string;
-  workspaceId: string;
-  goal:        string;
-  userId:      string;
-  triggeredAt: number;
-  triggerType: TriggerType;
-}
-
-type ScheduleCallback = (event: ScheduleEvent) => Promise<void>;
-
-// ── Frequency to Interval Map ────────────────────────────────────────────────
-
-const FREQUENCY_MS: Record<FrequencyType, number> = {
-  hourly:  1_000 * 60 * 60,
-  daily:   1_000 * 60 * 60 * 24,
-  weekly:  1_000 * 60 * 60 * 24 * 7,
-  monthly: 1_000 * 60 * 60 * 24 * 30,
-  custom:  1_000 * 60 * 60, // default, overridden by user
+const FREQUENCY_TO_CRON: Record<FrequencyType, string> = {
+  hourly:  '0 * * * *',
+  daily:   '0 0 * * *',
+  weekly:  '0 0 * * 0',
+  monthly: '0 0 1 * *',
+  research: '0 */6 * * *', // Custom frequency for research
 };
 
-// ── Stale Data Detector ──────────────────────────────────────────────────────
-
-const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours
-
-export function isDataStale(lastRunTimestamp: number | null): boolean {
-  if (!lastRunTimestamp) return true;
-  return Date.now() - lastRunTimestamp > STALE_THRESHOLD_MS;
-}
-
-// ── Scheduler Engine ──────────────────────────────────────────────────────────
-
 class SchedulerEngine {
-  private schedules: Map<string, ScheduleConfig> = new Map();
-  private callbacks: ScheduleCallback[] = [];
-  private tickInterval: NodeJS.Timeout | null = null;
-  private readonly TICK_MS = 30_000; // Evaluate every 30 seconds
-
-  // ── Public API ──────────────────────────────────────────────────────────────
-
   /**
    * Register a recurring execution on a workspace.
+   * Now uses BullMQ repeatable jobs for cloud-safe scheduling.
    */
-  scheduleWorkspace(params: {
+  async scheduleWorkspace(params: {
     workspaceId: string;
     goal:        string;
     userId:      string;
     frequency:   FrequencyType;
-    triggerType?: TriggerType;
-    customIntervalMs?: number;
-    maxRuns?: number;
-  }): ScheduleConfig {
+  }): Promise<void> {
     const scheduleId = `sched_${crypto.randomUUID().slice(0, 10)}`;
-    const intervalMs = params.customIntervalMs ?? FREQUENCY_MS[params.frequency];
-    const now = Date.now();
+    const cron = FREQUENCY_TO_CRON[params.frequency] || '0 0 * * *';
 
-    const config: ScheduleConfig = {
+    // 1. Persist to DB
+    await nexusStateStore.upsertSchedule(params.userId, {
       scheduleId,
-      workspaceId:  params.workspaceId,
-      goal:         params.goal,
-      userId:       params.userId,
-      triggerType:  params.triggerType ?? 'time',
-      frequency:    params.frequency,
-      intervalMs,
-      lastRun:      null,
-      nextRun:      now + intervalMs,
-      enabled:      true,
-      createdAt:    now,
-      runCount:     0,
-      maxRuns:      params.maxRuns,
-    };
+      workspaceId: params.workspaceId,
+      goal: params.goal,
+      cron,
+      enabled: true,
+      lastRun: null,
+      nextRun: 0, // Will be calculated by BullMQ
+    } as ScheduleSnapshot);
 
-    this.schedules.set(scheduleId, config);
-    console.log(`[Scheduler] ⏰ Registered: ${scheduleId} (${params.frequency}) → ws:${params.workspaceId}`);
-    return config;
-  }
-
-  /**
-   * Cancel a schedule by ID.
-   */
-  cancelSchedule(scheduleId: string): boolean {
-    const existed = this.schedules.has(scheduleId);
-    this.schedules.delete(scheduleId);
-    if (existed) console.log(`[Scheduler] ❌ Cancelled: ${scheduleId}`);
-    return existed;
-  }
-
-  /**
-   * Cancel all schedules for a workspace.
-   */
-  cancelWorkspaceSchedules(workspaceId: string): number {
-    let count = 0;
-    for (const [id, sched] of this.schedules) {
-      if (sched.workspaceId === workspaceId) {
-        this.schedules.delete(id);
-        count++;
+    // 2. Add to BullMQ as a repeatable job
+    await systemQueue.add(
+      `scheduled_mission_${scheduleId}`,
+      {
+        type: 'scheduled_mission',
+        userId: params.userId,
+        workspaceId: params.workspaceId,
+        goal: params.goal,
+      },
+      {
+        repeat: { pattern: cron },
+        jobId: scheduleId, // Use fixed ID to allow cancellation
       }
-    }
-    return count;
+    );
+
+    console.log(`[Scheduler] ⏰ Cloud-safe schedule registered: ${scheduleId} (${params.frequency})`);
   }
 
   /**
-   * Pause a schedule without removing it.
+   * Cancel a schedule.
    */
-  pauseSchedule(scheduleId: string): void {
-    const sched = this.schedules.get(scheduleId);
-    if (sched) sched.enabled = false;
-  }
-
-  resumeSchedule(scheduleId: string): void {
-    const sched = this.schedules.get(scheduleId);
-    if (sched) {
-      sched.enabled = true;
-      sched.nextRun = Date.now() + sched.intervalMs;
+  async cancelSchedule(scheduleId: string): Promise<void> {
+    // 1. Remove from BullMQ
+    // BullMQ requires the same repeat options to remove a repeatable job
+    // This is a bit tricky, usually we'd fetch the job first.
+    const repeatableJobs = await systemQueue.getRepeatableJobs();
+    const job = repeatableJobs.find(j => j.id === scheduleId);
+    
+    if (job) {
+      await systemQueue.removeRepeatableByKey(job.key);
     }
-  }
 
-  /**
-   * Register a callback to be called when a schedule fires.
-   */
-  onTrigger(cb: ScheduleCallback): void {
-    this.callbacks.push(cb);
-  }
-
-  /**
-   * Manually trigger a schedule immediately.
-   */
-  async triggerNow(scheduleId: string): Promise<void> {
-    const sched = this.schedules.get(scheduleId);
-    if (!sched) throw new Error(`Schedule ${scheduleId} not found`);
-    await this.fire(sched, 'manual');
-  }
-
-  /**
-   * Fire when user explicitly performs an action (user_action trigger).
-   */
-  async notifyUserAction(workspaceId: string, actionType: string): Promise<void> {
-    for (const sched of this.schedules.values()) {
-      if (sched.workspaceId === workspaceId && sched.triggerType === 'user_action' && sched.enabled) {
-        console.log(`[Scheduler] 👆 User action "${actionType}" triggered schedule ${sched.scheduleId}`);
-        await this.fire(sched, 'user_action');
-      }
-    }
-  }
-
-  getSchedule(scheduleId: string): ScheduleConfig | undefined {
-    return this.schedules.get(scheduleId);
-  }
-
-  listSchedules(): ScheduleConfig[] {
-    return Array.from(this.schedules.values());
-  }
-
-  listWorkspaceSchedules(workspaceId: string): ScheduleConfig[] {
-    return this.listSchedules().filter(s => s.workspaceId === workspaceId);
-  }
-
-  restoreSchedule(config: ScheduleConfig): void {
-    this.schedules.set(config.scheduleId, { ...config });
-  }
-
-  // ── Internal Tick ───────────────────────────────────────────────────────────
-
-  start(): void {
-    if (this.tickInterval) return;
-    console.log(`[Scheduler] 🚀 Engine started (tick: ${this.TICK_MS}ms)`);
-    this.tickInterval = setInterval(() => this.tick(), this.TICK_MS);
-  }
-
-  stop(): void {
-    if (this.tickInterval) {
-      clearInterval(this.tickInterval);
-      this.tickInterval = null;
-    }
-  }
-
-  private async tick(): Promise<void> {
-    const now = Date.now();
-    for (const sched of this.schedules.values()) {
-      if (!sched.enabled) continue;
-      if (now < sched.nextRun) continue;
-      if (sched.maxRuns && sched.runCount >= sched.maxRuns) {
-        sched.enabled = false;
-        continue;
-      }
-      await this.fire(sched, sched.triggerType);
-    }
-  }
-
-  private async fire(sched: ScheduleConfig, triggerType: TriggerType): Promise<void> {
-    const now = Date.now();
-    sched.lastRun  = now;
-    sched.nextRun  = now + sched.intervalMs;
-    sched.runCount++;
-
-    const event: ScheduleEvent = {
-      scheduleId:  sched.scheduleId,
-      workspaceId: sched.workspaceId,
-      goal:        sched.goal,
-      userId:      sched.userId,
-      triggeredAt: now,
-      triggerType,
-    };
-
-    console.log(`[Scheduler] 🔥 Firing ${sched.scheduleId} (#${sched.runCount}) — "${sched.goal.slice(0, 40)}"`);
-
-    for (const cb of this.callbacks) {
-      try { await cb(event); }
-      catch (err) { console.error(`[Scheduler] Callback error:`, err); }
-    }
-  }
-
-  get stats() {
-    const schedules = this.listSchedules();
-    return {
-      total:    schedules.length,
-      enabled:  schedules.filter(s => s.enabled).length,
-      paused:   schedules.filter(s => !s.enabled).length,
-      upcoming: schedules
-        .filter(s => s.enabled)
-        .sort((a, b) => a.nextRun - b.nextRun)
-        .slice(0, 5)
-        .map(s => ({ scheduleId: s.scheduleId, nextRun: s.nextRun, goal: s.goal.slice(0, 40) })),
-    };
+    // 2. Update DB (could also just delete)
+    // await nexusStateStore.removeSchedule(userId, scheduleId);
+    
+    console.log(`[Scheduler] ❌ Cancelled: ${scheduleId}`);
   }
 }
 
-// ── Export Singleton ──────────────────────────────────────────────────────────
-
 export const schedulerEngine = new SchedulerEngine();
-schedulerEngine.start();

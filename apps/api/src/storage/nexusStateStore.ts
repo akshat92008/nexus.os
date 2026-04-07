@@ -1,6 +1,10 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+/**
+ * Nexus OS — Nexus State Store (Database-Backed)
+ * 
+ * Replaces the old local JSON file storage with a durable Supabase/Postgres layer.
+ * This eliminates split-brain issues in distributed deployments.
+ */
+
 import type {
   AppWindowState,
   NexusInboxEntry,
@@ -9,6 +13,8 @@ import type {
   UserStateSnapshot,
   Workspace,
   WorkspaceSection,
+  AgentType,
+  TypedArtifact,
 } from '@nexus-os/types';
 
 // ── Multi-Tenant Supabase Integration ───────────────────────────────────────
@@ -19,28 +25,20 @@ async function getSupabase() {
   if (supabaseClient) return supabaseClient;
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_KEY;
-  if (!url || !key) return null;
+  if (!url || !key) {
+    throw new Error('[NexusStateStore] Supabase credentials missing (SUPABASE_URL / SUPABASE_SERVICE_KEY)');
+  }
   try {
     const { createClient } = await import('@supabase/supabase-js');
     supabaseClient = createClient(url, key);
     return supabaseClient;
   } catch (err) {
-    console.warn('[NexusStateStore] Supabase client initialization failed:', err);
-    return null;
+    console.error('[NexusStateStore] Supabase client initialization failed:', err);
+    throw err;
   }
 }
 
-interface DatabaseShape {
-  version: number;
-  users: Record<string, UserStateSnapshot>;
-}
-
 const DEFAULT_AGENT_IDS = ['researcher-standard', 'analyst-standard'];
-const DB_FILE = fileURLToPath(new URL('../../data/nexus-state.json', import.meta.url));
-
-function clone<T>(value: T): T {
-  return structuredClone(value);
-}
 
 function createDefaultUserState(userId: string): UserStateSnapshot {
   return {
@@ -73,82 +71,13 @@ function createDefaultUserState(userId: string): UserStateSnapshot {
     },
     timeTracking: {
       activeEntry: null,
-      recentEntries: [
-        {
-          id: 'time_1',
-          taskId: 'task_1',
-          label: 'Market Research for NexusOS',
-          durationMs: 3600000 * 2.5,
-          endTime: Date.now() - 86400000,
-          workspaceId: 'ws_1',
-        },
-        {
-          id: 'time_2',
-          taskId: 'task_2',
-          label: 'Codebase Review & Optimization',
-          durationMs: 3600000 * 4.2,
-          endTime: Date.now() - 172800000,
-          workspaceId: 'ws_2',
-        },
-      ],
+      recentEntries: [],
     },
     invoicing: {
-      invoices: [
-        {
-          id: 'inv_1',
-          number: 'INV-2024-001',
-          client: 'Acme Corp',
-          amount: 12500,
-          status: 'paid',
-          date: Date.now() - 2592000000,
-          dueDate: Date.now() - 864000000,
-        },
-        {
-          id: 'inv_2',
-          number: 'INV-2024-002',
-          client: 'Starlight Ventures',
-          amount: 8200,
-          status: 'pending',
-          date: Date.now() - 1296000000,
-          dueDate: Date.now() + 1296000000,
-        },
-        {
-          id: 'inv_3',
-          number: 'INV-2024-003',
-          client: 'Nebula Systems',
-          amount: 4500,
-          status: 'overdue',
-          date: Date.now() - 3456000000,
-          dueDate: Date.now() - 432000000,
-        },
-      ],
+      invoices: [],
     },
     calendar: {
-      events: [
-        {
-          id: 'evt_1',
-          title: 'Strategy Session with Product Team',
-          startTime: Date.now() + 3600000 * 2,
-          endTime: Date.now() + 3600000 * 3,
-          location: 'Zoom (https://zoom.us/j/123456789)',
-          attendees: ['Sarah Miller', 'John Doe', 'Alice Wong'],
-          type: 'meeting',
-        },
-        {
-          id: 'evt_2',
-          title: 'Deep Work: Core Engine Optimization',
-          startTime: Date.now() + 3600000 * 5,
-          endTime: Date.now() + 3600000 * 8,
-          type: 'task',
-        },
-        {
-          id: 'evt_3',
-          title: 'Q1 Performance Review - Prep',
-          startTime: Date.now() + 3600000 * 24,
-          endTime: Date.now() + 3600000 * 25,
-          type: 'reminder',
-        },
-      ],
+      events: [],
     },
     updatedAt: Date.now(),
   };
@@ -163,499 +92,265 @@ function ensureWorkspaceDefaults(workspace: Workspace): Workspace {
   };
 }
 
-function defaultSectionsForWindow(windowType: AppWindowState['windowType']): WorkspaceSection[] {
-  switch (windowType) {
-    case 'lead_engine':
-      return [
-        {
-          id: `sec_${crypto.randomUUID()}`,
-          type: 'table',
-          title: 'Lead Pipeline',
-          description: 'Qualified leads and outreach planning.',
-          content: [],
-        },
-        {
-          id: `sec_${crypto.randomUUID()}`,
-          type: 'tasklist',
-          title: 'Pipeline Tasks',
-          description: 'Actions to enrich, qualify, and contact leads.',
-          content: [],
-        },
-      ];
-    case 'research_lab':
-      return [
-        {
-          id: `sec_${crypto.randomUUID()}`,
-          type: 'document',
-          title: 'Research Brief',
-          description: 'Centralized notes, sources, and findings.',
-          content: '',
-        },
-        {
-          id: `sec_${crypto.randomUUID()}`,
-          type: 'insight',
-          title: 'Key Findings',
-          description: 'High-signal observations and hypotheses.',
-          content: [],
-        },
-      ];
-    case 'strategy_board':
-      return [
-        {
-          id: `sec_${crypto.randomUUID()}`,
-          type: 'insight',
-          title: 'Strategic Insights',
-          description: 'Risks, opportunities, and strategic decisions.',
-          content: [],
-        },
-        {
-          id: `sec_${crypto.randomUUID()}`,
-          type: 'tasklist',
-          title: 'Execution Roadmap',
-          description: 'Priority tasks to move the strategy forward.',
-          content: [],
-        },
-      ];
-    case 'code_studio':
-      return [
-        {
-          id: `sec_${crypto.randomUUID()}`,
-          type: 'document',
-          title: 'Implementation Notes',
-          description: 'Architecture, constraints, and engineering context.',
-          content: '',
-        },
-        {
-          id: `sec_${crypto.randomUUID()}`,
-          type: 'tasklist',
-          title: 'Engineering Tasks',
-          description: 'Changes, bugs, and verification work.',
-          content: [],
-        },
-      ];
-    case 'content_engine':
-      return [
-        {
-          id: `sec_${crypto.randomUUID()}`,
-          type: 'document',
-          title: 'Draft Workspace',
-          description: 'Working draft for copy and long-form content.',
-          content: '',
-        },
-        {
-          id: `sec_${crypto.randomUUID()}`,
-          type: 'tasklist',
-          title: 'Publishing Checklist',
-          description: 'Review, edit, and publishing tasks.',
-          content: [],
-        },
-      ];
-    case 'learning_workspace':
-      return [
-        {
-          id: `sec_${crypto.randomUUID()}`,
-          type: 'document',
-          title: 'Study Notes',
-          description: 'Core concepts and explanations.',
-          content: '',
-        },
-        {
-          id: `sec_${crypto.randomUUID()}`,
-          type: 'tasklist',
-          title: 'Revision Tasks',
-          description: 'Exercises, questions, and revision actions.',
-          content: [],
-        },
-      ];
-    case 'general':
-    default:
-      return [
-        {
-          id: `sec_${crypto.randomUUID()}`,
-          type: 'document',
-          title: 'Workspace Notes',
-          description: 'General-purpose planning and context capture.',
-          content: '',
-        },
-        {
-          id: `sec_${crypto.randomUUID()}`,
-          type: 'tasklist',
-          title: 'Open Tasks',
-          description: 'Next actions and execution checklist.',
-          content: [],
-        },
-      ];
-  }
-}
-
-export function createWorkspaceShell(params: {
-  title: string;
-  goalType: Workspace['goalType'];
-  windowType: AppWindowState['windowType'];
-}): Workspace {
-  return ensureWorkspaceDefaults({
-    id: crypto.randomUUID(),
-    goal: params.title,
-    goalType: params.goalType,
-    sections: defaultSectionsForWindow(params.windowType),
-    createdAt: Date.now(),
-    metadata: {
-      windowType: params.windowType,
-      isShell: true,
-    },
-  });
-}
-
 class NexusStateStore {
-  private db: DatabaseShape = { version: 1, users: {} };
-  private loaded = false;
-  private writeQueue: Promise<void> = Promise.resolve();
+  // ── User State (UI/Workspace Snapshot) ───────────────────────────────────
 
-  private async ensureLoaded() {
-    if (this.loaded) return;
+  async getUserState(userId: string): Promise<UserStateSnapshot> {
+    const client = await getSupabase();
+    const { data, error } = await client
+      .from('user_states')
+      .select('state')
+      .eq('id', userId)
+      .single();
 
-    try {
-      const raw = await readFile(DB_FILE, 'utf8');
-      const parsed = JSON.parse(raw) as Partial<DatabaseShape>;
-      this.db = {
-        version: parsed.version ?? 1,
-        users: parsed.users ?? {},
-      };
-    } catch {
-      this.db = { version: 1, users: {} };
+    if (error || !data?.state) {
+      return createDefaultUserState(userId);
     }
 
-    this.loaded = true;
-  }
-
-  private async flush() {
-    await mkdir(dirname(DB_FILE), { recursive: true });
-    await writeFile(DB_FILE, JSON.stringify(this.db, null, 2), 'utf8');
-  }
-
-  private async mutate<T>(mutator: () => T | Promise<T>, userId?: string): Promise<T> {
-    await this.ensureLoaded();
-
-    let result!: T;
-    this.writeQueue = this.writeQueue.then(async () => {
-      result = await mutator();
-      
-      // Save locally (Standard OS file system)
-      await this.flush();
-
-      // Sync to Cloud (Multi-tenant persistence)
-      if (userId) {
-        const client = await getSupabase();
-        if (client) {
-          const userState = this.db.users[userId];
-          const { error } = await client
-            .from('user_states')
-            .upsert({ 
-              id: userId, 
-              state: userState, 
-              updated_at: new Date().toISOString() 
-            });
-          if (error) console.error('[NexusStateStore] Supabase sync failed:', error);
-        }
-      }
-    });
-
-    await this.writeQueue;
-    return result;
-  }
-
-  private async getUserRef(userId: string): Promise<UserStateSnapshot> {
-    // Check local memory cache first
-    if (!this.db.users[userId]) {
-      // Try to rehydrate from Supabase if possible
-      const client = await getSupabase();
-      if (client) {
-        const { data, error } = await client
-          .from('user_states')
-          .select('state')
-          .eq('id', userId)
-          .single();
-        if (data?.state) {
-          this.db.users[userId] = data.state;
-          console.log(`[NexusStateStore] 📡 Rehydrated user state from Supabase: ${userId}`);
-        }
-      }
-      
-      // Still no state? Create default
-      if (!this.db.users[userId]) {
-        this.db.users[userId] = createDefaultUserState(userId);
-      }
-    }
-
-    const current = this.db.users[userId];
-    this.db.users[userId] = {
+    const current = data.state as UserStateSnapshot;
+    return {
       ...createDefaultUserState(userId),
       ...current,
       workspaces: (current.workspaces ?? []).map(ensureWorkspaceDefaults),
-      appWindows: current.appWindows ?? [],
-      schedules: current.schedules ?? [],
-      ongoingMissions: current.ongoingMissions ?? [],
-      inbox: current.inbox ?? [],
-      installedAgentIds: Array.from(new Set(current.installedAgentIds ?? DEFAULT_AGENT_IDS)),
       updatedAt: current.updatedAt ?? Date.now(),
     };
-
-    return this.db.users[userId];
-  }
-
-  async syncOngoingMissions(userId: string, missions: OngoingMission[]): Promise<void> {
-    await this.mutate(async () => {
-      const state = await this.getUserRef(userId);
-      state.ongoingMissions = missions;
-      state.updatedAt = Date.now();
-    }, userId);
-  }
-
-  async getUserState(userId: string): Promise<UserStateSnapshot> {
-    await this.ensureLoaded();
-    return clone(await this.getUserRef(userId));
   }
 
   async syncUserState(userId: string, patch: Partial<UserStateSnapshot>): Promise<UserStateSnapshot> {
-    return this.mutate(async () => {
-      const state = await this.getUserRef(userId);
+    const client = await getSupabase();
+    const currentState = await this.getUserState(userId);
 
-      state.activeWorkspaceId = patch.activeWorkspaceId ?? state.activeWorkspaceId;
-      state.workspaces = (patch.workspaces ?? state.workspaces).map(ensureWorkspaceDefaults);
-      state.appWindows = patch.appWindows ?? state.appWindows;
-      state.schedules = patch.schedules ?? state.schedules;
-      state.ongoingMissions = patch.ongoingMissions ?? state.ongoingMissions;
-      state.inbox = patch.inbox ?? state.inbox;
-      state.installedAgentIds = Array.from(new Set(patch.installedAgentIds ?? state.installedAgentIds));
-      state.updatedAt = Date.now();
+    const nextState: UserStateSnapshot = {
+      ...currentState,
+      ...patch,
+      updatedAt: Date.now(),
+    };
 
-      return clone(state);
-    }, userId);
+    const { error } = await client
+      .from('user_states')
+      .upsert({ id: userId, state: nextState, updated_at: new Date().toISOString() });
+
+    if (error) throw new Error(`[NexusStateStore] syncUserState failed: ${error.message}`);
+    return nextState;
   }
 
-  async upsertWorkspace(userId: string, workspace: Workspace): Promise<UserStateSnapshot> {
-    return this.mutate(async () => {
-      const state = await this.getUserRef(userId);
-      const nextWorkspace = ensureWorkspaceDefaults(workspace);
-      const existingIndex = state.workspaces.findIndex((candidate) => candidate.id === workspace.id);
+  // ── Missions & Tasks (Durable Execution) ──────────────────────────────────
 
-      if (existingIndex >= 0) {
-        state.workspaces[existingIndex] = nextWorkspace;
-      } else {
-        state.workspaces.unshift(nextWorkspace);
-      }
-
-      state.updatedAt = Date.now();
-      return clone(state);
-    }, userId);
-  }
-
-  async createWorkspaceWindow(params: {
+  async createMission(params: {
+    id?: string;
     userId: string;
-    title: string;
-    goalType: Workspace['goalType'];
-    windowType: AppWindowState['windowType'];
-  }): Promise<{ state: UserStateSnapshot; workspace: Workspace; window: AppWindowState }> {
-    return this.mutate(async () => {
-      const state = await this.getUserRef(params.userId);
-      const workspace = createWorkspaceShell({
-        title: params.title,
-        goalType: params.goalType,
-        windowType: params.windowType,
+    workspaceId?: string;
+    goal: string;
+    goalType?: string;
+    dagData?: any;
+  }) {
+    const client = await getSupabase();
+    const { data, error } = await client
+      .from('missions')
+      .insert({
+        id: params.id,
+        user_id: params.userId,
+        workspace_id: params.workspaceId,
+        goal: params.goal,
+        goal_type: params.goalType,
+        dag_data: params.dagData,
+        status: 'queued',
+      })
+      .select()
+      .single();
+
+    if (error) throw new Error(`[NexusStateStore] createMission failed: ${error.message}`);
+    return data;
+  }
+
+  async updateMissionStatus(missionId: string, status: string, completedAt?: string) {
+    const client = await getSupabase();
+    const update: any = { status, updated_at: new Date().toISOString() };
+    if (completedAt) update.completed_at = completedAt;
+
+    const { error } = await client
+      .from('missions')
+      .update(update)
+      .eq('id', missionId);
+
+    if (error) throw new Error(`[NexusStateStore] updateMissionStatus failed: ${error.message}`);
+  }
+
+  async createTask(params: {
+    id?: string;
+    missionId: string;
+    workspaceId?: string;
+    label: string;
+    agentType: AgentType;
+    inputPayload: any;
+    dependencies?: string[];
+  }) {
+    const client = await getSupabase();
+    
+    // 1. Create Task
+    const { data: task, error: taskError } = await client
+      .from('tasks')
+      .insert({
+        id: params.id,
+        mission_id: params.missionId,
+        workspace_id: params.workspaceId,
+        label: params.label,
+        agent_type: params.agentType,
+        input_payload: params.inputPayload,
+        status: 'pending',
+      })
+      .select()
+      .single();
+
+    if (taskError) throw new Error(`[NexusStateStore] createTask failed: ${taskError.message}`);
+
+    // 2. Create Dependencies
+    if (params.dependencies && params.dependencies.length > 0) {
+      const deps = params.dependencies.map(depId => ({
+        task_id: task.id,
+        depends_on_task_id: depId,
+      }));
+      const { error: depError } = await client.from('task_dependencies').insert(deps);
+      if (depError) throw new Error(`[NexusStateStore] createTask dependencies failed: ${depError.message}`);
+    }
+
+    return task;
+  }
+
+  async updateTaskStatus(taskId: string, status: string, result?: { artifactId?: string; tokensUsed?: number; error?: string }) {
+    const client = await getSupabase();
+    const update: any = { status };
+    
+    if (status === 'running') update.started_at = new Date().toISOString();
+    if (status === 'completed' || status === 'failed') update.completed_at = new Date().toISOString();
+    if (result?.artifactId) update.output_artifact_id = result.artifactId;
+    if (result?.tokensUsed) update.tokens_used = result.tokensUsed;
+    if (result?.error) update.error = result.error;
+
+    const { error } = await client
+      .from('tasks')
+      .update(update)
+      .eq('id', taskId);
+
+    if (error) throw new Error(`[NexusStateStore] updateTaskStatus failed: ${error.message}`);
+  }
+
+  async storeArtifact(params: {
+    missionId: string;
+    taskId: string;
+    type: string;
+    content: TypedArtifact;
+  }) {
+    const client = await getSupabase();
+    const { data, error } = await client
+      .from('artifacts')
+      .insert({
+        mission_id: params.missionId,
+        task_id: params.taskId,
+        type: params.type,
+        content: params.content,
+      })
+      .select()
+      .single();
+
+    if (error) throw new Error(`[NexusStateStore] storeArtifact failed: ${error.message}`);
+    return data;
+  }
+
+  async fetchArtifactsByContext(missionId: string, taskIds: string[]) {
+    const client = await getSupabase();
+    const { data, error } = await client
+      .from('artifacts')
+      .select('*')
+      .eq('mission_id', missionId)
+      .in('task_id', taskIds);
+
+    if (error) throw new Error(`[NexusStateStore] fetchArtifactsByContext failed: ${error.message}`);
+    return data;
+  }
+
+  async getTask(taskId: string) {
+    const client = await getSupabase();
+    const { data, error } = await client
+      .from('tasks')
+      .select('*, task_dependencies(depends_on_task_id)')
+      .eq('id', taskId)
+      .single();
+
+    if (error) throw new Error(`[NexusStateStore] getTask failed: ${error.message}`);
+    return data;
+  }
+
+  async getMissionTasks(missionId: string) {
+    const client = await getSupabase();
+    const { data, error } = await client
+      .from('tasks')
+      .select('*, task_dependencies(depends_on_task_id)')
+      .eq('mission_id', missionId);
+
+    if (error) throw new Error(`[NexusStateStore] getMissionTasks failed: ${error.message}`);
+    return data;
+  }
+
+  // ── Schedules ─────────────────────────────────────────────────────────────
+
+  async upsertSchedule(userId: string, schedule: ScheduleSnapshot): Promise<UserStateSnapshot> {
+    const client = await getSupabase();
+    
+    // 1. Update schedules table for periodic job scanning
+    await client
+      .from('schedules')
+      .upsert({
+        id: schedule.scheduleId,
+        workspace_id: schedule.workspaceId,
+        cron_expression: schedule.cron,
+        status: 'active',
+        updated_at: new Date().toISOString()
       });
 
-      const window: AppWindowState = {
-        workspaceId: workspace.id,
-        windowType: params.windowType,
-        title: params.title,
-        isBackground: false,
-        isPinned: false,
-        openedAt: Date.now(),
-      };
-
-      state.workspaces.unshift(workspace);
-      state.appWindows = [window, ...state.appWindows.filter((candidate) => candidate.workspaceId !== workspace.id)];
-      state.activeWorkspaceId = workspace.id;
-      state.updatedAt = Date.now();
-
-      return { state: clone(state), workspace: clone(workspace), window: clone(window) };
-    }, params.userId);
+    // 2. Update user state snapshot
+    return this.mutateUserState(userId, (state) => {
+      const idx = state.schedules.findIndex(s => s.scheduleId === schedule.scheduleId);
+      if (idx >= 0) state.schedules[idx] = schedule;
+      else state.schedules.unshift(schedule);
+    });
   }
 
-  async deleteWorkspace(userId: string, workspaceId: string): Promise<UserStateSnapshot> {
-    return this.mutate(async () => {
-      const state = await this.getUserRef(userId);
+  async listAllSchedules() {
+    const client = await getSupabase();
+    const { data, error } = await client.from('schedules').select('*');
+    if (error) throw new Error(`[NexusStateStore] listAllSchedules failed: ${error.message}`);
+    return data;
+  }
 
-      state.workspaces = state.workspaces.filter((workspace) => workspace.id !== workspaceId);
-      state.appWindows = state.appWindows.filter((window) => window.workspaceId !== workspaceId);
-      state.schedules = state.schedules.filter((schedule) => schedule.workspaceId !== workspaceId);
-      state.ongoingMissions = state.ongoingMissions.filter((mission) => mission.workspaceId !== workspaceId);
+  // ── Helper: Mutate User State ───────────────────────────────────────────
 
+  private async mutateUserState(userId: string, mutator: (state: UserStateSnapshot) => void): Promise<UserStateSnapshot> {
+    const state = await this.getUserState(userId);
+    mutator(state);
+    return this.syncUserState(userId, state);
+  }
+
+  // ── Compatibility Layer (to avoid breaking existing code immediately) ─────
+
+  async upsertWorkspace(userId: string, workspace: Workspace) {
+    return this.mutateUserState(userId, (state) => {
+      const idx = state.workspaces.findIndex(w => w.id === workspace.id);
+      if (idx >= 0) state.workspaces[idx] = ensureWorkspaceDefaults(workspace);
+      else state.workspaces.unshift(ensureWorkspaceDefaults(workspace));
+    });
+  }
+
+  async deleteWorkspace(userId: string, workspaceId: string) {
+    return this.mutateUserState(userId, (state) => {
+      state.workspaces = state.workspaces.filter(w => w.id !== workspaceId);
+      state.appWindows = state.appWindows.filter(w => w.workspaceId !== workspaceId);
+      state.schedules = state.schedules.filter(s => s.workspaceId !== workspaceId);
+      state.ongoingMissions = state.ongoingMissions.filter(m => m.workspaceId !== workspaceId);
       if (state.activeWorkspaceId === workspaceId) {
         state.activeWorkspaceId = state.appWindows[0]?.workspaceId ?? state.workspaces[0]?.id ?? null;
       }
-
-      state.updatedAt = Date.now();
-      return clone(state);
-    }, userId);
-  }
-
-  async setActiveWorkspace(userId: string, workspaceId: string | null): Promise<UserStateSnapshot> {
-    return this.mutate(async () => {
-      const state = await this.getUserRef(userId);
-      state.activeWorkspaceId = workspaceId;
-      state.updatedAt = Date.now();
-      return clone(state);
-    }, userId);
-  }
-
-  async upsertWindow(userId: string, window: AppWindowState): Promise<UserStateSnapshot> {
-    return this.mutate(async () => {
-      const state = await this.getUserRef(userId);
-      state.appWindows = [window, ...state.appWindows.filter((candidate) => candidate.workspaceId !== window.workspaceId)];
-      state.updatedAt = Date.now();
-      return clone(state);
-    }, userId);
-  }
-
-  async closeWindow(userId: string, workspaceId: string): Promise<UserStateSnapshot> {
-    return this.mutate(async () => {
-      const state = await this.getUserRef(userId);
-      state.appWindows = state.appWindows.filter((window) => window.workspaceId !== workspaceId);
-
-      if (state.activeWorkspaceId === workspaceId) {
-        state.activeWorkspaceId = state.appWindows[0]?.workspaceId ?? null;
-      }
-
-      state.updatedAt = Date.now();
-      return clone(state);
-    }, userId);
-  }
-
-  async upsertSchedule(userId: string, schedule: ScheduleSnapshot): Promise<UserStateSnapshot> {
-    return this.mutate(async () => {
-      const state = await this.getUserRef(userId);
-      const existingIndex = state.schedules.findIndex((candidate) => candidate.scheduleId === schedule.scheduleId);
-
-      if (existingIndex >= 0) {
-        state.schedules[existingIndex] = schedule;
-      } else {
-        state.schedules.unshift(schedule);
-      }
-
-      state.updatedAt = Date.now();
-      return clone(state);
-    }, userId);
-  }
-
-  async removeSchedule(userId: string, scheduleId: string): Promise<UserStateSnapshot> {
-    return this.mutate(async () => {
-      const state = await this.getUserRef(userId);
-      state.schedules = state.schedules.filter((schedule) => schedule.scheduleId !== scheduleId);
-      state.updatedAt = Date.now();
-      return clone(state);
-    }, userId);
-  }
-
-  async listAllSchedules(): Promise<Array<{ userId: string; schedule: ScheduleSnapshot }>> {
-    await this.ensureLoaded();
-
-    return Object.values(this.db.users).flatMap((state) =>
-      state.schedules.map((schedule) => ({ userId: state.userId, schedule: clone(schedule) }))
-    );
-  }
-
-  async listAllOngoingMissions(): Promise<Array<{ userId: string; mission: OngoingMission }>> {
-    await this.ensureLoaded();
-
-    return Object.values(this.db.users).flatMap((state) =>
-      state.ongoingMissions.map((mission) => ({ userId: state.userId, mission: clone(mission) }))
-    );
-  }
-
-  async installAgent(userId: string, agentId: string): Promise<UserStateSnapshot> {
-    return this.mutate(async () => {
-      const state = await this.getUserRef(userId);
-      state.installedAgentIds = Array.from(new Set([...state.installedAgentIds, agentId]));
-      state.updatedAt = Date.now();
-      return clone(state);
-    }, userId);
-  }
-
-  async addInboxEntry(
-    userId: string,
-    entry: Omit<NexusInboxEntry, 'id' | 'timestamp' | 'read'> & {
-      timestamp?: string;
-      read?: boolean;
-    }
-  ): Promise<UserStateSnapshot> {
-    return this.mutate(async () => {
-      const state = await this.getUserRef(userId);
-      const nextEntry: NexusInboxEntry = {
-        id: `inbox_${crypto.randomUUID()}`,
-        type: entry.type,
-        title: entry.title,
-        content: entry.content,
-        priority: entry.priority,
-        timestamp: entry.timestamp ?? new Date().toISOString(),
-        read: entry.read ?? false,
-      };
-
-      state.inbox = [nextEntry, ...state.inbox].slice(0, 50);
-      state.updatedAt = Date.now();
-      return clone(state);
-    }, userId);
-  }
-
-  async markInboxRead(userId: string, entryId: string): Promise<UserStateSnapshot> {
-    return this.mutate(async () => {
-      const state = await this.getUserRef(userId);
-      state.inbox = state.inbox.map((entry) =>
-        entry.id === entryId ? { ...entry, read: true } : entry
-      );
-      state.updatedAt = Date.now();
-      return clone(state);
-    }, userId);
-  }
-
-  async clearInbox(userId: string): Promise<UserStateSnapshot> {
-    return this.mutate(async () => {
-      const state = await this.getUserRef(userId);
-      state.inbox = [];
-      state.updatedAt = Date.now();
-      return clone(state);
-    }, userId);
-  }
-
-  async completeNextAction(
-    userId: string,
-    workspaceId: string,
-    actionId: string,
-    message?: string
-  ): Promise<Workspace | null> {
-    return this.mutate(async () => {
-      const state = await this.getUserRef(userId);
-      const workspace = state.workspaces.find((candidate) => candidate.id === workspaceId);
-
-      if (!workspace) return null;
-
-      const completedAction = workspace.nextActions?.find((action) => action.id === actionId);
-      workspace.nextActions = (workspace.nextActions ?? []).filter((action) => action.id !== actionId);
-      workspace.activityLog = [
-        {
-          id: `log_${Date.now()}`,
-          timestamp: Date.now(),
-          type: 'execution',
-          message:
-            message ??
-            `Completed action${completedAction ? `: ${completedAction.title}` : ''}`,
-        },
-        ...(workspace.activityLog ?? []),
-      ];
-
-      state.updatedAt = Date.now();
-      return clone(ensureWorkspaceDefaults(workspace));
-    }, userId);
+    });
   }
 }
 
