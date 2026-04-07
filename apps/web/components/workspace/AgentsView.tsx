@@ -1,17 +1,25 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNexusStore } from '../../store/nexusStore';
-import { Bot, User, Zap, Activity, X, Shield, Cpu, Terminal } from 'lucide-react';
+import { Bot, User, Zap, Activity, X, Shield, Cpu, Terminal, Code } from 'lucide-react';
 
 export function AgentsView() {
-  const { ui, agents, toggleAgentsView } = useNexusStore();
+  const { ui, agents, toggleAgentsView, brainStats, fetchBrainStats, spawnAgent } = useNexusStore();
   const agentList = Array.from(agents.values());
+
+  useEffect(() => {
+    if (ui.agentsViewOpen) {
+      fetchBrainStats();
+      const interval = setInterval(fetchBrainStats, 10000);
+      return () => clearInterval(interval);
+    }
+  }, [ui.agentsViewOpen, fetchBrainStats]);
 
   if (!ui.agentsViewOpen) return null;
 
   const stats = {
-    total: agentList.length,
-    active: agentList.filter(a => a.status === 'working' || a.status === 'spawned').length,
+    total: brainStats.totalMissions || agentList.length,
+    active: brainStats.activeMissions || agentList.filter(a => a.status === 'working' || a.status === 'spawned').length,
     completed: agentList.filter(a => a.status === 'complete').length,
   };
 
@@ -19,7 +27,7 @@ export function AgentsView() {
     { type: 'researcher', label: 'Researcher', icon: Cpu, color: 'text-cyan-400', bg: 'bg-cyan-500/10' },
     { type: 'analyst', label: 'Strategic Analyst', icon: Zap, color: 'text-violet-400', bg: 'bg-violet-500/10' },
     { type: 'summarizer', label: 'Synthesizer', icon: Bot, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
-    { type: 'developer', label: 'Core Architect', icon: Code, color: 'text-orange-400', bg: 'bg-orange-500/10' },
+    { type: 'coder', label: 'Core Architect', icon: Code, color: 'text-orange-400', bg: 'bg-orange-500/10' },
   ];
 
   return (
@@ -84,17 +92,7 @@ export function AgentsView() {
                 return (
                   <div 
                     key={t.type} 
-                    onClick={() => {
-                      // Mock spawning an agent if none exist
-                      if (count === 0) {
-                        useNexusStore.getState().addInboxEntry({
-                          type: 'agent',
-                          title: `Neutral Unit: ${t.label}`,
-                          content: `Booting up ${t.label} sub-routine...`,
-                          priority: 'medium'
-                        });
-                      }
-                    }}
+                    onClick={() => spawnAgent(t.type as any)}
                     className="group flex items-center gap-4 p-4 rounded-xl border border-white/5 bg-white/[0.01] hover:bg-white/[0.03] transition-all cursor-pointer"
                   >
                     <div className={`p-3 rounded-xl ${t.bg} ${t.color}`}>
@@ -164,6 +162,3 @@ export function AgentsView() {
     </AnimatePresence>
   );
 }
-
-// Missing icon fix
-const Code = ({ size, className }: { size: number; className?: string }) => <Terminal size={size} className={className} />;

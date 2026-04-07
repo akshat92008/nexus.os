@@ -51,6 +51,9 @@ export interface ContextEdge {
   weight: number;
 }
 
+const MAX_MEMORY_ENTRIES = 100; // Reduced from 200
+const MAX_CONTEXT_NODES = 150; // Reduced from 250
+
 
 // ── Supabase (lazy, optional) ──────────────────────────────────────────────
 
@@ -199,6 +202,37 @@ export class MissionMemory {
     });
   }
 
+  private removeNode(nodeId: string): void {
+    this.nodes.delete(nodeId);
+    this.edges.delete(nodeId);
+
+    for (const [sourceId, sourceEdges] of this.edges.entries()) {
+      this.edges.set(
+        sourceId,
+        sourceEdges.filter((edge) => edge.targetId !== nodeId)
+      );
+    }
+  }
+
+  private pruneMemory(): void {
+    while (this.store.size > MAX_MEMORY_ENTRIES) {
+      const oldestEntry = this.store.entries().next().value as [string, MemoryEntry] | undefined;
+      if (!oldestEntry) break;
+
+      const [key, entry] = oldestEntry;
+      this.store.delete(key);
+      this.removeNode(`node_${entry.taskId}`);
+    }
+
+    const removableNodes = Array.from(this.nodes.values())
+      .filter((node) => !node.id.startsWith('goal_'))
+      .sort((a, b) => a.createdAt - b.createdAt);
+
+    for (const node of removableNodes.slice(0, Math.max(0, this.nodes.size - MAX_CONTEXT_NODES))) {
+      this.removeNode(node.id);
+    }
+  }
+
   // ── Graph Management ─────────────────────────────────────────────────────────
 
   private addNode(node: ContextNode) {
@@ -297,16 +331,16 @@ export class MissionMemory {
    * Write a TypedArtifact to memory.
    * Key format: "artifact:{taskId}"
    * Emits SSE artifact_deposited event.
-   * Fires async Supabase flush (non-blocking).
+   * Awaits Supabase persistence before emitting the artifact event.
    */
-  write(
+  async write(
     taskId: string,
     agentType: AgentType,
     artifact: TypedArtifact,
     tokensUsed: number,
     sseRes?: Response,
     isAborted: () => boolean = () => false
-  ): void {
+  ): Promise<void> {
     const key = `artifact:${taskId}`;
     const entry: MemoryEntry = {
       key,
@@ -320,7 +354,20 @@ export class MissionMemory {
 
     console.log(`[Memory] 📦 Written — ${agentType}:${taskId} (${tokensUsed} tokens)`);
 
-    // SSE notification
+    // Graph Upkeep: Convert artifact to Graph Node
+    const nodeId = `node_${taskId}`;
+    this.addNode({
+      id: nodeId,
+      type: 'Artifact',
+      content: artifact.rawContent ?? JSON.stringify(artifact).substring(0, 500),
+      createdAt: Date.now(),
+      metadata: { agentType, taskId }
+    });
+    this.addEdge(nodeId, `goal_${this.sessionId}`, 'derived_from', 1.0);
+    this.pruneMemory();
+
+    await this.flushToSupabase(key, entry);
+
     if (sseRes && !isAborted()) {
       const preview = artifact.rawContent?.slice(0, 150) ??
         JSON.stringify(artifact).slice(0, 150);
@@ -336,22 +383,6 @@ export class MissionMemory {
       };
       sseRes.write(`data: ${JSON.stringify(event)}\n\n`);
     }
-
-    // Async Supabase flush — never blocks the pipeline
-    this.flushToSupabase(key, entry).catch((err) =>
-      console.warn(`[Memory] Supabase flush failed for ${key}:`, err)
-    );
-
-    // Graph Upkeep: Convert artifact to Graph Node
-    const nodeId = `node_${taskId}`;
-    this.addNode({
-      id: nodeId,
-      type: 'Artifact',
-      content: artifact.rawContent ?? JSON.stringify(artifact).substring(0, 500),
-      createdAt: Date.now(),
-      metadata: { agentType, taskId }
-    });
-    this.addEdge(nodeId, `goal_${this.sessionId}`, 'derived_from', 1.0);
   }
 
   /**
@@ -443,6 +474,7 @@ export class MissionMemory {
 
     if (error) {
       console.error('[Memory] Supabase upsert error:', error);
+      throw new Error(`Failed to persist mission memory for ${key}.`);
     }
   }
 

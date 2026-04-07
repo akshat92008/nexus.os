@@ -24,7 +24,7 @@ import {
 
 import { UniversalCommandBar }  from './UniversalCommandBar';
 import { ArtifactViewer }       from './ArtifactViewer';
-import { AdaptiveDashboard }     from './AdaptiveDashboard';
+import { OmniChatView }          from './OmniChatView';
 import { WorkspaceHistorySidebar } from './WorkspaceHistorySidebar';
 import { WorkspaceCanvas }         from './WorkspaceCanvas';
 import { DashboardView }           from './DashboardView';
@@ -41,6 +41,8 @@ import { FinancialView }           from './FinancialView';
 import { TimeTrackingView }        from './TimeTrackingView';
 import { InvoicingView }           from './InvoicingView';
 import { CalendarView }            from './CalendarView';
+import { GraphCanvas }             from './GraphCanvas';
+import { ApprovalModal }           from './ApprovalModal';
 import { exportArtifact }          from '../../lib/exportArtifact';
 import type { ExportFormat }       from '@nexus-os/types';
 
@@ -181,13 +183,14 @@ export function Workspace() {
   const resetWS       = useNexusStore((s) => s.resetWorkspace);
   const hydrateFromServer = useNexusStore((s) => s.hydrateFromServer);
   const activeWorkspaceId = useNexusStore((s) => s.activeWorkspaceId);
-  const error               = useNexusStore((s) => s.error);
-  const setError           = useNexusStore((s) => s.setError);
+  const toasts            = useNexusStore((s) => s.toasts);
+  const removeToast       = useNexusStore((s) => s.removeToast);
   const [exporting, setExporting] = useState<ExportFormat | null>(null);
   const [schedulerOpen, setSchedulerOpen] = useState(false);
   
   const { 
     ui, 
+    workspaces,
     appWindows,
     toggleInbox, 
     toggleAgentsView, 
@@ -195,10 +198,12 @@ export function Workspace() {
     toggleLibraryView,
     toggleSearchView,
     toggleDashboard,
+    toggleGraphView,
     setActiveWorkspace,
     closeWindow
   } = useNexusStore();
 
+  const graphViewOpen = ui.graphViewOpen;
   const inboxOpen = ui.inboxOpen;
   const openWindowList = Object.values(appWindows).sort((a: any, b: any) => b.openedAt - a.openedAt);
 
@@ -206,7 +211,7 @@ export function Workspace() {
     const sid = activeWorkspaceId || session.id;
     if (!sid) return;
     setExporting(format);
-    try { await exportArtifact(sid, format); } catch (err) { setError('Export failed.'); } finally { setExporting(null); }
+    try { await exportArtifact(sid, format); } catch (err) { useNexusStore.getState().addToast('Export failed.'); } finally { setExporting(null); }
   };
 
   useEffect(() => {
@@ -218,14 +223,13 @@ export function Workspace() {
 
   return (
     <div className="h-screen w-screen overflow-hidden flex flex-col bg-zinc-950 text-zinc-100 font-sans relative">
-      <AnimatePresence>
-        {error && (
-          <motion.div initial={{ opacity: 0, y: 50, x: '-50%' }} animate={{ opacity: 1, y: 0, x: '-50%' }} exit={{ opacity: 0, y: 20, x: '-50%' }} className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-3 px-4 py-3 rounded-2xl bg-rose-500 text-white shadow-2xl border border-rose-400">
-            <AlertCircle size={18} className="shrink-0" /><span className="text-sm font-medium">{error}</span>
-            <button onClick={() => setError(null)} className="p-2 hover:bg-white/10 rounded-xl transition-colors"><CloseIcon size={16} /></button>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] flex flex-col gap-3 pointer-events-none w-full max-w-md px-6">
+        <AnimatePresence mode="popLayout">
+          {toasts.map((toast) => (
+            <ToastItem key={toast.id} toast={toast} onRemove={removeToast} />
+          ))}
+        </AnimatePresence>
+      </div>
 
       <AppLauncher />
       <AgentsView />
@@ -233,6 +237,7 @@ export function Workspace() {
       <UnifiedInbox isOpen={inboxOpen} onClose={toggleInbox} />
       <SearchView />
       <FileSystemView />
+      <ApprovalModal />
       {activeWorkspaceId && (
         <SchedulerPanel 
           workspaceId={activeWorkspaceId} 
@@ -257,10 +262,11 @@ export function Workspace() {
       <header className="relative z-10 flex items-center gap-4 px-6 py-4 border-b border-zinc-800/40 bg-zinc-950/60 backdrop-blur-xl shrink-0">
         <div className="flex items-center gap-3">
           <div 
-            onClick={() => setActiveWorkspace(null)}
-            className="w-8 h-8 rounded-lg flex items-center justify-center bg-gradient-to-br from-violet-600/80 to-cyan-600/80 shadow-[0_0_15px_rgba(139,92,246,0.3)] border border-violet-500/30 cursor-pointer hover:scale-110 active:scale-95 transition-all"
+            onClick={toggleDashboard}
+            title="Home / Morning Brief"
+            className="w-8 h-8 rounded-lg flex items-center justify-center bg-gradient-to-br from-violet-600/80 to-cyan-600/80 shadow-[0_0_15px_rgba(139,92,246,0.3)] border border-violet-500/30 cursor-pointer hover:scale-110 active:scale-95 transition-all group"
           >
-            <Hexagon size={16} className="text-white drop-shadow-md" />
+            <Hexagon size={16} className="text-white drop-shadow-md group-hover:rotate-12 transition-transform" />
           </div>
           <div className="flex items-center gap-2 px-4 py-2 rounded-lg border border-zinc-800 hover:bg-zinc-900 transition-colors cursor-pointer text-sm font-bold tracking-tight text-zinc-100">
              Agentic OS v2.0 <ChevronDown size={14} className="text-zinc-600" />
@@ -306,6 +312,15 @@ export function Workspace() {
                <Clock size={14} /> Schedule
             </button>
           )}
+          {session.status !== 'idle' && (
+            <button 
+              onClick={toggleGraphView}
+              className={`p-2 rounded-lg transition-colors ${graphViewOpen ? 'bg-violet-600/10 text-violet-400 border border-violet-500/30' : 'text-zinc-500 hover:text-zinc-200'}`}
+              title="Reasoning Graph"
+            >
+              <Zap size={18} />
+            </button>
+          )}
           <button 
             onClick={toggleInbox}
             className={`p-2 rounded-lg transition-colors ${inboxOpen ? 'bg-violet-600/10 text-violet-400' : 'text-zinc-500 hover:text-zinc-200'}`}
@@ -321,34 +336,21 @@ export function Workspace() {
       <div className="flex flex-1 overflow-hidden relative z-10 w-full">
         <WorkspaceHistorySidebar />
         <div className="flex-1 flex flex-col gap-6 p-8 overflow-y-auto w-full mx-auto custom-scrollbar">
-          <AnimatePresence mode="wait">
-            {ui.dashboardOpen ? (
-              <DashboardView key="dashboard" />
-            ) : ui.agentsViewOpen ? (
-              <AgentMarketplace key="market" />
-            ) : ui.searchViewOpen ? (
-              <SearchView key="search" />
-            ) : ui.libraryViewOpen ? (
-              <div key="library" className="flex items-center justify-center h-full text-zinc-500">Library View (Coming Soon)</div>
-            ) : ui.financialViewOpen ? (
-              <FinancialView key="finance" />
-            ) : ui.timeTrackingViewOpen ? (
-              <TimeTrackingView key="time" />
-            ) : ui.invoicingViewOpen ? (
-              <InvoicingView key="invoicing" />
-            ) : ui.calendarViewOpen ? (
-              <CalendarView key="calendar" />
-            ) : activeWorkspaceId ? (
-              <WorkspaceCanvas key={activeWorkspaceId} />
-            ) : (
-              <div key="landing" className="max-w-6xl mx-auto w-full flex flex-col gap-12">
-                <UniversalCommandBar />
-                {session.status !== 'idle' && <PlanOverview />}
-                {session.status === 'idle' && <AdaptiveDashboard />}
-                <ArtifactViewer />
-              </div>
-            )}
-          </AnimatePresence>
+          {ui.dashboardOpen ? (
+            <DashboardView key="dashboard" />
+          ) : ui.agentsViewOpen ? (
+            <AgentMarketplace key="market" />
+          ) : ui.searchViewOpen ? (
+            <SearchView key="search" />
+          ) : ui.libraryViewOpen ? (
+            <div key="library" className="flex items-center justify-center h-full text-zinc-500 text-sm font-bold tracking-widest uppercase italic">Library Experience — 0% Loaded</div>
+          ) : (!activeWorkspaceId || !workspaces[activeWorkspaceId]) ? (
+            <OmniChatView key="omni" />
+          ) : ui.financialViewOpen ? (
+            <FinancialView key="finance" />
+          ) : (
+            <WorkspaceCanvas key={activeWorkspaceId} />
+          )}
         </div>
 
         <AnimatePresence>
@@ -377,5 +379,39 @@ export function Workspace() {
         {sidebarOpen ? <PanelRightClose size={20} /> : <PanelRightOpen size={20} />}
       </button>
     </div>
+  );
+}
+function ToastItem({ toast, onRemove }: { toast: any; onRemove: (id: string) => void }) {
+  useEffect(() => {
+    const timer = setTimeout(() => onRemove(toast.id), 5000);
+    return () => clearTimeout(timer);
+  }, [toast.id, onRemove]);
+
+  return (
+    <motion.div 
+      layout
+      initial={{ opacity: 0, y: 20, scale: 0.9 }} 
+      animate={{ opacity: 1, y: 0, scale: 1 }} 
+      exit={{ opacity: 0, scale: 0.8, transition: { duration: 0.2 } }} 
+      className="pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-2xl bg-rose-500 text-white shadow-2xl border border-rose-400/50 backdrop-blur-md"
+    >
+      <AlertCircle size={18} className="shrink-0" />
+      <div className="flex-1 min-w-0">
+        <span className="text-sm font-semibold truncate block">
+          {toast.message}
+          {toast.count > 1 && (
+            <span className="ml-2 px-1.5 py-0.5 rounded-full bg-white/20 text-[10px] font-black uppercase">
+              x{toast.count}
+            </span>
+          )}
+        </span>
+      </div>
+      <button 
+        onClick={() => onRemove(toast.id)} 
+        className="p-1.5 hover:bg-white/10 rounded-lg transition-colors shrink-0"
+      >
+        <CloseIcon size={14} />
+      </button>
+    </motion.div>
   );
 }

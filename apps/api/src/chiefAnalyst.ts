@@ -68,7 +68,8 @@ interface DeepSemanticAuditResult {
 
 async function deepSemanticAuditor(
   dag: TaskDAG,
-  entries: MemoryEntry[]
+  entries: MemoryEntry[],
+  governor: RateLimitGovernor
 ): Promise<DeepSemanticAuditResult> {
   console.log('[ChiefAnalyst] 🧠 Performing Deep Semantic Audit...');
 
@@ -106,7 +107,7 @@ async function deepSemanticAuditor(
     }
   `;
 
-  try {
+  const callGroq = async (): Promise<DeepSemanticAuditResult> => {
     const res = await fetch(GROQ_API_URL, {
       method: 'POST',
       headers: {
@@ -123,10 +124,15 @@ async function deepSemanticAuditor(
 
     if (!res.ok) throw new Error(`Groq API Error: ${res.status}`);
     const data = await res.json() as any;
-    const auditResult = JSON.parse(data.choices[0].message.content) as DeepSemanticAuditResult;
+    const rawContent = data.choices[0].message.content;
+    const auditResult = JSON.parse(rawContent) as DeepSemanticAuditResult;
 
     console.log(`[ChiefAnalyst] Deep Semantic Audit: ${auditResult.status.toUpperCase()} - ${auditResult.reasoning}`);
     return auditResult;
+  };
+
+  try {
+    return await governor.execute(callGroq);
   } catch (err) {
     console.error('[ChiefAnalyst] Deep Semantic Audit failed, proceeding with existing data:', err);
     return { status: 'ok', reasoning: 'Audit failed, proceeding with existing data.' };
@@ -226,9 +232,9 @@ MISSION: "${dag.goal}"
 GOAL TYPE: ${dag.goalType}
 
 SUCCESS CRITERIA (address ALL of these — do not skip any):
-${dag.successCriteria.map((c, i) => `${i + 1}. ${c}`).join('\n')}
+${(dag.successCriteria || []).map((c, i) => `${i + 1}. ${c}`).join('\n')}
 
-${conflicts.length > 0
+${(conflicts || []).length > 0
   ? `DETECTED CONFLICTS (you MUST resolve each one explicitly):
 ${conflicts.map((c) => `• Field: "${c.field}" — Agent "${c.agentA}" says: "${c.valueA}" vs Agent "${c.agentB}" says: "${c.valueB}" [${c.severity}]`).join('\n')}`
   : 'No conflicts detected between agent outputs.'}
@@ -267,9 +273,10 @@ OUTPUT FORMAT: Return ONLY a valid JSON object with this exact structure:
 }`;
 
   // Build context from all entries
-  const contextSections = entries.map((e) => {
-    const { rawContent: _r, ...data } = e.data as any;
-    return `[${e.agentType.toUpperCase()} — ${e.taskId}]\n${JSON.stringify(data, null, 2)}`;
+  const contextSections = (entries || []).map((e) => {
+    const data = (e.data || {}) as any;
+    const { rawContent: _r, ...cleanData } = data;
+    return `[${(e.agentType || 'UNKNOWN').toUpperCase()} — ${e.taskId}]\n${JSON.stringify(cleanData, null, 2)}`;
   }).join('\n\n────────────────────────\n\n');
 
   const user = `ALL AGENT OUTPUTS FOR THIS MISSION:\n\n${contextSections}\n\nNow produce the Chief Analyst synthesis. Return ONLY the JSON object.`;
@@ -323,7 +330,7 @@ export async function runChiefAnalyst(
   const apiKey = process.env.GROQ_API_KEY!;
 
   // ── Deep Semantic Audit & Autonomous Remediation ───────────────────────────
-  const auditResult = await deepSemanticAuditor(dag, entries);
+  const auditResult = await deepSemanticAuditor(dag, entries, governor);
 
   if (auditResult.status !== 'ok' && auditResult.correctionTasks && auditResult.correctionTasks.length > 0) {
     console.log(`[ChiefAnalyst] 🛠️ Triggering Autonomous Remediation (Correction Wave)...`);

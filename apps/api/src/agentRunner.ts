@@ -85,8 +85,8 @@ Required structure:
 {
   "leads": [
     {
-      "name": "Full realistic name appropriate for the target market (NOT John Doe or placeholder)",
-      "company": "Real or realistic company name (NOT Acme Corp or Example Ltd)",
+      "name": "Full realistic name appropriate for the target market (ABSOLUTELY NO 'John Doe', 'Jane Doe', or placeholder names)",
+      "company": "Real or realistic company name (ABSOLUTELY NO 'Acme Corp', 'Example Ltd', or generic placeholders)",
       "role": "Specific job title (e.g., Sales Director, Operations Head, Co-founder)",
       "location": "Specific city and neighborhood if known (e.g., Dwarka, New Delhi)",
       "niche": "Specific market segment (e.g., NRI investment properties, commercial leasing)",
@@ -292,23 +292,67 @@ export function parseTypedArtifact(
 }
 
 function tryParseJSON(text: string): Record<string, unknown> | null {
-  // Strip code fences
-  const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-  try {
-    const parsed = JSON.parse(cleaned);
-    if (typeof parsed === 'object' && parsed !== null) return parsed;
-  } catch {
-    // Try extracting the first {...} block
-    const match = cleaned.match(/(\{[\s\S]*\})/);
-    if (match) {
-      try {
-        const parsed = JSON.parse(match[0]);
-        if (typeof parsed === 'object' && parsed !== null) return parsed;
-      } catch {
-        // fall through
+  const cleaned = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+  const candidates = [cleaned];
+  const balancedObject = extractBalancedJSONObject(cleaned);
+
+  if (balancedObject && balancedObject !== cleaned) {
+    candidates.push(balancedObject);
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (typeof parsed === 'object' && parsed !== null) return parsed;
+    } catch {
+      // Try next candidate.
+    }
+  }
+
+  return null;
+}
+
+function extractBalancedJSONObject(text: string): string | null {
+  let start = -1;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+
+    if (escape) {
+      escape = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      escape = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) continue;
+
+    if (char === '{') {
+      if (start === -1) start = i;
+      depth++;
+      continue;
+    }
+
+    if (char === '}') {
+      if (depth === 0) continue;
+      depth--;
+      if (depth === 0 && start !== -1) {
+        return text.slice(start, i + 1);
       }
     }
   }
+
   return null;
 }
 
@@ -411,9 +455,10 @@ const LEAD_PLACEHOLDER_PATTERNS = [
 ];
 
 function isPlaceholderLead(lead: any): boolean {
+  if (!lead || typeof lead !== 'object') return true;
   const text = `${lead.name ?? ''} ${lead.company ?? ''} ${lead.role ?? ''}`;
   return LEAD_PLACEHOLDER_PATTERNS.some(p => p.test(text)) ||
-         !lead.painPoint || lead.painPoint.length < 15;
+         !lead.painPoint || String(lead.painPoint).length < 15;
 }
 
 function validateLeadList(leads: any[]): { valid: any[]; rejectedCount: number } {
@@ -473,6 +518,7 @@ async function runGroq(opts: {
   model: string;
   maxTokens: number;
   temperature: number;
+  jsonMode?: boolean;
 }) {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) throw new Error('GROQ_API_KEY not set');
@@ -487,6 +533,7 @@ async function runGroq(opts: {
       model: opts.model,
       temperature: opts.temperature,
       max_tokens: opts.maxTokens,
+      ...(opts.jsonMode ? { response_format: { type: 'json_object' } } : {}),
       messages: [
         { role: 'system', content: opts.system },
         { role: 'user', content: opts.user },
@@ -506,8 +553,20 @@ async function runGroq(opts: {
   }
 
   const data = (await response.json()) as any;
+  const content = data?.choices?.[0]?.message?.content ?? '[No output]';
+
+  if (opts.jsonMode) {
+    try {
+      JSON.parse(content.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim());
+    } catch (err) {
+      console.warn('[AgentRunner] LLM failed to return valid JSON in json_mode. Content:', content);
+      // We don't throw here yet, as parseTypedArtifact will handle the fallback, 
+      // but in a stricter production environment, we might want to retry.
+    }
+  }
+
   return {
-    content: data?.choices?.[0]?.message?.content ?? '[No output]',
+    content,
     tokens: (data?.usage?.completion_tokens ?? 0) + (data?.usage?.prompt_tokens ?? 0),
   };
 }
@@ -529,6 +588,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
 
   const { system, user } = buildAgentPrompt(task, goal, goalType, synthesizedContext);
   const maxTokens = TOKEN_BUDGET[task.agentType] ?? 600;
+  const expectsJson = task.expectedOutput.format !== 'prose';
 
   if (isAborted()) throw new Error('[Canceled] Mission aborted');
 
@@ -544,8 +604,8 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
     
     // 1. Run two independent specialists in parallel (Fast Model)
     const [specialist1, specialist2] = await Promise.all([
-      runGroq({ system, user, model: GROQ_FAST_MODEL, maxTokens, temperature: 0.4 }),
-      runGroq({ system, user, model: GROQ_FAST_MODEL, maxTokens, temperature: 0.7 }),
+      runGroq({ system, user, model: GROQ_FAST_MODEL, maxTokens, temperature: 0.4, jsonMode: expectsJson }),
+      runGroq({ system, user, model: GROQ_FAST_MODEL, maxTokens, temperature: 0.7, jsonMode: expectsJson }),
     ]);
 
     // 2. Reasoning Judge resolves conflicts (Power Model)
@@ -570,11 +630,14 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
     `;
 
     const { content: verifiedContent, tokens: judgeTokens } = await runGroq({
-      system: "You are a master logic judge. Resolve conflicts and synthesize truth.",
+      system: expectsJson
+        ? 'You are a master logic judge. Resolve conflicts, synthesize truth, and return ONLY a valid JSON object.'
+        : 'You are a master logic judge. Resolve conflicts and synthesize truth.',
       user: judgePrompt,
       model: GROQ_POWER_MODEL,
       maxTokens,
       temperature: 0.1,
+      jsonMode: expectsJson,
     });
 
     const artifact = parseTypedArtifact(verifiedContent, task);
@@ -593,6 +656,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
     model,
     maxTokens,
     temperature: task.agentType === 'analyst' ? 0.3 : 0.6,
+    jsonMode: expectsJson,
   });
 
   const artifact = parseTypedArtifact(content, task);

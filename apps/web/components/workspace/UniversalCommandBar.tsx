@@ -4,7 +4,7 @@ import { useRef, useEffect, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import {
   Terminal, Zap, X, Search, Lightbulb, ArrowUp, Plus, Mic, Monitor, Globe, Mail, MessageSquare, Activity,
-  FileText, Image as ImageIcon, Video, Calendar, DollarSign, Plane, TrendingUp as TrendingUpIcon, Target as TargetIcon
+  FileText, Image as ImageIcon, Video, Calendar, DollarSign, Plane, TrendingUp as TrendingUpIcon, Target as TargetIcon, Clock
 } from 'lucide-react';
 import { useNexusStore, selectIsRunning } from '../../store/nexusStore';
 import { useNexusSSE } from '../../hooks/useNexusSSE';
@@ -102,6 +102,12 @@ export function UniversalCommandBar() {
     fetchFsItems('root');
     toggleLibraryView();
   };
+
+  useEffect(() => {
+    if (isFocused) {
+      inputRef.current?.focus();
+    }
+  }, [isFocused]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -229,37 +235,25 @@ export function UniversalCommandBar() {
     );
   }
 
-  return (
-    <motion.div 
-      initial={{ opacity: 0, scale: 0.98 }}
-      animate={{ opacity: 1, scale: 1 }}
-      className="flex flex-col items-center justify-center w-full max-w-4xl mx-auto space-y-10 py-12 z-20 min-h-[70vh]"
-    >
-      <div className="flex flex-col items-center gap-4">
-        <div className="flex items-center gap-2 px-3 py-1 rounded bg-zinc-900/60 border border-zinc-800 text-zinc-400 text-[11px] font-medium transition-colors hover:border-zinc-700 cursor-pointer">
-          Agentic OS — {currentMode.charAt(0).toUpperCase() + currentMode.slice(1)} Mode
-        </div>
-      </div>
-      
-      <h1 className="text-5xl font-extrabold text-zinc-100 tracking-tight text-center">
-        {currentMode === 'student' ? (
-           <>What do you need <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-cyan-400">help</span> with?</>
-        ) : (
-           <>What do you want to get <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-cyan-400">done?</span></>
-        )}
-      </h1>
-
-      <div className="w-full max-w-[800px] flex flex-col items-center space-y-6">
+    return (
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.98 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="flex flex-col items-center justify-center w-full max-w-4xl mx-auto space-y-10 z-20"
+      >
+        <div className="w-full max-w-[800px] flex flex-col items-center space-y-6">
         <motion.div
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
           animate={{
-             boxShadow: isFocused ? '0 0 0 1px rgba(139, 92, 246, 0.4), 0 20px 40px rgba(139, 92, 246, 0.1)' : '0 20px 40px rgba(0,0,0, 0.2)',
+             boxShadow: isFocused 
+               ? '0 0 0 1px rgba(139, 92, 246, 0.5), 0 30px 60px rgba(139, 92, 246, 0.2)' 
+               : '0 30px 60px rgba(0,0,0, 0.6)',
              scale: isDragging ? 1.02 : 1,
-             borderColor: isDragging ? 'rgba(139, 92, 246, 0.5)' : 'rgba(39, 39, 42, 0.8)',
+             borderColor: isDragging ? 'rgba(139, 92, 246, 0.6)' : isFocused ? 'rgba(139, 92, 246, 0.4)' : 'rgba(39, 39, 42, 0.6)',
           }}
-          className={`w-full rounded-2xl bg-zinc-900/40 border border-zinc-800/80 overflow-hidden backdrop-blur-xl transition-all duration-300 relative ${isDragging ? 'bg-violet-500/5' : ''}`}
+          className={`w-full rounded-[28px] bg-zinc-900/30 border border-zinc-800/50 overflow-hidden backdrop-blur-3xl transition-all duration-500 relative ${isDragging ? 'bg-violet-500/10' : ''}`}
         >
           {isDragging && (
             <div className="absolute inset-0 flex items-center justify-center bg-violet-500/10 backdrop-blur-sm z-50 pointer-events-none">

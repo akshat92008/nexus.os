@@ -127,7 +127,39 @@ function getRetryDelay(err: Error, attempt: number): number {
 
 // ── Wave Computation (Topological Sort) ────────────────────────────────────
 
+export function detectCycles(nodes: TaskNode[]): string | null {
+  const nodeMap = new Map(nodes.map((n) => [n.id, n]));
+  const visited = new Set<string>();
+  const inStack = new Set<string>();
+
+  function dfs(id: string): boolean {
+    if (inStack.has(id)) return true;
+    if (visited.has(id)) return false;
+    inStack.add(id);
+    const node = nodeMap.get(id);
+    if (node) {
+      for (const dep of node.dependencies) {
+        if (dfs(dep)) return true;
+      }
+    }
+    inStack.delete(id);
+    visited.add(id);
+    return false;
+  }
+
+  for (const node of nodes) {
+    if (dfs(node.id)) return node.id;
+  }
+  return null;
+}
+
 export function computeExecutionWaves(nodes: TaskNode[]): TaskNode[][] {
+  // Cycle check first
+  const cyclicNode = detectCycles(nodes);
+  if (cyclicNode) {
+    throw new Error(`DAG cycle detected at node "${cyclicNode}". Circular dependencies are not allowed.`);
+  }
+
   const waves: TaskNode[][] = [];
   const completed = new Set<string>();
   let remaining = [...nodes];
@@ -271,16 +303,22 @@ async function executeTask(
     }
 
     // Write to typed mission memory
-    memory.write(task.id, task.agentType, finalResult.artifact, finalResult.tokensUsed, res, isAborted);
+    await memory.write(task.id, task.agentType, finalResult.artifact, finalResult.tokensUsed, res, isAborted);
 
     // Mark completed in registry
     const outputKey = `artifact:${task.id}`;
     registry.markCompleted(task.id, outputKey);
 
     // Update ledger
-    ledger
-      .recordTransaction(userId, task.id, task.label, task.agentType, finalResult.tokensUsed, res, isAborted)
-      .catch((err) => console.warn(`[Orchestrator] Ledger write failed for ${task.id}:`, err));
+    await ledger.recordTransaction(
+      userId,
+      task.id,
+      task.label,
+      task.agentType,
+      finalResult.tokensUsed,
+      res,
+      isAborted
+    );
 
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -590,7 +628,7 @@ export async function orchestrateDAG(deps: OrchestratorDeps): Promise<void> {
       });
 
       // Write synthesis to memory
-      memory.write(
+      await memory.write(
         'chief_analyst_synthesis',
         'chief_analyst',
         synthesis,

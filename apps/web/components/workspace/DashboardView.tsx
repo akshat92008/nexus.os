@@ -2,6 +2,7 @@
 
 import { useNexusStore } from '../../store/nexusStore';
 import { useModeStore } from '../../store/modeStore';
+import { useEffect } from 'react';
 import { 
   Flame, 
   Inbox, 
@@ -16,9 +17,11 @@ import {
   DollarSign,
   PieChart,
   BarChart3,
-  Calendar
+  Calendar,
+  ChevronRight
 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { UniversalCommandBar } from './UniversalCommandBar';
 
 export function DashboardView() {
   const workspaces = useNexusStore((s) => s.workspaces);
@@ -29,6 +32,14 @@ export function DashboardView() {
   const calendar = useNexusStore((s) => s.calendar);
   const timeTracking = useNexusStore((s) => s.timeTracking);
   const invoicing = useNexusStore((s) => s.invoicing);
+  const brainStats = useNexusStore((s) => s.brainStats);
+  const fetchBrainStats = useNexusStore((s) => s.fetchBrainStats);
+
+  useEffect(() => {
+    fetchBrainStats();
+    const interval = setInterval(fetchBrainStats, 30000);
+    return () => clearInterval(interval);
+  }, [fetchBrainStats]);
   
   const { 
     toggleFinancialView, 
@@ -42,21 +53,23 @@ export function DashboardView() {
   const isStudent = currentMode === 'student';
 
   // Aggregate global next actions
-  const allActions = Object.values(workspaces).flatMap((ws) => 
-    (ws.nextActions || []).map(action => ({ ...action, workspaceId: ws.id, goal: ws.goal }))
+  const allActions = Object.values(workspaces || {}).flatMap((ws) => 
+    (ws?.nextActions || []).map(action => ({ ...action, workspaceId: ws.id, goal: ws.goal }))
   ).sort((a, b) => {
-    const w = { high: 3, medium: 2, low: 1 };
-    return w[b.priority] - w[a.priority];
+    const w: Record<string, number> = { high: 3, medium: 2, low: 1 };
+    const priorityA = a.priority || 'low';
+    const priorityB = b.priority || 'low';
+    return (w[priorityB] || 0) - (w[priorityA] || 0);
   });
 
-  const activeOngoing = Object.values(ongoingMissions).filter(m => m.status === 'active');
-  const recentWorkspaces = Object.values(workspaces).sort((a, b) => b.createdAt - a.createdAt).slice(0, 5);
+  const activeOngoing = Object.values(ongoingMissions || {}).filter(m => m?.status === 'active');
+  const recentWorkspaces = Object.values(workspaces || {}).sort((a, b) => (b?.createdAt || 0) - (a?.createdAt || 0)).slice(0, 5);
 
   // Stats
-  const totalCompletedTasks = Object.values(workspaces).reduce((sum, ws) => {
-    return sum + ws.sections.reduce((s2, sec) => {
+  const totalCompletedTasks = Object.values(workspaces || {}).reduce((sum, ws) => {
+    return sum + (ws?.sections || []).reduce((s2, sec) => {
       if (sec.type === 'tasklist') {
-        return s2 + (sec.content as any[]).filter((t: any) => t.status === 'done').length;
+        return s2 + (sec.content as any[] || []).filter((t: any) => t?.status === 'done').length;
       }
       return s2;
     }, 0);
@@ -68,7 +81,7 @@ export function DashboardView() {
     const displayTasks = allActions.slice(0, 2);
 
     return (
-      <div className="flex-1 max-w-4xl mx-auto w-full flex flex-col gap-10 pb-20 fade-in pt-8">
+      <div className="flex-1 max-w-4xl mx-auto w-full flex flex-col gap-10 pb-20 pt-8 fade-in">
         
         {/* Student Branding */}
         <div className="flex items-start justify-between bg-zinc-900/40 p-10 rounded-[32px] border border-zinc-800/80 backdrop-blur-xl relative overflow-hidden">
@@ -86,10 +99,26 @@ export function DashboardView() {
 
             <div className="flex gap-4 mt-8">
               <button 
+                disabled={displayTopics.length === 0}
                 onClick={() => displayTopics[0] && setActiveWorkspace(displayTopics[0].id)}
-                className="px-8 py-4 rounded-2xl bg-white text-zinc-950 font-bold text-base hover:scale-105 transition-all shadow-xl shadow-white/5 active:scale-95"
+                className={`px-8 py-4 rounded-2xl font-bold text-base transition-all shadow-xl active:scale-95 flex items-center gap-2 ${
+                  displayTopics.length > 0 
+                    ? 'bg-white text-zinc-950 hover:scale-105 shadow-white/5' 
+                    : 'bg-zinc-800 text-zinc-500 cursor-not-allowed opacity-50'
+                }`}
               >
                 Continue Work
+                <ChevronRight size={18} />
+              </button>
+              <button 
+                onClick={() => {
+                  useNexusStore.getState().toggleDashboard();
+                  useNexusStore.getState().resetWorkspace();
+                  useNexusStore.getState().setCommandBarFocused(true);
+                }}
+                className="px-8 py-4 rounded-2xl bg-zinc-800/50 text-zinc-300 font-bold text-base border border-zinc-700/50 hover:bg-zinc-800 transition-all active:scale-95"
+              >
+                Start New Topic
               </button>
             </div>
           </div>
@@ -150,7 +179,7 @@ export function DashboardView() {
   }
 
   return (
-    <div className="flex-1 max-w-6xl mx-auto w-full flex flex-col gap-10 pb-20 fade-in pt-4">
+    <div className="flex-1 max-w-6xl mx-auto w-full flex flex-col gap-10 pb-20 pt-4 fade-in">
       
       {/* 1. Brand Header */}
       <div className="flex items-start justify-between bg-gradient-to-r from-violet-900/20 to-cyan-900/10 p-8 rounded-3xl border border-zinc-800/60 backdrop-blur-md relative overflow-hidden">
@@ -169,14 +198,23 @@ export function DashboardView() {
 
           <div className="flex gap-4 mt-6">
             <button 
+              disabled={recentWorkspaces.length === 0}
               onClick={() => recentWorkspaces[0] && setActiveWorkspace(recentWorkspaces[0].id)}
-              className="px-5 py-2.5 rounded-xl bg-violet-600 text-white font-semibold text-sm hover:bg-violet-500 transition-colors shadow-lg shadow-violet-500/20"
+              className={`px-5 py-2.5 rounded-xl font-semibold text-sm transition-all shadow-lg active:scale-95 ${
+                recentWorkspaces.length > 0
+                  ? 'bg-violet-600 text-white hover:bg-violet-500 shadow-violet-500/20'
+                  : 'bg-zinc-800 text-zinc-600 cursor-not-allowed'
+              }`}
             >
               Continue Work
             </button>
             <button 
-              onClick={() => useNexusStore.getState().toggleDashboard()}
-              className="px-5 py-2.5 rounded-xl bg-zinc-800 text-zinc-300 font-semibold text-sm hover:bg-zinc-700 transition-colors border border-zinc-700"
+              onClick={() => {
+                useNexusStore.getState().toggleDashboard();
+                useNexusStore.getState().resetWorkspace();
+                useNexusStore.getState().setCommandBarFocused(true);
+              }}
+              className="px-5 py-2.5 rounded-xl bg-zinc-800 text-zinc-300 font-semibold text-sm hover:bg-zinc-700 transition-colors border border-zinc-700 shadow-lg"
             >
               Start New Goal
             </button>
@@ -185,11 +223,11 @@ export function DashboardView() {
 
         <div className="flex gap-4 relative z-10">
           <div className="bg-zinc-950/80 border border-zinc-800/80 rounded-2xl px-6 py-4 flex flex-col items-center justify-center min-w-[140px] shadow-lg">
-            <div className="flex items-center gap-2 text-violet-400 mb-1"><Activity size={16} /><span className="text-3xl font-black">{activeOngoing.length}</span></div>
+            <div className="flex items-center gap-2 text-violet-400 mb-1"><Activity size={16} /><span className="text-3xl font-black">{brainStats.activeMissions || activeOngoing.length}</span></div>
             <div className="text-[10px] text-zinc-500 uppercase tracking-widest font-semibold text-center">Active Streams</div>
           </div>
           <div className="bg-zinc-950/80 border border-zinc-800/80 rounded-2xl px-6 py-4 flex flex-col items-center justify-center min-w-[140px] shadow-lg">
-            <div className="flex items-center gap-2 text-cyan-400 mb-1"><Target size={16} /><span className="text-3xl font-black">{totalCompletedTasks}</span></div>
+            <div className="flex items-center gap-2 text-cyan-400 mb-1"><Target size={16} /><span className="text-3xl font-black">{brainStats.totalMissions || totalCompletedTasks}</span></div>
             <div className="text-[10px] text-zinc-500 uppercase tracking-widest font-semibold text-center">Tasks Completed</div>
           </div>
         </div>
@@ -240,15 +278,15 @@ export function DashboardView() {
           <div className="grid grid-cols-2 gap-4">
             <div className="p-4 rounded-2xl bg-zinc-900/40 border border-zinc-800">
               <div className="text-[10px] uppercase tracking-widest text-zinc-500 mb-1 font-bold">Revenue</div>
-              <div className="text-xl font-bold text-zinc-100">${finances.revenue.toLocaleString()}</div>
+              <div className="text-xl font-bold text-zinc-100">${(finances?.revenue ?? 0).toLocaleString()}</div>
               <div className="text-[10px] text-emerald-400 mt-1 font-bold">↑ 15% this month</div>
             </div>
             <div className="p-4 rounded-2xl bg-zinc-900/40 border border-zinc-800">
               <div className="text-[10px] uppercase tracking-widest text-zinc-500 mb-1 font-bold">Outstanding</div>
               <div className="text-xl font-bold text-zinc-100">
-                ${invoicing.invoices.filter(i => i.status !== 'paid').reduce((acc, i) => acc + i.amount, 0).toLocaleString()}
+                ${(invoicing?.invoices || []).filter(i => i?.status !== 'paid').reduce((acc, i) => acc + (i?.amount || 0), 0).toLocaleString()}
               </div>
-              <div className="text-[10px] text-rose-400 mt-1 font-bold">{invoicing.invoices.filter(i => i.status === 'overdue').length} Overdue</div>
+              <div className="text-[10px] text-rose-400 mt-1 font-bold">{(invoicing?.invoices || []).filter(i => i?.status === 'overdue').length} Overdue</div>
             </div>
           </div>
         </section>
@@ -267,13 +305,13 @@ export function DashboardView() {
           </div>
           
           <div className="space-y-3">
-            {calendar.events.slice(0, 2).map(event => (
+            {(calendar?.events || []).slice(0, 2).map(event => (
               <div key={event.id} className="p-4 rounded-2xl bg-zinc-900/40 border border-zinc-800 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className={`w-1 h-6 rounded-full ${event.type === 'meeting' ? 'bg-violet-500' : 'bg-cyan-500'}`} />
+                  <div className={`w-1 h-6 rounded-full ${event?.type === 'meeting' ? 'bg-violet-500' : 'bg-cyan-500'}`} />
                   <div>
-                    <div className="text-sm font-bold text-zinc-200">{event.title}</div>
-                    <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">{new Date(event.startTime).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}</div>
+                    <div className="text-sm font-bold text-zinc-200">{event?.title}</div>
+                    <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">{event?.startTime ? new Date(event.startTime).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}) : 'No Time'}</div>
                   </div>
                 </div>
               </div>
@@ -282,10 +320,10 @@ export function DashboardView() {
                <div className="flex items-center gap-3">
                   <Clock size={16} className="text-violet-400" />
                   <div className="text-sm font-bold text-violet-300">
-                    {timeTracking.activeEntry ? 'Timer Running' : 'Ready to start tracking'}
+                    {timeTracking?.activeEntry ? 'Timer Running' : 'Ready to start tracking'}
                   </div>
                </div>
-               {timeTracking.activeEntry && <div className="text-sm font-bold text-white animate-pulse">00:45:12</div>}
+               {timeTracking?.activeEntry && <div className="text-sm font-bold text-white animate-pulse">00:45:12</div>}
             </div>
           </div>
         </section>

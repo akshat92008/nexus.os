@@ -19,7 +19,7 @@ export function formatStudentOutput(rawData: any): StudentOutput {
 
   return {
     explanation: d.explanation || rawData.executiveSummary || 'Explanation in progress...',
-    keyPoints: Array.isArray(d.keyPoints) ? d.keyPoints : rawData.keyInsights?.map((i: any) => i.insight) || [],
+    keyPoints: Array.isArray(d.keyPoints) ? d.keyPoints : (rawData.keyInsights || []).map((i: any) => i.insight) || [],
     notes: d.notes || rawData.executiveSummary || 'Notes in progress...',
     questions: Array.isArray(d.questions) ? d.questions : d.mockExamQuestions || [],
     quickRevision: d.quickRevision || d.quickRevisionSummary || 'Quick revision logic active.',

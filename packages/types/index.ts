@@ -374,7 +374,9 @@ export interface FinanceRecord {
 }
 
 export interface FinancialBreakdownItem {
-  source: string;
+  source?: string;
+  category?: string;
+  label?: string; // fallback
   amount: number;
 }
 

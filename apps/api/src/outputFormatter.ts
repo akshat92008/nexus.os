@@ -134,8 +134,8 @@ const leadGenRule: DomainRule<LeadGenOutput> = {
       leads: rawLeads,
       pipeline: d.pipeline as any ?? d.sales_pipeline as any ?? undefined,
       outreachMessages: (d.outreachMessages ?? d.outreach_messages ?? []) as any[],
-      keyInsights: synthesis.keyInsights.map((i) => i.insight),
-      gaps: synthesis.gaps,
+      keyInsights: (synthesis.keyInsights || []).map((i) => i.insight),
+      gaps: synthesis.gaps || [],
       nextSteps: synthesis.nextSteps,
     };
   },
@@ -151,10 +151,10 @@ const researchRule: DomainRule<ResearchOutput> = {
   },
   format(synthesis): ResearchOutput {
     return {
-      executiveSummary: synthesis.executiveSummary,
-      keyInsights: synthesis.keyInsights.map((i) => ({
+      executiveSummary: synthesis.executiveSummary || 'Research complete.',
+      keyInsights: (synthesis.keyInsights || []).map((i) => ({
         insight: i.insight,
-        confidence: i.confidence,
+        confidence: i.confidence || 'high',
       })),
       recommendations: (synthesis.deliverable?.recommendations as string[]) ?? [],
       gaps: synthesis.gaps,
@@ -187,10 +187,10 @@ const generalRule: DomainRule<GeneralOutput> = {
   validate(_synthesis) {},
   format(synthesis): GeneralOutput {
     return {
-      executiveSummary: synthesis.executiveSummary,
-      keyInsights: synthesis.keyInsights.map((i) => ({
+      executiveSummary: synthesis.executiveSummary || 'Synthesis complete.',
+      keyInsights: (synthesis.keyInsights || []).map((i) => ({
         insight: i.insight,
-        confidence: i.confidence,
+        confidence: i.confidence || 'high',
       })),
       deliverable: synthesis.deliverable,
       gaps: synthesis.gaps,

@@ -119,6 +119,80 @@ export function listPendingApprovals(workspaceId?: string): PendingApproval[] {
   );
 }
 
+// ── Payload Guardrails ──────────────────────────────────────────────────────
+
+const DEFAULT_ALLOWED_GITHUB_PREFIXES = ['output/artifacts/', 'output/reports/', 'output/docs/'];
+const BLOCKED_GITHUB_SEGMENTS = ['..', '.git/', '.github/', 'node_modules/', '/secrets', 'secrets/', 'config/', '.env'];
+const DANGEROUS_DOCUMENT_PATTERNS = [/<script\b/i, /javascript:/i, /data:text\/html/i, /onload=/i, /onerror=/i];
+
+function parseAllowedEmailDomains(): string[] {
+  const raw = process.env.ALLOWED_EMAIL_DOMAINS;
+  if (!raw) return [];
+  return raw.split(',').map((domain) => domain.trim().toLowerCase()).filter(Boolean);
+}
+
+function validateEmailRecipients(to: string, cc?: string): string | null {
+  const allowedDomains = parseAllowedEmailDomains();
+  const recipients = [to, ...(cc ? cc.split(',') : [])]
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+
+  for (const recipient of recipients) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)) {
+      return `Invalid email format: ${recipient}`;
+    }
+
+    if (allowedDomains.length > 0) {
+      const domain = recipient.split('@')[1] ?? '';
+      if (!allowedDomains.includes(domain)) {
+        return `Recipient domain "${domain}" is not allowed.`;
+      }
+    }
+  }
+
+  return null;
+}
+
+function validateDocumentPayload(title: string, content: string, platform?: string): string | null {
+  if (title.trim().length < 3) return 'Document title is too short.';
+  if (title.length > 200) return 'Document title exceeds 200 characters.';
+  if (content.length > 50_000) return 'Document content exceeds 50,000 characters.';
+  if (DANGEROUS_DOCUMENT_PATTERNS.some((pattern) => pattern.test(content))) {
+    return 'Document content contains blocked executable markup.';
+  }
+  if (platform && !['notion', 'google_docs'].includes(platform)) {
+    return 'Unsupported document platform.';
+  }
+  return null;
+}
+
+function allowedGitHubPrefixes(): string[] {
+  const raw = process.env.GITHUB_ALLOWED_PATH_PREFIXES;
+  if (!raw) return DEFAULT_ALLOWED_GITHUB_PREFIXES;
+  return raw.split(',').map((value) => value.trim()).filter(Boolean);
+}
+
+function validateGitHubPayload(repo: string, path: string, content: string): string | null {
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) {
+    return 'Repo must match owner/repo format.';
+  }
+
+  if (!path || path.startsWith('/') || BLOCKED_GITHUB_SEGMENTS.some((segment) => path.includes(segment))) {
+    return 'GitHub path is not allowed.';
+  }
+
+  const prefixes = allowedGitHubPrefixes();
+  if (!prefixes.some((prefix) => path.startsWith(prefix))) {
+    return `GitHub path must stay inside one of: ${prefixes.join(', ')}`;
+  }
+
+  if (content.length > 100_000) {
+    return 'GitHub content payload exceeds 100,000 characters.';
+  }
+
+  return null;
+}
+
 // ── Simulated Tool Implementations ───────────────────────────────────────────
 
 const isSimulated = (envKey: string) => !process.env[envKey];
@@ -141,7 +215,10 @@ const TOOLS: Tool[] = [
       if (!p.to || typeof p.to !== 'string') return 'Missing required param: to';
       if (!p.subject) return 'Missing required param: subject';
       if (!p.body) return 'Missing required param: body';
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(p.to as string)) return 'Invalid email format: to';
+      const recipientError = validateEmailRecipients(p.to as string, typeof p.cc === 'string' ? p.cc : undefined);
+      if (recipientError) return recipientError;
+      if (String(p.subject).length > 200) return 'Email subject exceeds 200 characters.';
+      if (String(p.body).length > 20_000) return 'Email body exceeds 20,000 characters.';
       return null;
     },
     execute: async (params, workspaceId) => {
@@ -178,7 +255,11 @@ const TOOLS: Tool[] = [
     validate: (p) => {
       if (!p.title) return 'Missing required param: title';
       if (!p.content) return 'Missing required param: content';
-      return null;
+      return validateDocumentPayload(
+        String(p.title),
+        String(p.content),
+        typeof p.platform === 'string' ? p.platform : undefined
+      );
     },
     execute: async (params) => {
       const platform = params.platform || 'notion';
@@ -249,7 +330,8 @@ const TOOLS: Tool[] = [
       if (!p.path) return 'Missing required param: path';
       if (!p.content) return 'Missing required param: content';
       if (!p.message) return 'Missing required param: message';
-      return null;
+      if (String(p.message).length > 200) return 'Commit message exceeds 200 characters.';
+      return validateGitHubPayload(String(p.repo), String(p.path), String(p.content));
     },
     execute: async (params) => {
       return {
@@ -343,6 +425,7 @@ const TOOLS: Tool[] = [
       if (!p.client) return 'Missing required param: client';
       if (!p.amount) return 'Missing required param: amount';
       if (!p.dueDate) return 'Missing required param: dueDate';
+      if (typeof p.amount !== 'number' || p.amount <= 0) return 'Invoice amount must be a positive number.';
       return null;
     },
     execute: async (params) => {

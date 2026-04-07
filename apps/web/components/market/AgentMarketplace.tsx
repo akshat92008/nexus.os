@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Search, 
@@ -21,119 +21,43 @@ import { useNexusStore } from '../../store/nexusStore';
 
 const CATEGORIES = ['All', 'Productivity', 'Business', 'Learning', 'Finance', 'Creative', 'Technical'];
 
-const MOCK_AGENTS = [
-  {
-    id: 'finance-manager',
-    name: 'Finance Manager',
-    description: 'Real-time financial overview of business performance, including revenue, expenses, and profit.',
-    category: 'Finance',
-    icon: Activity,
-    color: 'text-emerald-400',
-    bg: 'bg-emerald-500/10',
-    installed: false,
-    rating: 4.9,
-    users: '10k',
-  },
-  {
-    id: 'time-tracker',
-    name: 'Time Tracker',
-    description: 'Track time, measure productivity, and generate reports for tasks and projects.',
-    category: 'Productivity',
-    icon: Zap,
-    color: 'text-blue-400',
-    bg: 'bg-blue-500/10',
-    installed: false,
-    rating: 4.8,
-    users: '8k',
-  },
-  {
-    id: 'email-manager',
-    name: 'Email Manager',
-    description: 'Automate email triage, drafting, and follow-ups with intelligent intent understanding.',
-    category: 'Productivity',
-    icon: Sparkles,
-    color: 'text-violet-400',
-    bg: 'bg-violet-500/10',
-    installed: false,
-    rating: 4.7,
-    users: '15k',
-  },
-  {
-    id: 'calendar-optimizer',
-    name: 'Calendar Optimizer',
-    description: 'Unified calendar and meeting management with intelligent scheduling and conflict resolution.',
-    category: 'Productivity',
-    icon: Target,
-    color: 'text-orange-400',
-    bg: 'bg-orange-500/10',
-    installed: false,
-    rating: 4.9,
-    users: '5k',
-  },
-  {
-    id: 'task-manager',
-    name: 'Task Manager',
-    description: 'Create, organize, and track tasks with automated priority and deadline management.',
-    category: 'Productivity',
-    icon: CheckCircle2,
-    color: 'text-pink-400',
-    bg: 'bg-pink-500/10',
-    installed: false,
-    rating: 4.8,
-    users: '12k',
-  },
-  {
-    id: 'research-agent',
-    name: 'Research Agent',
-    description: 'Specializes in fact-finding, data gathering, and source verification across multiple domains.',
-    category: 'Learning',
-    icon: Search,
-    color: 'text-blue-400',
-    bg: 'bg-blue-500/10',
-    installed: true,
-    rating: 4.8,
-    users: '12k',
-  },
-  {
-    id: 'meeting-scheduler',
-    name: 'Meeting Scheduler',
-    description: 'Seamlessly schedule meetings across time zones and coordinate with multiple participants.',
-    category: 'Productivity',
-    icon: Globe,
-    color: 'text-cyan-400',
-    bg: 'bg-cyan-500/10',
-    installed: false,
-    rating: 4.9,
-    users: '6k',
-  },
-  {
-    id: 'invoice-generator',
-    name: 'Invoice Generator',
-    description: 'Generate professional invoices, track payments, and manage financial transactions.',
-    category: 'Finance',
-    icon: Activity,
-    color: 'text-emerald-400',
-    bg: 'bg-emerald-500/10',
-    installed: false,
-    rating: 4.7,
-    users: '4k',
-  },
-];
+const ICON_MAP: Record<string, any> = {
+  'Search': Search,
+  'Activity': Activity,
+  'PenTool': PenTool,
+  'Code': Code,
+  'Target': Target,
+  'Zap': Zap,
+  'Sparkles': Sparkles,
+  'Globe': Globe,
+};
 
 export function AgentMarketplace() {
-  const { ui, toggleAgentsView, installedAgentIds, installAgent } = useNexusStore();
+  const { ui, toggleAgentsView, installedAgentIds, installAgent, availableAgents, fetchAvailableAgents } = useNexusStore();
   const [activeCategory, setActiveCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
 
+  useEffect(() => {
+    if (ui.agentsViewOpen) {
+      fetchAvailableAgents();
+    }
+  }, [ui.agentsViewOpen, fetchAvailableAgents]);
+
   if (!ui.agentsViewOpen) return null;
 
-  const agents = MOCK_AGENTS.map(a => ({
+  const agents = availableAgents.map(a => ({
     ...a,
-    installed: installedAgentIds.includes(a.id)
+    icon: ICON_MAP[a.icon] || Sparkles,
+    color: 'text-violet-400', // Default colors if not in registry
+    bg: 'bg-violet-500/10',
+    installed: installedAgentIds.includes(a.id),
+    rating: 4.8 + (Math.random() * 0.2), // Random for now
+    users: Math.floor(Math.random() * 10) + 'k', // Random for now
   }));
 
   const filteredAgents = agents.filter(agent => {
-    const matchesCategory = activeCategory === 'All' || agent.category === activeCategory;
+    const matchesCategory = activeCategory === 'All' || 
+                           agent.category.toLowerCase() === activeCategory.toLowerCase();
     const matchesSearch = agent.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                          agent.description.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesCategory && matchesSearch;

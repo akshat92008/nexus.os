@@ -37,6 +37,7 @@ import type {
 
 class InMemoryLedger {
   private rows: LedgerRow[] = [];
+  private readonly maxRows = 50_000;
 
   insert(row: Omit<LedgerRow, 'id' | 'created_at'>): LedgerRow {
     const full: LedgerRow = {
@@ -45,6 +46,9 @@ class InMemoryLedger {
       created_at: new Date().toISOString(),
     };
     this.rows.push(full);
+    if (this.rows.length > this.maxRows) {
+      this.rows.splice(0, this.rows.length - this.maxRows);
+    }
     return full;
   }
 
@@ -103,13 +107,31 @@ async function getSupabase(): Promise<SupabaseClient | null> {
 
 const PLATFORM_FEE_USD = 0.01;
 const TABLE_NAME       = 'Transaction_Ledger';
+const MAX_CUMULATIVE_USERS = 10_000;
+
+interface UserFeeState {
+  total: number;
+  lastUpdated: number;
+}
 
 // ── Ledger Class ───────────────────────────────────────────────────────────
 
 class TransactionLedger {
   private memLedger = new InMemoryLedger();
   /** Running cumulative fee per user for the current process lifetime */
-  private cumulativeFees = new Map<string, number>();
+  private cumulativeFees = new Map<string, UserFeeState>();
+
+  private pruneCumulativeFees(): void {
+    if (this.cumulativeFees.size <= MAX_CUMULATIVE_USERS) return;
+
+    const oldestUsers = Array.from(this.cumulativeFees.entries())
+      .sort((a, b) => a[1].lastUpdated - b[1].lastUpdated)
+      .slice(0, this.cumulativeFees.size - MAX_CUMULATIVE_USERS);
+
+    for (const [userId] of oldestUsers) {
+      this.cumulativeFees.delete(userId);
+    }
+  }
 
   /**
    * Records a $0.01 platform fee for a completed agent task.
@@ -138,16 +160,29 @@ class TransactionLedger {
     const row = this.memLedger.insert(rowData);
 
     // Update cumulative fee counter
-    const prev = this.cumulativeFees.get(userId) ?? 0;
+    const prev = this.cumulativeFees.get(userId)?.total ?? this.memLedger.sumByUser(userId) - PLATFORM_FEE_USD;
     const cumulative = Math.round((prev + PLATFORM_FEE_USD) * 10000) / 10000;
-    this.cumulativeFees.set(userId, cumulative);
+    this.cumulativeFees.set(userId, { total: cumulative, lastUpdated: Date.now() });
+    this.pruneCumulativeFees();
 
     console.log(
       `[Ledger] 💰 $${PLATFORM_FEE_USD} — agent: ${agentId} (${taskType}) ` +
       `· ${tokensUsed} tokens · cumulative: $${cumulative.toFixed(4)}`
     );
 
-    // Fire SSE event immediately (before Supabase write)
+    const client = await getSupabase();
+    if (client) {
+      const { error } = await client.from(TABLE_NAME).insert({
+        ...rowData,
+        id:         row.id,
+        created_at: row.created_at,
+      });
+      if (error) {
+        console.error('[Ledger] Supabase write error:', error);
+        throw new Error('Failed to persist ledger transaction.');
+      }
+    }
+
     if (sseRes && !isAborted()) {
       const event: LedgerUpdateEvent = {
         type:            'ledger_update',
@@ -162,19 +197,6 @@ class TransactionLedger {
       };
       sseRes.write(`data: ${JSON.stringify(event)}\n\n`);
     }
-
-    // Async Supabase write — non-blocking, failure tolerant
-    getSupabase().then(async (client) => {
-      if (!client) return;
-      const { error } = await client.from(TABLE_NAME).insert({
-        ...rowData,
-        id:         row.id,
-        created_at: row.created_at,
-      });
-      if (error) {
-        console.error('[Ledger] Supabase write error:', error);
-      }
-    });
 
     return row;
   }
@@ -196,7 +218,7 @@ class TransactionLedger {
 
   /** Returns the running cumulative fee for a user in this session */
   getCumulativeFee(userId: string): number {
-    return this.cumulativeFees.get(userId) ?? 0;
+    return this.cumulativeFees.get(userId)?.total ?? 0;
   }
 }
 

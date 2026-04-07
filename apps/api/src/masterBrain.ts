@@ -8,6 +8,8 @@
  */
 
 import type { TaskDAG } from '../../../packages/types/index.js';
+import { nexusStateStore } from './storage/nexusStateStore.js';
+import type { OngoingMission } from '@nexus-os/types';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -23,6 +25,7 @@ export type MissionLifecycleStatus =
 export interface MissionState {
   missionId:    string;
   workspaceId:  string;
+  userId:       string;
   goal:         string;
   goalType:     string;
   status:       MissionLifecycleStatus;
@@ -81,6 +84,21 @@ export interface GlobalBrainState {
 
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const POWER_MODEL = 'llama-3.3-70b-versatile';
+const MAX_TRACKED_MISSIONS = 100; // Reduced from 250
+const MAX_GLOBAL_ACTIONS = 50; // Reduced from 100
+const MAX_GLOBAL_OPPORTUNITIES = 50; // Reduced from 100
+const MAX_GLOBAL_RISKS = 50; // Reduced from 100
+const MAX_ARTIFACTS_PER_MISSION = 50; // Reduced from 75
+const MAX_MISSION_ACTIONS = 20; // Reduced from 25
+const MAX_MISSION_OPPORTUNITIES = 20; // Reduced from 25
+const MAX_MISSION_RISKS = 20; // Reduced from 25
+const COMPLETED_MISSION_TTL_MS = 2 * 60 * 60 * 1000; // Reduced from 6 hours to 2 hours
+
+function trimArrayInPlace<T>(items: T[], max: number): void {
+  if (items.length > max) {
+    items.splice(0, items.length - max);
+  }
+}
 
 // ── Priority Scoring System ───────────────────────────────────────────────────
 
@@ -115,12 +133,75 @@ class MasterBrainV2 {
   private loopInterval: NodeJS.Timeout | null = null;
   private globalReflectionInterval: NodeJS.Timeout | null = null;
 
+  private trimMissionState(mission: MissionState): void {
+    const artifactKeys = Object.keys(mission.artifacts);
+    if (artifactKeys.length > MAX_ARTIFACTS_PER_MISSION) {
+      for (const key of artifactKeys.slice(0, artifactKeys.length - MAX_ARTIFACTS_PER_MISSION)) {
+        delete mission.artifacts[key];
+      }
+    }
+
+    trimArrayInPlace(mission.nextActions, MAX_MISSION_ACTIONS);
+    trimArrayInPlace(mission.opportunities, MAX_MISSION_OPPORTUNITIES);
+    trimArrayInPlace(mission.risks, MAX_MISSION_RISKS);
+  }
+
+  private pruneState(): void {
+    const now = Date.now();
+
+    for (const [missionId, mission] of this.state.missions.entries()) {
+      const completedAt = mission.completedAt ?? mission.startedAt;
+      const isInactive =
+        mission.status === 'complete' ||
+        mission.status === 'failed' ||
+        mission.status === 'scheduled';
+
+      if (isInactive && now - completedAt > COMPLETED_MISSION_TTL_MS) {
+        this.state.missions.delete(missionId);
+        continue;
+      }
+
+      this.trimMissionState(mission);
+    }
+
+    if (this.state.missions.size > MAX_TRACKED_MISSIONS) {
+      const evictionOrder = Array.from(this.state.missions.values()).sort((a, b) => {
+        const aInactive = a.status === 'complete' || a.status === 'failed' || a.status === 'scheduled';
+        const bInactive = b.status === 'complete' || b.status === 'failed' || b.status === 'scheduled';
+        if (aInactive !== bInactive) return aInactive ? -1 : 1;
+        return (a.completedAt ?? a.startedAt) - (b.completedAt ?? b.startedAt);
+      });
+
+      for (const mission of evictionOrder.slice(0, this.state.missions.size - MAX_TRACKED_MISSIONS)) {
+        this.state.missions.delete(mission.missionId);
+      }
+    }
+
+    trimArrayInPlace(this.state.globalActions, MAX_GLOBAL_ACTIONS);
+    trimArrayInPlace(this.state.globalOpportunities, MAX_GLOBAL_OPPORTUNITIES);
+    trimArrayInPlace(this.state.globalRisks, MAX_GLOBAL_RISKS);
+  }
+
+  private async persistMissionsForUser(userId: string): Promise<void> {
+    const userMissions = Array.from(this.state.missions.values()).filter(m => m.userId === userId);
+    const ongoing: OngoingMission[] = userMissions.map(m => ({
+      id: m.missionId,
+      goal: m.goal,
+      status: (m.status === 'running' || m.status === 'planning') ? 'active' : 'paused',
+      lastRun: m.startedAt,
+      nextRun: Date.now() + 60000, // Placeholder
+      workspaceId: m.workspaceId,
+    }));
+    await nexusStateStore.syncOngoingMissions(userId, ongoing);
+  }
+
   // ── Mission Lifecycle ───────────────────────────────────────────────────────
 
-  registerMission(missionId: string, workspaceId: string, goal: string, goalType = 'general'): MissionState {
+  registerMission(missionId: string, workspaceId: string, userId: string, goal: string, goalType = 'general'): MissionState {
     const state: MissionState = {
       missionId,
       workspaceId,
+      userId,
       goal,
       goalType,
       status:       'queued',
@@ -131,6 +212,8 @@ class MasterBrainV2 {
       risks:        [],
     };
     this.state.missions.set(missionId, state);
+    this.pruneState();
+    void this.persistMissionsForUser(userId);
     console.log(`[MasterBrain] 🧠 Mission registered: ${missionId} — "${goal.slice(0, 50)}"`);
     return state;
   }
@@ -141,6 +224,8 @@ class MasterBrainV2 {
     mission.status = status;
     if (dag) mission.dag = dag;
     if (status === 'complete') mission.completedAt = Date.now();
+    this.pruneState();
+    void this.persistMissionsForUser(mission.userId);
   }
 
   depositArtifact(missionId: string, taskId: string, content: string): void {
@@ -149,6 +234,7 @@ class MasterBrainV2 {
     mission.artifacts[taskId] = content;
     this.detectOpportunities(mission);
     this.detectRisks(mission);
+    this.pruneState();
   }
 
   pauseMission(missionId: string): void {
@@ -210,7 +296,8 @@ class MasterBrainV2 {
     }
 
     this.state.globalActions.sort((a, b) => b.score - a.score);
-    this.state.globalActions = this.state.globalActions.slice(0, 50);
+    this.state.globalActions = this.state.globalActions.slice(0, MAX_GLOBAL_ACTIONS);
+    this.pruneState();
 
     return scored;
   }
@@ -241,6 +328,8 @@ class MasterBrainV2 {
         this.state.globalOpportunities.push(opp);
       }
     }
+
+    this.pruneState();
   }
 
   // ── Risk Detector ───────────────────────────────────────────────────────────
@@ -260,6 +349,7 @@ class MasterBrainV2 {
           createdAt:   now,
           mitigations: ['Abort and re-run mission', 'Check API rate limits', 'Reduce task complexity'],
         });
+        this.state.globalRisks.push(mission.risks[mission.risks.length - 1]!);
       }
     }
 
@@ -267,18 +357,21 @@ class MasterBrainV2 {
       if (content.length < 100) {
         const existing = mission.risks.find(r => r.title.includes(taskId));
         if (!existing) {
-          mission.risks.push({
-            id:          `risk_${crypto.randomUUID().slice(0, 8)}`,
-            title:       `Low-Quality Output: ${taskId}`,
+        mission.risks.push({
+          id:          `risk_${crypto.randomUUID().slice(0, 8)}`,
+          title:       `Low-Quality Output: ${taskId}`,
             description: `Agent output for task ${taskId} is suspiciously short (${content.length} chars). May indicate a failed execution.`,
             severity:    'medium',
             workspaceId: mission.workspaceId,
             createdAt:   now,
             mitigations: ['Re-run agent with stricter prompt', 'Increase max_tokens', 'Check for API errors'],
-          });
-        }
+        });
+        this.state.globalRisks.push(mission.risks[mission.risks.length - 1]!);
       }
     }
+
+    this.pruneState();
+  }
   }
 
   // ── Global Reflection (Autonomous Vision Engine) ────────────────────────────
@@ -342,6 +435,7 @@ class MasterBrainV2 {
         this.state.globalOpportunities.push(opp);
         console.log(`[MasterBrain] ✨ New Cross-Mission Opportunity: ${opp.title}`);
       });
+      this.pruneState();
     } catch (err) {
       console.error('[MasterBrain] Global Reflection failed:', err);
     }
@@ -366,6 +460,7 @@ class MasterBrainV2 {
       this.state.globalActions = this.state.globalActions.filter(
         a => !a.expiresAt || a.expiresAt > now
       );
+      this.pruneState();
 
       console.log(
         `[MasterBrain] 🔄 Cycle #${this.state.decisionCycle} — ` +
@@ -417,4 +512,4 @@ class MasterBrainV2 {
 
 export const masterBrain = new MasterBrainV2();
 masterBrain.startDecisionLoop(60_000);
-masterBrain.startGlobalReflection(3600_000);
+masterBrain.startGlobalReflection(300_000); // Activated every 5 minutes for "real" opportunities

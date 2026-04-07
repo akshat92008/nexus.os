@@ -23,28 +23,76 @@ interface QueueItem<T> {
   reject: (reason?: unknown) => void;
 }
 
+interface RecoveryItem<T> {
+  fn: () => Promise<T>;
+  attemptAt: number;
+  failRecord: unknown;
+  recoveryAttempts: number;
+}
+
+const MAX_RECOVERY_QUEUE_SIZE = 200;
+const MAX_RECOVERY_ATTEMPTS = 3;
+const DEFAULT_RECOVERY_DELAY_MS = 60_000;
+
 export class RateLimitGovernor {
   private paused = false;
   private pauseUntil = 0;
   private running = 0;
   private readonly concurrency: number;
   private queue: Array<QueueItem<unknown>> = [];
+  private readonly recoveryTimer: NodeJS.Timeout;
+
+  // Token Bucket State
+  private tokens: number;
+  private readonly maxTokens: number;
+  private readonly refillRatePerMs: number;
+  private lastRefill: number;
 
   // Load Balancer & Recovery Waves
   private fallbackModels = ['llama-3.3-70b-versatile', 'llama3-8b-8192', 'mixtral-8x7b-32768'];
-  private recoveryQueue: Array<{ fn: () => Promise<unknown>, attemptAt: number, failRecord: any }> = [];
+  private recoveryQueue: Array<RecoveryItem<unknown>> = [];
 
   /**
-   * @param concurrency Max simultaneous Groq calls. 2 is safe for free tier.
-   *                    Raise to 4–5 for paid plans with higher RPM limits.
+   * @param concurrency Max simultaneous Groq calls.
    */
   constructor(concurrency = 2) {
     this.concurrency = concurrency;
+    
+    // Token Bucket: 10 tokens max, refill 1 token every 2 seconds (0.5 tokens/sec)
+    this.maxTokens = 10;
+    this.tokens = 10;
+    this.refillRatePerMs = 1 / 2000; 
+    this.lastRefill = Date.now();
+
+    this.recoveryTimer = setInterval(() => {
+      void this.drainRecoveryQueue();
+    }, 5_000);
+    this.recoveryTimer.unref?.();
+  }
+
+  private refillTokens(): void {
+    const now = Date.now();
+    const elapsed = now - this.lastRefill;
+    const newTokens = elapsed * this.refillRatePerMs;
+    this.tokens = Math.min(this.maxTokens, this.tokens + newTokens);
+    this.lastRefill = now;
+  }
+
+  private async consumeToken(): Promise<void> {
+    while (true) {
+      this.refillTokens();
+      if (this.tokens >= 1) {
+        this.tokens -= 1;
+        return;
+      }
+      const waitMs = (1 - this.tokens) / this.refillRatePerMs;
+      await sleep(Math.min(waitMs, 2000));
+    }
   }
 
   /**
    * Execute an async function through the governor.
-   * Handles: global rate-limit pause, concurrency limit, exponential backoff.
+   * Handles: global rate-limit pause, concurrency limit, token bucket, exponential backoff.
    */
   async execute<T>(fn: () => Promise<T>): Promise<T> {
     // Wait out any global rate-limit pause first
@@ -63,6 +111,8 @@ export class RateLimitGovernor {
   private async run<T>(fn: () => Promise<T>): Promise<T> {
     this.running++;
     try {
+      // Token bucket check
+      await this.consumeToken();
       return await this.callWithRetry(fn, 0);
     } finally {
       this.running--;
@@ -100,7 +150,7 @@ export class RateLimitGovernor {
 
       if (is429 && attempt >= MAX_ATTEMPTS) {
         console.warn(`[Governor] 🌊 Task exhausted max retries. Moving to Recovery Wave.`);
-        this.recoveryQueue.push({ fn, attemptAt: Date.now() + 60000, failRecord: err });
+        this.enqueueRecovery(fn, err);
         throw new Error(`[Governor] Moved to recovery wave due to persistent rate limits.`);
       }
 
@@ -134,6 +184,54 @@ export class RateLimitGovernor {
       .catch(item.reject);
   }
 
+  private enqueueRecovery<T>(fn: () => Promise<T>, failRecord: unknown, recoveryAttempts = 0): void {
+    this.recoveryQueue.push({
+      fn,
+      attemptAt: Date.now() + DEFAULT_RECOVERY_DELAY_MS,
+      failRecord,
+      recoveryAttempts,
+    } as RecoveryItem<unknown>);
+
+    if (this.recoveryQueue.length > MAX_RECOVERY_QUEUE_SIZE) {
+      const overflow = this.recoveryQueue.length - MAX_RECOVERY_QUEUE_SIZE;
+      this.recoveryQueue.splice(0, overflow);
+    }
+  }
+
+  private async drainRecoveryQueue(): Promise<void> {
+    if (this.recoveryQueue.length === 0) return;
+
+    const now = Date.now();
+    const ready = this.recoveryQueue.filter((item) => item.attemptAt <= now);
+    const pending = this.recoveryQueue.filter((item) => item.attemptAt > now);
+    const readyToRun = ready.slice(0, this.concurrency);
+    const deferredReady = ready.slice(this.concurrency).map((item) => ({
+      ...item,
+      attemptAt: now + 5_000,
+    }));
+
+    this.recoveryQueue = [...deferredReady, ...pending];
+
+    if (readyToRun.length === 0) return;
+
+    for (const item of readyToRun) {
+      try {
+        await this.execute(item.fn);
+        console.warn('[Governor] Recovery wave successfully re-ran a deferred task.');
+      } catch (err) {
+        if (this.is429Error(err) && item.recoveryAttempts + 1 < MAX_RECOVERY_ATTEMPTS) {
+          console.warn(
+            `[Governor] Recovery task still rate limited. Re-queueing (attempt ${item.recoveryAttempts + 2}/${MAX_RECOVERY_ATTEMPTS}).`
+          );
+          this.enqueueRecovery(item.fn, err, item.recoveryAttempts + 1);
+          continue;
+        }
+
+        console.error('[Governor] Recovery task failed permanently:', err ?? item.failRecord);
+      }
+    }
+  }
+
   private is429Error(err: unknown): boolean {
     if (err instanceof Error) {
       return (
@@ -164,3 +262,17 @@ export class RateLimitGovernor {
     };
   }
 }
+
+let sharedGovernor: RateLimitGovernor | null = null;
+
+export function getGlobalGovernor(): RateLimitGovernor {
+  if (!sharedGovernor) {
+    sharedGovernor = new RateLimitGovernor(
+      parseInt(process.env.GROQ_GLOBAL_CONCURRENCY ?? '4', 10)
+    );
+  }
+
+  return sharedGovernor;
+}
+
+export const globalGovernor = getGlobalGovernor();

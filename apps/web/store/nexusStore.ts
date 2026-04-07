@@ -20,7 +20,7 @@
 import { create } from 'zustand';
 import { subscribeWithSelector, persist } from 'zustand/middleware';
 import { API_BASE, runActionOrchestration } from '../hooks/useNexusSSE';
-import type {
+import {
   AgentType,
   AgentStatus,
   TaskMode,
@@ -39,6 +39,8 @@ import type {
   NexusInboxEntry,
   ScheduleSnapshot,
   UserStateSnapshot,
+  FinancialState,
+  TimeTrackingState,
 } from '@nexus-os/types';
 
 export type InboxEntry = NexusInboxEntry;
@@ -147,7 +149,8 @@ interface NexusStore {
   artifacts: Map<string, Artifact>;
   waves:     WaveState;          // NEW
   synthesis: SynthesisResult;    // NEW
-  error:     string | null; // Global error tracking
+  toasts:    Array<{ id: string; message: string; count: number; timestamp: number }>; // Grouped toast system
+  pendingApproval: { taskId: string; taskLabel: string; reason: string } | null;
 
   
   // Workspace System (V3)
@@ -178,38 +181,22 @@ interface NexusStore {
   // Nexus Ecosystem (V6 Evolution)
   inbox: InboxEntry[];
   installedAgentIds: string[];
+  availableAgents: any[]; // List of all agents from the registry
+  brainStats: {
+    totalMissions: number;
+    activeMissions: number;
+    globalActions: number;
+    opportunities: number;
+    risks: number;
+  };
   fsItems: (NexusFile | NexusFolder)[];
   isFsLoading: boolean;
 
   // Financial System (MVP)
-  finances: {
-    revenue: number;
-    expenses: number;
-    profit: number;
-    cashPosition: number;
-    runway: number;
-    revenueTrend: number[];
-    topRevenueSources: { source: string; amount: number }[];
-    topExpenses: { category: string; amount: number }[];
-  };
+  finances: FinancialState;
 
   // Time Tracking (MVP)
-  timeTracking: {
-    activeEntry: {
-      id: string;
-      taskId: string;
-      startTime: number;
-      label: string;
-    } | null;
-    recentEntries: {
-      id: string;
-      taskId: string;
-      label: string;
-      durationMs: number;
-      endTime: number;
-      workspaceId: string;
-    }[];
-  };
+  timeTracking: TimeTrackingState;
 
   // Invoicing System (MVP)
   invoicing: {
@@ -256,6 +243,7 @@ interface NexusStore {
     timeTrackingViewOpen: boolean;
     invoicingViewOpen:  boolean;
     calendarViewOpen:   boolean;
+    graphViewOpen:      boolean;
   };
 
 
@@ -265,6 +253,7 @@ interface NexusStore {
   setUserId:      (userId: string) => void;
   startSession:   (goal: string, userId: string) => void;
   resetWorkspace: () => void;
+  clearHalt:      () => void;
   hydrateFromServer: (userId: string) => Promise<void>;
   persistServerState: () => Promise<void>;
 
@@ -273,7 +262,9 @@ interface NexusStore {
   setActiveArtifact:     (id: string | null) => void;
   toggleSidebar:         () => void;
   setExportModalOpen:    (v: boolean) => void;
-  setError:               (v: string | null) => void;
+  addToast:              (message: string) => void;
+  removeToast:           (id: string) => void;
+  setError:              (v: string | null) => void; // Legacy support
 
 
   // Actions — Workspace
@@ -301,7 +292,9 @@ interface NexusStore {
     toggleTimeTrackingView: () => void;
     toggleInvoicingView: () => void;
     toggleCalendarView: () => void;
+    toggleGraphView: () => void;
     closeAllModals:  () => void;
+    approveTask: (approved: boolean) => Promise<void>;
 
 
   executeNextAction:       (workspaceId: string, action: NextAction) => Promise<void>;
@@ -312,7 +305,10 @@ interface NexusStore {
   addInboxEntry:        (entry: Omit<InboxEntry, 'id' | 'timestamp' | 'read'>) => void;
   markInboxRead:         (id: string) => void;
   clearInbox:            () => void;
+  fetchAvailableAgents:  () => Promise<void>;
+  fetchBrainStats:       () => Promise<void>;
   installAgent:          (id: string) => void;
+  spawnAgent:            (agentType: AgentType) => Promise<void>;
   fetchFsItems:          (parentId?: string) => Promise<void>;
   uploadFsFile:          (name: string, content: string, parentId?: string) => Promise<void>;
   searchFs:              (query: string) => Promise<void>;
@@ -332,13 +328,34 @@ const toMissionRecord = (missions: OngoingMission[]) =>
 
 function applyServerSnapshot(set: (partial: Partial<NexusStore>) => void, snapshot: UserStateSnapshot) {
   set({
-    workspaces: toWorkspaceRecord(snapshot.workspaces),
-    activeWorkspaceId: snapshot.activeWorkspaceId,
-    appWindows: toWindowRecord(snapshot.appWindows),
-    schedules: toScheduleRecord(snapshot.schedules),
-    ongoingMissions: toMissionRecord(snapshot.ongoingMissions),
-    inbox: snapshot.inbox,
-    installedAgentIds: snapshot.installedAgentIds,
+    workspaces: toWorkspaceRecord(snapshot.workspaces || []),
+    activeWorkspaceId: snapshot.activeWorkspaceId || null,
+    appWindows: toWindowRecord(snapshot.appWindows || []),
+    schedules: toScheduleRecord(snapshot.schedules || []),
+    ongoingMissions: toMissionRecord(snapshot.ongoingMissions || []),
+    inbox: snapshot.inbox || [],
+    installedAgentIds: snapshot.installedAgentIds || [],
+    calendar: {
+      events: snapshot.calendar?.events || [],
+    },
+    finances: {
+      revenue: snapshot.finances?.revenue ?? 0,
+      expenses: snapshot.finances?.expenses ?? 0,
+      profit: snapshot.finances?.profit ?? 0,
+      cashPosition: snapshot.finances?.cashPosition ?? 0,
+      runway: snapshot.finances?.runway ?? 0,
+      revenueTrend: snapshot.finances?.revenueTrend || [],
+      topRevenueSources: snapshot.finances?.topRevenueSources || [],
+      topExpenses: snapshot.finances?.topExpenses || [],
+      records: snapshot.finances?.records || [],
+    },
+    timeTracking: {
+      activeEntry: snapshot.timeTracking?.activeEntry ?? null,
+      recentEntries: snapshot.timeTracking?.recentEntries || [],
+    },
+    invoicing: {
+      invoices: snapshot.invoicing?.invoices || [],
+    },
   });
 }
 
@@ -352,6 +369,13 @@ function buildServerSnapshot(state: NexusStore): UserStateSnapshot {
     ongoingMissions: Object.values(state.ongoingMissions),
     inbox: state.inbox,
     installedAgentIds: state.installedAgentIds,
+    finances: {
+      ...state.finances,
+      records: state.finances.records,
+    },
+    timeTracking: state.timeTracking,
+    invoicing: state.invoicing,
+    calendar: state.calendar,
     updatedAt: Date.now(),
   };
 }
@@ -411,7 +435,30 @@ export const useNexusStore = create<NexusStore>()(
       synthesis: {
         available: false,
       },
-      error:     null,
+      toasts:    [],
+      pendingApproval: null,
+
+      addToast: (message) => {
+        const { toasts } = get();
+        const now = Date.now();
+        // Group identical messages within 5 seconds
+        const existingIdx = toasts.findIndex(t => t.message === message && (now - t.timestamp < 5000));
+
+        if (existingIdx !== -1) {
+          const nextToasts = [...toasts];
+          nextToasts[existingIdx] = {
+            ...nextToasts[existingIdx],
+            count: nextToasts[existingIdx].count + 1,
+            timestamp: now
+          };
+          set({ toasts: nextToasts });
+        } else {
+          set({ toasts: [...toasts, { id: crypto.randomUUID(), message, count: 1, timestamp: now }] });
+        }
+      },
+
+      removeToast: (id) => 
+        set((s) => ({ toasts: s.toasts.filter(t => t.id !== id) })),
 
 
       // Workspace System
@@ -443,6 +490,7 @@ export const useNexusStore = create<NexusStore>()(
           { category: 'Software', amount: 10000 },
           { category: 'Marketing', amount: 5230 },
         ],
+        records: [],
       },
 
       // Time Tracking MVP
@@ -533,6 +581,14 @@ export const useNexusStore = create<NexusStore>()(
       // Ecosystem V6
       inbox: [],
       installedAgentIds: ['researcher-standard', 'analyst-standard'], // default pre-installed
+      availableAgents: [],
+      brainStats: {
+        totalMissions: 0,
+        activeMissions: 0,
+        globalActions: 0,
+        opportunities: 0,
+        risks: 0,
+      },
       fsItems: [],
       isFsLoading: false,
 
@@ -555,6 +611,7 @@ export const useNexusStore = create<NexusStore>()(
       timeTrackingViewOpen: false,
       invoicingViewOpen:  false,
       calendarViewOpen:   false,
+      graphViewOpen:      false,
     },
 
 
@@ -589,7 +646,7 @@ export const useNexusStore = create<NexusStore>()(
         synthesis: {
           available: false,
         },
-        error: null,
+        toasts: [],
         ui: {
           ...get().ui,
           sidebarExpanded: true,
@@ -604,6 +661,7 @@ export const useNexusStore = create<NexusStore>()(
         events:    [],
         ledger:    initialLedger,
         artifacts: new Map(),
+        toasts: [],
         ui: {
           commandBarFocused: false,
           activeArtifactId:  null,
@@ -615,8 +673,19 @@ export const useNexusStore = create<NexusStore>()(
           libraryViewOpen:   false,
           inboxOpen:         false,
           dashboardOpen:     false,
+          financialViewOpen:  false,
+          timeTrackingViewOpen: false,
+          invoicingViewOpen:  false,
+          calendarViewOpen:   false,
+          graphViewOpen:      false,
         },
       }),
+
+    clearHalt: () =>
+      set((s) => ({
+        session: { ...s.session, status: 'idle' },
+        isRunning: false
+      })),
 
     hydrateFromServer: async (userId) => {
       try {
@@ -628,7 +697,7 @@ export const useNexusStore = create<NexusStore>()(
         const snapshot = await response.json() as UserStateSnapshot;
         applyServerSnapshot(set, snapshot);
       } catch (err) {
-        set({ error: 'Failed to load your saved workspace state.' });
+        get().addToast('Failed to load your saved workspace state.');
       }
     },
 
@@ -647,7 +716,7 @@ export const useNexusStore = create<NexusStore>()(
           throw new Error(`Failed to persist user state (${response.status})`);
         }
       } catch (err) {
-        set({ error: 'Failed to save the latest workspace changes.' });
+        get().addToast('Failed to save the latest workspace changes.');
       }
     },
 
@@ -659,11 +728,11 @@ export const useNexusStore = create<NexusStore>()(
       const entry: EventLogEntry = {
         id:        crypto.randomUUID(),
         type:      event.type,
-        timestamp: new Date().toLocaleTimeString('en-US', { hour12: false }),
+        timestamp: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }),
         raw:       event,
       };
 
-      set((s) => ({ events: [...s.events, entry] }));
+      set((s) => ({ events: [...s.events, entry].slice(-100) }));
 
       // Dispatch to specific handlers
       switch (event.type) {
@@ -673,8 +742,20 @@ export const useNexusStore = create<NexusStore>()(
               ...s.session,
               id: (event as any).sessionId || s.session.id,
               status: 'running',
-            }
+            },
+            pendingApproval: null,
           }));
+          break;
+        }
+
+        case 'awaiting_approval': {
+          set({
+            pendingApproval: {
+              taskId: (event as any).taskId,
+              taskLabel: (event as any).taskLabel,
+              reason: (event as any).reason || 'Strategic Checkpoint: Your approval is required to proceed.'
+            }
+          });
           break;
         }
 
@@ -835,6 +916,14 @@ export const useNexusStore = create<NexusStore>()(
             nextArtifacts.set(event.agentId, artifact);
             return { agents: nextAgents, artifacts: nextArtifacts };
           });
+
+          // Ecosystem: Add to inbox
+          get().addInboxEntry({
+            type:     'agent',
+            title:    `Artifact: ${event.taskLabel}`,
+            content:  `Agent ${event.agentId} (${event.agentType}) has deposited a new artifact.`,
+            priority: 'medium'
+          });
           break;
         }
 
@@ -889,8 +978,8 @@ export const useNexusStore = create<NexusStore>()(
         case 'error': {
           set((s) => ({
             session: { ...s.session, status: 'error' },
-            error: event.message || 'An unexpected error occurred',
           }));
+          get().addToast(event.message || 'An unexpected error occurred');
 
           // Ecosystem: Add to inbox
           get().addInboxEntry({
@@ -919,13 +1008,26 @@ export const useNexusStore = create<NexusStore>()(
     setExportModalOpen: (v) =>
       set((s) => ({ ui: { ...s.ui, exportModalOpen: v } })),
 
-    setError: (v) => set({ error: v }),
+    setError: (v) => {
+      if (v) get().addToast(v);
+    },
 
 
     // ── Workspace Actions ───────────────────────────────────────────────
 
     setActiveWorkspace: (id) => {
-      set({ activeWorkspaceId: id });
+      set((s) => ({ 
+        activeWorkspaceId: id,
+        ui: { 
+          ...s.ui, 
+          dashboardOpen: false,
+          appLauncherOpen: false,
+          agentsViewOpen: false,
+          searchViewOpen: false,
+          libraryViewOpen: false,
+          inboxOpen: false,
+        }
+      }));
       void get().persistServerState();
     },
 
@@ -1106,7 +1208,7 @@ export const useNexusStore = create<NexusStore>()(
         applyServerSnapshot(set, payload.state);
         set((s) => ({ ui: { ...s.ui, appLauncherOpen: false } }));
       } catch (err) {
-        set({ error: 'Unable to create a new workspace.' });
+        get().addToast('Unable to create a new workspace.');
       }
     },
 
@@ -1312,6 +1414,25 @@ export const useNexusStore = create<NexusStore>()(
           financialViewOpen: false,
           timeTrackingViewOpen: false,
           invoicingViewOpen: false,
+          graphViewOpen: false,
+        }
+      })),
+
+    toggleGraphView: () =>
+      set((s) => ({
+        ui: {
+          ...s.ui,
+          graphViewOpen: !s.ui.graphViewOpen,
+          appLauncherOpen: false,
+          agentsViewOpen: false,
+          searchViewOpen: false,
+          libraryViewOpen: false,
+          inboxOpen: false,
+          dashboardOpen: false,
+          financialViewOpen: false,
+          timeTrackingViewOpen: false,
+          invoicingViewOpen: false,
+          calendarViewOpen: false,
         }
       })),
 
@@ -1329,8 +1450,32 @@ export const useNexusStore = create<NexusStore>()(
           timeTrackingViewOpen: false,
           invoicingViewOpen: false,
           calendarViewOpen: false,
+          graphViewOpen: false,
         }
       })),
+
+    approveTask: async (approved: boolean) => {
+      const { session, pendingApproval } = get();
+      if (!pendingApproval) return;
+
+      try {
+        const res = await fetch(`${API_BASE}/api/approve-task`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId: session.id,
+            taskId: pendingApproval.taskId,
+            approved
+          }),
+        });
+
+        if (!res.ok) throw new Error('Failed to send approval signal');
+        
+        set({ pendingApproval: null });
+      } catch (err) {
+        get().addToast((err as Error).message);
+      }
+    },
 
 
     // ── Continuous OS Actions ─────────────────────────────────────────────
@@ -1377,7 +1522,7 @@ export const useNexusStore = create<NexusStore>()(
       try {
         await runActionOrchestration(action.id, wsId, userId, get().ingestEvent);
       } catch (err) {
-        set({ error: err instanceof Error ? err.message : 'Action execution failed' });
+        get().addToast(err instanceof Error ? err.message : 'Action execution failed');
       }
     },
 
@@ -1441,6 +1586,26 @@ export const useNexusStore = create<NexusStore>()(
       void get().persistServerState();
     },
 
+    fetchAvailableAgents: async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/agents`);
+        const { agents } = await res.json();
+        set({ availableAgents: agents });
+      } catch (err) {
+        get().addToast('Failed to fetch available agents.');
+      }
+    },
+
+    fetchBrainStats: async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/brain/stats`);
+        const stats = await res.json();
+        set({ brainStats: stats });
+      } catch (err) {
+        // Silently fail for stats
+      }
+    },
+
     installAgent: (id) => {
       set((s) => ({
         installedAgentIds: Array.from(new Set([...s.installedAgentIds, id])),
@@ -1450,8 +1615,34 @@ export const useNexusStore = create<NexusStore>()(
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: get().session.userId, agentId: id }),
       }).catch(() => {
-        set({ error: 'Failed to persist installed agent state.' });
+        get().addToast('Failed to persist installed agent state.');
       });
+    },
+
+    spawnAgent: async (agentType) => {
+      const { session, activeWorkspaceId, workspaces } = get();
+      const workspace = activeWorkspaceId ? workspaces[activeWorkspaceId] : null;
+      
+      try {
+        const res = await fetch(`${API_BASE}/api/agents/spawn`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            agentType,
+            goal: workspace?.goal || session.goal || 'Autonomous Research',
+            userId: session.userId,
+            workspaceId: activeWorkspaceId || 'global',
+          }),
+        });
+
+        if (res.ok) {
+          get().addToast(`Unit deployed: ${agentType.toUpperCase()}`);
+        } else {
+          throw new Error('Spawn failed');
+        }
+      } catch (err) {
+        get().addToast(`Failed to deploy ${agentType} unit.`);
+      }
     },
 
     fetchFsItems: async (parentId = 'root') => {
@@ -1461,7 +1652,8 @@ export const useNexusStore = create<NexusStore>()(
         const { files, folders } = await res.json();
         set({ fsItems: [...folders, ...files], isFsLoading: false });
       } catch (err) {
-        set({ error: 'Failed to fetch files from NexusFS', isFsLoading: false });
+        get().addToast('Failed to fetch files from NexusFS');
+        set({ isFsLoading: false });
       }
     },
 
@@ -1474,7 +1666,7 @@ export const useNexusStore = create<NexusStore>()(
         });
         if (res.ok) await get().fetchFsItems(parentId);
       } catch (err) {
-        set({ error: 'File upload failed' });
+        get().addToast('File upload failed');
       }
     },
 

@@ -349,6 +349,14 @@ class NexusStateStore {
     return this.db.users[userId];
   }
 
+  async syncOngoingMissions(userId: string, missions: OngoingMission[]): Promise<void> {
+    await this.mutate(() => {
+      const state = this.getUserRef(userId);
+      state.ongoingMissions = missions;
+      state.updatedAt = Date.now();
+    });
+  }
+
   async getUserState(userId: string): Promise<UserStateSnapshot> {
     await this.ensureLoaded();
     return clone(this.getUserRef(userId));
@@ -500,6 +508,14 @@ class NexusStateStore {
 
     return Object.values(this.db.users).flatMap((state) =>
       state.schedules.map((schedule) => ({ userId: state.userId, schedule: clone(schedule) }))
+    );
+  }
+
+  async listAllOngoingMissions(): Promise<Array<{ userId: string; mission: OngoingMission }>> {
+    await this.ensureLoaded();
+
+    return Object.values(this.db.users).flatMap((state) =>
+      state.ongoingMissions.map((mission) => ({ userId: state.userId, mission: clone(mission) }))
     );
   }
 

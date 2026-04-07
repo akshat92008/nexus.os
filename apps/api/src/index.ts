@@ -17,7 +17,7 @@ import { planMission }      from './missionPlanner.js';
 import { orchestrateDAG, executeSingleAction } from './orchestrator.js';
 import { TaskRegistry }     from './taskRegistry.js';
 import { MissionMemory }    from './missionMemory.js';
-import { RateLimitGovernor } from './rateLimitGovernor.js';
+import { globalGovernor }   from './rateLimitGovernor.js';
 import { MCPBridge }        from './mcpBridge.js';
 import { ledger }           from './ledger.js';
 import { masterBrain }      from './masterBrain.js';
@@ -39,6 +39,8 @@ import type {
   ExportFormat,
   GoalType,
   UserStateSnapshot,
+  AgentType,
+  TaskDAG,
 } from '../../../packages/types/index.js';
 
 dotenv.config();
@@ -60,8 +62,12 @@ app.use(cors({ origin: process.env.CORS_ORIGIN ?? '*' }));
 app.use(express.json({ limit: '1mb' }));
 
 void (async () => {
-  const persistedSchedules = await nexusStateStore.listAllSchedules();
+  const [persistedSchedules, persistedMissions] = await Promise.all([
+    nexusStateStore.listAllSchedules(),
+    nexusStateStore.listAllOngoingMissions(),
+  ]);
 
+  // Restore Schedules
   for (const { userId, schedule } of persistedSchedules) {
     if (!schedule.intervalMs || !schedule.createdAt || !schedule.triggerType) continue;
 
@@ -81,6 +87,20 @@ void (async () => {
       maxRuns: schedule.maxRuns,
     });
   }
+
+  // Restore Master Brain Missions
+  for (const { userId, mission } of persistedMissions) {
+    masterBrain.registerMission(
+      mission.id, 
+      mission.workspaceId, 
+      userId, 
+      mission.goal
+    );
+    masterBrain.updateMissionStatus(
+      mission.id, 
+      mission.status === 'active' ? 'running' : 'paused'
+    );
+  }
 })();
 
 // ── Health Check ───────────────────────────────────────────────────────────
@@ -93,6 +113,7 @@ app.get('/api/health', (_req: Request, res: Response) => {
     groqKeyPresent:     !!process.env.GROQ_API_KEY,
     supabaseConnected:  !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY),
     masterBrain:        masterBrain.stats,
+    governor:           globalGovernor.stats,
     scheduler:          schedulerEngine.stats,
     timestamp:          new Date().toISOString(),
   };
@@ -176,6 +197,62 @@ app.post('/api/agents/install', async (req: Request, res: Response) => {
   res.json({ success: true, installedAgentIds: state.installedAgentIds });
 });
 
+app.get('/api/brain/stats', (_req: Request, res: Response) => {
+  res.json(masterBrain.stats);
+});
+
+app.get('/api/agents', (_req: Request, res: Response) => {
+  const { AGENT_REGISTRY } = require('./agents/agentRegistry.js');
+  res.json({ agents: Object.values(AGENT_REGISTRY) });
+});
+
+
+app.post('/api/agents/spawn', async (req: Request, res: Response) => {
+  const { agentType, goal, userId = 'user_anonymous', workspaceId } = req.body as {
+    agentType: AgentType;
+    goal: string;
+    userId: string;
+    workspaceId: string;
+  };
+
+  if (!agentType || !goal || !workspaceId) {
+    res.status(400).json({ error: 'Missing agentType, goal, or workspaceId.' });
+    return;
+  }
+
+  console.log(`[Server] 🦾 Spawning ad-hoc agent: ${agentType} for workspace: ${workspaceId}`);
+
+  // Create a minimal DAG for a single agent execution
+  const missionId = crypto.randomUUID();
+  const dag: TaskDAG = {
+    missionId,
+    goal,
+    goalType: 'general',
+    successCriteria: [`Execute specialized ${agentType} task`],
+    nodes: [
+      {
+        id: `adhoc_${agentType}_${Date.now()}`,
+        label: `Autonomous ${agentType} execution for: ${goal}`,
+        agentType,
+        dependencies: [],
+        priority: 'high',
+        maxRetries: 1,
+        expectedOutput: { format: 'prose' },
+        contextFields: [],
+        goalAlignment: 1.0,
+      }
+    ],
+    estimatedWaves: 1
+  };
+
+  // Register with Master Brain
+  masterBrain.registerMission(missionId, workspaceId, userId, goal);
+  masterBrain.updateMissionStatus(missionId, 'running', dag);
+
+  // We don't stream here, we just return the missionId.
+  // The client will pick up the events via the global SSE stream if they are subscribed.
+  res.json({ success: true, missionId });
+});
 
 // ── SSE Orchestration ──────────────────────────────────────────────────────
 
@@ -249,7 +326,7 @@ app.post('/api/orchestrate', async (req: Request, res: Response) => {
 
     // Register mission with Master Brain
     const missionId = crypto.randomUUID();
-    masterBrain.registerMission(missionId, sessionId, goal);
+    masterBrain.registerMission(missionId, sessionId, userId, goal);
     masterBrain.updateMissionStatus(missionId, 'planning');
 
     // Initialize workspace permissions for integration OS
@@ -306,7 +383,7 @@ app.post('/api/orchestrate', async (req: Request, res: Response) => {
     // Initialize V2 state components
     const registry = new TaskRegistry(dag.missionId);
     const memory   = new MissionMemory(sessionId, goal);
-    const governor = new RateLimitGovernor();
+    const governor = globalGovernor;
 
     // Register session for exports
     sessions.set(sessionId, memory);
