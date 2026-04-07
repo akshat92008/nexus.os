@@ -23,6 +23,7 @@ import {
 
 
 import { UniversalCommandBar }  from './UniversalCommandBar';
+import { SandboxRouter }        from './SandboxRouter';
 import { ArtifactViewer }       from './ArtifactViewer';
 import { OmniChatView }          from './OmniChatView';
 import { WorkspaceHistorySidebar } from './WorkspaceHistorySidebar';
@@ -180,39 +181,21 @@ export function Workspace() {
   const isRunning     = useNexusStore(selectIsRunning);
   const sidebarOpen   = useNexusStore((s) => s.ui.sidebarExpanded);
   const toggleSidebar = useNexusStore((s) => s.toggleSidebar);
-  const resetWS       = useNexusStore((s) => s.resetWorkspace);
   const hydrateFromServer = useNexusStore((s) => s.hydrateFromServer);
   const activeWorkspaceId = useNexusStore((s) => s.activeWorkspaceId);
   const toasts            = useNexusStore((s) => s.toasts);
   const removeToast       = useNexusStore((s) => s.removeToast);
-  const [exporting, setExporting] = useState<ExportFormat | null>(null);
   const [schedulerOpen, setSchedulerOpen] = useState(false);
   
   const { 
     ui, 
     workspaces,
-    appWindows,
     toggleInbox, 
-    toggleAgentsView, 
-    toggleAppLauncher, 
-    toggleLibraryView,
-    toggleSearchView,
     toggleDashboard,
-    toggleGraphView,
     setActiveWorkspace,
-    closeWindow
   } = useNexusStore();
 
-  const graphViewOpen = ui.graphViewOpen;
   const inboxOpen = ui.inboxOpen;
-  const openWindowList = Object.values(appWindows).sort((a: any, b: any) => b.openedAt - a.openedAt);
-
-  const handleGlobalExport = async (format: ExportFormat) => {
-    const sid = activeWorkspaceId || session.id;
-    if (!sid) return;
-    setExporting(format);
-    try { await exportArtifact(sid, format); } catch (err) { useNexusStore.getState().addToast('Export failed.'); } finally { setExporting(null); }
-  };
 
   useEffect(() => {
     const userId = localStorage.getItem('nexus_user_id') ?? `user_${Math.random().toString(36).slice(2, 10)}`;
@@ -222,8 +205,90 @@ export function Workspace() {
   }, [hydrateFromServer]);
 
   return (
-    <div className="h-screen w-screen overflow-hidden flex flex-col bg-zinc-950 text-zinc-100 font-sans relative">
-      <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] flex flex-col gap-3 pointer-events-none w-full max-w-md px-6">
+    <div className="h-screen w-screen overflow-hidden flex flex-col bg-[#0F1115] text-zinc-100 font-sans relative selection:bg-violet-500/30">
+      
+      {/* 🌌 DEEP SPACE BACKGROUND: Gradient + Dot Matrix */}
+      <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-[#0F1115] via-black to-[#0F1115]" />
+        <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] bg-violet-900/10 blur-[150px] rounded-full animate-pulse" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-cyan-900/5 blur-[150px] rounded-full animate-pulse" />
+        <div 
+          className="absolute inset-0 opacity-[0.03]"
+          style={{
+            backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)',
+            backgroundSize: '32px 32px',
+          }}
+        />
+      </div>
+
+      {/* 🚀 ZONE A: OMNI-BAR (Floating Centerpiece) */}
+      <div className="fixed top-8 left-1/2 -translate-x-1/2 z-[200] w-full max-w-2xl px-6">
+        <UniversalCommandBar />
+      </div>
+
+      <div className="flex-1 flex overflow-hidden relative z-10 w-full">
+        
+        {/* 🔹 ZONE B: EXECUTION CANVAS (Left - 30%) */}
+        <aside className="w-[30%] min-w-[340px] border-r border-white/5 bg-black/20 backdrop-blur-3xl flex flex-col pt-24">
+          <div className="px-6 pb-4 border-b border-white/5 flex items-center justify-between">
+             <div className="flex items-center gap-2">
+                <Zap size={14} className="text-violet-400" />
+                <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Execution Canvas</h3>
+             </div>
+             <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-violet-500/10 border border-violet-500/20 text-[9px] font-bold text-violet-400">
+                <span className="w-1 h-1 rounded-full bg-violet-500 animate-pulse" /> Live Reasoning
+             </div>
+          </div>
+          <div className="flex-1 relative overflow-hidden">
+             <GraphCanvas sessionId={session.id || 'initial'} />
+          </div>
+        </aside>
+
+        {/* 🔹 ZONE C: INTERACTIVE SANDBOX (Center - 50%) */}
+        <main className="flex-1 h-full pt-24 relative overflow-hidden flex flex-col bg-white/[0.01]">
+            {/* Minimal Sub-Header / Breadcrumbs for Sandbox */}
+            <div className="h-10 px-8 flex items-center gap-4 bg-black/10 border-b border-white/5 shrink-0">
+               <div className="flex items-center gap-2 px-3 py-1 rounded-lg hover:bg-white/5 cursor-pointer group transition-all">
+                  <Hexagon size={12} className="text-zinc-600 group-hover:text-violet-400" />
+                  <span className="text-[10px] font-bold text-zinc-500 group-hover:text-zinc-300 transition-colors uppercase tracking-widest">
+                    {activeWorkspaceId ? workspaces[activeWorkspaceId]?.goal : 'System Boot'}
+                  </span>
+               </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-10">
+              <SandboxRouter />
+            </div>
+        </main>
+
+        {/* 🔹 ZONE D: VAULT + ROSTER (Right - 20%) */}
+        <aside className="w-[20%] min-w-[280px] border-l border-white/5 bg-black/20 backdrop-blur-3xl flex flex-col pt-24">
+           {/* Top: Agent Roster */}
+           <div className="h-[45%] flex flex-col border-b border-white/5 overflow-hidden">
+              <div className="px-6 py-3 bg-white/5 border-b border-white/5 flex items-center gap-2">
+                 <Activity size={14} className="text-cyan-400" />
+                 <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400">Agent Roster</h3>
+              </div>
+              <div className="flex-1 overflow-y-auto">
+                 <AgentsView />
+              </div>
+           </div>
+
+           {/* Bottom: Semantic Vault */}
+           <div className="flex-1 flex flex-col overflow-hidden">
+              <div className="px-6 py-3 bg-white/5 border-b border-white/5 flex items-center gap-2">
+                 <Clock size={14} className="text-zinc-500" />
+                 <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400">Semantic Vault</h3>
+              </div>
+              <div className="flex-1 overflow-y-auto">
+                 <ActivityTimeline />
+              </div>
+           </div>
+        </aside>
+      </div>
+
+      {/* 🍞 TOAST SYSTEM (Bottom Left) */}
+      <div className="fixed bottom-8 left-8 z-[300] flex flex-col gap-3 pointer-events-none w-full max-w-md">
         <AnimatePresence mode="popLayout">
           {toasts.map((toast) => (
             <ToastItem key={toast.id} toast={toast} onRemove={removeToast} />
@@ -231,156 +296,16 @@ export function Workspace() {
         </AnimatePresence>
       </div>
 
+      {/* 🧪 SYSTEM OVERLAYS */}
       <AppLauncher />
-      <AgentsView />
-      <AgentMarketplace />
       <UnifiedInbox isOpen={inboxOpen} onClose={toggleInbox} />
-      <SearchView />
       <FileSystemView />
       <ApprovalModal />
-      {activeWorkspaceId && (
-        <SchedulerPanel 
-          workspaceId={activeWorkspaceId} 
-          isOpen={schedulerOpen} 
-          onClose={() => setSchedulerOpen(false)} 
-        />
-      )}
 
-      {/* Restore Background Dot Matrix Pattern */}
-      <div 
-        className="absolute inset-0 z-0 pointer-events-none opacity-20"
-        style={{
-          backgroundImage: 'radial-gradient(circle at 2px 2px, rgba(255,255,255,0.15) 1px, transparent 0)',
-          backgroundSize: '24px 24px',
-        }}
-      />
-      
-      {/* Restore Subtle Violet/Cyan Radial Glows */}
-      <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-violet-900/20 blur-[120px] rounded-full z-0 pointer-events-none" />
-      <div className="absolute bottom-[-10%] right-[-10%] w-[30%] h-[30%] bg-cyan-900/10 blur-[120px] rounded-full z-0 pointer-events-none" />
-
-      <header className="relative z-10 flex items-center gap-4 px-6 py-4 border-b border-zinc-800/40 bg-zinc-950/60 backdrop-blur-xl shrink-0">
-        <div className="flex items-center gap-3">
-          <div 
-            onClick={toggleDashboard}
-            title="Home / Morning Brief"
-            className="w-8 h-8 rounded-lg flex items-center justify-center bg-gradient-to-br from-violet-600/80 to-cyan-600/80 shadow-[0_0_15px_rgba(139,92,246,0.3)] border border-violet-500/30 cursor-pointer hover:scale-110 active:scale-95 transition-all group"
-          >
-            <Hexagon size={16} className="text-white drop-shadow-md group-hover:rotate-12 transition-transform" />
-          </div>
-          <div className="flex items-center gap-2 px-4 py-2 rounded-lg border border-zinc-800 hover:bg-zinc-900 transition-colors cursor-pointer text-sm font-bold tracking-tight text-zinc-100">
-             Agentic OS v2.0 <ChevronDown size={14} className="text-zinc-600" />
-          </div>
-        </div>
-
-        {/* Workspace Taskbar / Tab Bar */}
-        <div className="flex-1 flex items-center justify-center gap-2 overflow-x-auto pl-4 no-scrollbar">
-          {openWindowList.map(app => (
-             <div 
-               key={app.workspaceId}
-               onClick={() => setActiveWorkspace(app.workspaceId)}
-               className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs cursor-pointer transition-all ${
-                 activeWorkspaceId === app.workspaceId 
-                   ? 'bg-zinc-800 border-zinc-700 text-white shadow-md' 
-                   : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800/80 hover:text-zinc-300'
-               }`}
-             >
-               <span className="truncate max-w-[150px]">{app.title}</span>
-               <button 
-                 onClick={(e) => { e.stopPropagation(); closeWindow(app.workspaceId); }}
-                 className="p-0.5 rounded-full hover:bg-zinc-700 hover:text-white transition-colors"
-               >
-                 <CloseIcon size={12} />
-               </button>
-             </div>
-          ))}
-        </div>
-
-        <div className="flex items-center gap-4">
-          {(session.status === 'complete' || activeWorkspaceId) && (
-            <div className="flex items-center gap-2 border-r border-zinc-800 pr-4">
-              <button onClick={() => handleGlobalExport('excel')} className="p-2 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-emerald-400 group relative">
-                 <FileSpreadsheet size={16} className="transition-transform group-active:scale-95" />
-              </button>
-              <button onClick={() => handleGlobalExport('pdf')} className="p-2 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-violet-400 group relative">
-                 <Download size={16} className="transition-transform group-active:scale-95" />
-              </button>
-            </div>
-          )}
-          {activeWorkspaceId && (
-            <button onClick={() => setSchedulerOpen(true)} className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-violet-500/30 text-violet-400 hover:bg-violet-500/10 transition-colors pointer shadow-[0_0_10px_rgba(139,92,246,0.15)] text-xs font-bold uppercase tracking-wider">
-               <Clock size={14} /> Schedule
-            </button>
-          )}
-          {session.status !== 'idle' && (
-            <button 
-              onClick={toggleGraphView}
-              className={`p-2 rounded-lg transition-colors ${graphViewOpen ? 'bg-violet-600/10 text-violet-400 border border-violet-500/30' : 'text-zinc-500 hover:text-zinc-200'}`}
-              title="Reasoning Graph"
-            >
-              <Zap size={18} />
-            </button>
-          )}
-          <button 
-            onClick={toggleInbox}
-            className={`p-2 rounded-lg transition-colors ${inboxOpen ? 'bg-violet-600/10 text-violet-400' : 'text-zinc-500 hover:text-zinc-200'}`}
-          >
-            <Bell size={18} />
-          </button>
-          <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-gradient-to-r from-violet-600 to-cyan-600 text-[11px] font-bold text-white shadow-lg shadow-violet-600/20">300</div>
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-zinc-700 to-zinc-900 border border-zinc-800 flex items-center justify-center font-bold text-xs text-violet-400 shadow-inner">U</div>
-        </div>
-      </header>
-
-
-      <div className="flex flex-1 overflow-hidden relative z-10 w-full">
-        <WorkspaceHistorySidebar />
-        <div className="flex-1 flex flex-col gap-6 p-8 overflow-y-auto w-full mx-auto custom-scrollbar">
-          {ui.dashboardOpen ? (
-            <DashboardView key="dashboard" />
-          ) : ui.agentsViewOpen ? (
-            <AgentMarketplace key="market" />
-          ) : ui.searchViewOpen ? (
-            <SearchView key="search" />
-          ) : ui.libraryViewOpen ? (
-            <div key="library" className="flex items-center justify-center h-full text-zinc-500 text-sm font-bold tracking-widest uppercase italic">Library Experience — 0% Loaded</div>
-          ) : (!activeWorkspaceId || !workspaces[activeWorkspaceId]) ? (
-            <OmniChatView key="omni" />
-          ) : ui.financialViewOpen ? (
-            <FinancialView key="finance" />
-          ) : (
-            <WorkspaceCanvas key={activeWorkspaceId} />
-          )}
-        </div>
-
-        <AnimatePresence>
-          {sidebarOpen && (
-            <motion.aside initial={{ width: 0, opacity: 0, x: 20 }} animate={{ width: 380, opacity: 1, x: 0 }} exit={{ width: 0, opacity: 0, x: 20 }} transition={{ type: 'spring', stiffness: 350, damping: 30 }} className="flex flex-col border-l border-zinc-800/80 bg-zinc-950/80 backdrop-blur-xl shrink-0 h-full overflow-hidden">
-              <div className="flex-1 flex flex-col overflow-hidden bg-zinc-950/40">
-                <div className="flex-1 overflow-hidden border-b border-zinc-800/80">
-                  <div className="px-4 py-2 bg-zinc-900/30 border-b border-zinc-800">
-                    <h3 className="text-[10px] font-bold uppercase tracking-widest text-violet-400">Next Recommended Actions</h3>
-                  </div>
-                  <div className="h-full overflow-y-auto"><NextActionPanel /></div>
-                </div>
-                <div className="flex-1 overflow-hidden">
-                  <div className="px-4 py-2 bg-zinc-900/30 border-b border-zinc-800">
-                    <h3 className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Mission Timeline</h3>
-                  </div>
-                  <div className="h-full overflow-y-auto"><ActivityTimeline /></div>
-                </div>
-              </div>
-            </motion.aside>
-          )}
-        </AnimatePresence>
-      </div>
-      
-      <button onClick={toggleSidebar} className="fixed bottom-6 right-6 z-50 p-3 rounded-full bg-zinc-900 border border-zinc-800 text-zinc-400 shadow-2xl hover:text-white transition-all transform hover:scale-110 active:scale-95">
-        {sidebarOpen ? <PanelRightClose size={20} /> : <PanelRightOpen size={20} />}
-      </button>
     </div>
   );
 }
+
 function ToastItem({ toast, onRemove }: { toast: any; onRemove: (id: string) => void }) {
   useEffect(() => {
     const timer = setTimeout(() => onRemove(toast.id), 5000);
@@ -390,17 +315,19 @@ function ToastItem({ toast, onRemove }: { toast: any; onRemove: (id: string) => 
   return (
     <motion.div 
       layout
-      initial={{ opacity: 0, y: 20, scale: 0.9 }} 
-      animate={{ opacity: 1, y: 0, scale: 1 }} 
+      initial={{ opacity: 0, x: -20, scale: 0.9 }} 
+      animate={{ opacity: 1, x: 0, scale: 1 }} 
       exit={{ opacity: 0, scale: 0.8, transition: { duration: 0.2 } }} 
-      className="pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-2xl bg-rose-500 text-white shadow-2xl border border-rose-400/50 backdrop-blur-md"
+      className="pointer-events-auto flex items-center gap-3 px-5 py-4 rounded-3xl bg-zinc-950 border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.5)] backdrop-blur-3xl"
     >
-      <AlertCircle size={18} className="shrink-0" />
+      <div className="w-8 h-8 rounded-full bg-rose-500/10 flex items-center justify-center border border-rose-500/20">
+         <AlertCircle size={18} className="text-rose-500" />
+      </div>
       <div className="flex-1 min-w-0">
-        <span className="text-sm font-semibold truncate block">
+        <span className="text-sm font-bold text-zinc-100 truncate block">
           {toast.message}
           {toast.count > 1 && (
-            <span className="ml-2 px-1.5 py-0.5 rounded-full bg-white/20 text-[10px] font-black uppercase">
+            <span className="ml-2 px-1.5 py-0.5 rounded-full bg-rose-500 text-[10px] font-black uppercase text-white">
               x{toast.count}
             </span>
           )}
@@ -408,7 +335,7 @@ function ToastItem({ toast, onRemove }: { toast: any; onRemove: (id: string) => 
       </div>
       <button 
         onClick={() => onRemove(toast.id)} 
-        className="p-1.5 hover:bg-white/10 rounded-lg transition-colors shrink-0"
+        className="p-1 px-2 hover:bg-white/10 rounded-lg transition-colors text-zinc-500 hover:text-zinc-200"
       >
         <CloseIcon size={14} />
       </button>

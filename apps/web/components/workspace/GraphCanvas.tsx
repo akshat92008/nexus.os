@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import ReactFlow, { 
   Background, 
+  BackgroundVariant,
   Controls, 
   MiniMap,
   useNodesState,
@@ -49,92 +50,113 @@ const AGENT_ICONS: Record<AgentType | string, any> = {
 const CustomNode = ({ data }: { data: any }) => {
   const Icon = AGENT_ICONS[data.agentType] || Brain;
   const color = AGENT_COLORS[data.agentType] || '#7c6af7';
- 
+  const isWorking = data.status === 'working' || data.status === 'running';
+
   return (
     <motion.div
       initial={{ scale: 0.9, opacity: 0 }}
-      animate={{ scale: 1, opacity: 1 }}
-      className="px-4 py-3 shadow-xl rounded-xl bg-slate-900/90 border border-slate-700/50 backdrop-blur-md min-w-[180px]"
+      animate={{ 
+        scale: 1, 
+        opacity: 1,
+        boxShadow: isWorking ? `0 0 20px ${color}30` : '0 10px 30px rgba(0,0,0,0.5)'
+      }}
+      className={`px-4 py-3 rounded-2xl bg-zinc-900/90 border backdrop-blur-xl min-w-[200px] transition-colors duration-500 ${
+        isWorking ? 'border-violet-500/50' : 'border-white/5'
+      }`}
     >
       <div className="flex items-center gap-3">
         <div 
-          className="p-2 rounded-lg"
-          style={{ backgroundColor: `${color}20`, color }}
+          className={`p-2 rounded-xl ${isWorking ? 'animate-pulse' : ''}`}
+          style={{ backgroundColor: `${color}15`, color }}
         >
           <Icon size={18} />
         </div>
-        <div className="flex-1">
-          <div className="text-[10px] uppercase tracking-wider font-bold text-slate-500">
+        <div className="flex-1 min-w-0">
+          <div className="text-[9px] uppercase tracking-[0.15em] font-black text-zinc-500 mb-0.5">
             {data.agentType}
           </div>
-          <div className="text-sm font-semibold text-slate-100 truncate max-w-[120px]">
+          <div className="text-sm font-bold text-zinc-100 truncate">
             {data.label}
           </div>
         </div>
-        {data.status === 'completed' && <CheckCircle size={14} className="text-emerald-400" />}
+        {data.status === 'completed' && (
+          <div className="w-5 h-5 rounded-full bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20">
+             <CheckCircle size={12} className="text-emerald-400" />
+          </div>
+        )}
       </div>
       
-      {data.artifact && (
-        <div className="mt-2 pt-2 border-t border-slate-800 text-[10px] text-slate-400 italic line-clamp-2">
-          {data.artifact.substring(0, 100)}...
-        </div>
+      {data.status === 'working' && (
+         <div className="mt-3 h-1 w-full bg-zinc-800 rounded-full overflow-hidden">
+            <motion.div 
+               animate={{ x: ['-100%', '100%'] }}
+               transition={{ repeat: Infinity, duration: 1.5, ease: 'linear' }}
+               className="h-full w-1/2 bg-gradient-to-r from-transparent via-violet-500 to-transparent"
+            />
+         </div>
       )}
     </motion.div>
   );
 };
- 
+
 const nodeTypes = {
   default: CustomNode,
   input: ({ data }: any) => (
-    <div className="px-6 py-4 bg-indigo-600 rounded-2xl shadow-lg border-2 border-indigo-400/50 text-white font-bold flex items-center gap-3">
-      <Target size={20} />
+    <div className="px-6 py-4 bg-gradient-to-br from-violet-600 to-cyan-600 rounded-2xl shadow-[0_10px_30px_rgba(139,92,246,0.3)] border border-white/20 text-white font-black text-xs uppercase tracking-widest flex items-center gap-3">
+      <Target size={18} />
       {data.label}
     </div>
   ),
 };
- 
+
 interface GraphCanvasProps {
   sessionId: string;
   refreshInterval?: number;
 }
- 
+
 export function GraphCanvas({ sessionId, refreshInterval = 5000 }: GraphCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [loading, setLoading] = useState(true);
- 
+
   const fetchGraphData = useCallback(async () => {
+    if (sessionId === 'initial') {
+       setLoading(false);
+       return;
+    }
     try {
       const res = await fetch(`http://localhost:3001/api/mission/${sessionId}/graph`);
       if (!res.ok) throw new Error('Refresh failed');
       const data = await res.json();
       
-      setNodes(data.nodes);
-      setEdges(data.edges);
+      const polishedNodes = data.nodes.map((n: any) => ({
+         ...n,
+         draggable: true,
+      }));
+
+      const polishedEdges = data.edges.map((e: any) => ({
+         ...e,
+         animated: true,
+         style: { stroke: '#4b5563', strokeWidth: 2 },
+         markerEnd: { type: MarkerType.ArrowClosed, color: '#4b5563' },
+      }));
+
+      setNodes(polishedNodes);
+      setEdges(polishedEdges);
       setLoading(false);
     } catch (err) {
       console.error('[Graph] ❌ Fetch Error:', err);
     }
   }, [sessionId, setNodes, setEdges]);
- 
+
   useEffect(() => {
     fetchGraphData();
     const interval = setInterval(fetchGraphData, refreshInterval);
     return () => clearInterval(interval);
   }, [fetchGraphData, refreshInterval]);
- 
+
   return (
-    <div className="w-full h-full bg-slate-950 relative overflow-hidden flex flex-col">
-      <Panel position="top-left" className="m-4">
-        <div className="p-3 bg-slate-900/80 backdrop-blur border border-slate-700 rounded-lg shadow-2xl">
-          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-            <Zap size={14} className="text-amber-400" />
-            Reasoning Canvas
-          </h3>
-          <p className="text-[10px] text-slate-500 mt-1">Real-time agent lineage graph</p>
-        </div>
-      </Panel>
- 
+    <div className="w-full h-full bg-transparent relative overflow-hidden flex flex-col">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -142,25 +164,34 @@ export function GraphCanvas({ sessionId, refreshInterval = 5000 }: GraphCanvasPr
         onEdgesChange={onEdgesChange}
         nodeTypes={nodeTypes}
         fitView
+        fitViewOptions={{ padding: 0.2 }}
         className="w-full h-full"
       >
-        <Background gap={20} color="#334155" variant="dots" />
-        <Controls showInteractive={false} className="bg-slate-900 border-slate-700 fill-slate-100" />
+        <Background gap={32} color="rgba(255,255,255,0.03)" variant={BackgroundVariant.Dots} />
       </ReactFlow>
- 
-      {loading && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-950/50 backdrop-blur-sm">
-          <div className="flex flex-col items-center gap-4">
-            <motion.div
-              animate={{ rotate: 360 }}
-              transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
-            >
-              <Brain size={48} className="text-indigo-500 animate-pulse" />
-            </motion.div>
-            <span className="text-indigo-400 font-mono text-sm tracking-widest translate-x-2">BOOTING OBSERVE_LAYER...</span>
-          </div>
-        </div>
-      )}
+
+      <AnimatePresence>
+        {loading && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 z-50 flex items-center justify-center bg-[#0F1115]/50 backdrop-blur-sm"
+          >
+            <div className="flex flex-col items-center gap-6">
+              <div className="relative">
+                <Brain size={48} className="text-violet-500 animate-pulse" />
+                <motion.div 
+                  animate={{ rotate: 360 }}
+                  transition={{ repeat: Infinity, duration: 4, ease: "linear" }}
+                  className="absolute inset-[-12px] border-2 border-dashed border-violet-500/20 rounded-full"
+                />
+              </div>
+              <span className="text-violet-400 font-black text-[10px] tracking-[0.3em] uppercase translate-x-1">Connecting Neural Graph...</span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

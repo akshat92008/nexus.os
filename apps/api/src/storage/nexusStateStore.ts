@@ -93,6 +93,12 @@ function ensureWorkspaceDefaults(workspace: Workspace): Workspace {
 }
 
 class NexusStateStore {
+  // ── Helper: Get Supabase Client ──────────────────────────────────────────
+
+  async getSupabaseClient() {
+    return await getSupabase();
+  }
+
   // ── User State (UI/Workspace Snapshot) ───────────────────────────────────
 
   async getUserState(userId: string): Promise<UserStateSnapshot> {

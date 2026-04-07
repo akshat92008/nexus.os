@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useEffect, useState, useCallback } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Terminal, Zap, X, Search, Lightbulb, ArrowUp, Plus, Mic, Monitor, Globe, Mail, MessageSquare, Activity,
   FileText, Image as ImageIcon, Video, Calendar, DollarSign, Plane, TrendingUp as TrendingUpIcon, Target as TargetIcon, Clock
@@ -71,6 +71,24 @@ export function UniversalCommandBar() {
   const isRunning = useNexusStore(selectIsRunning);
   const isFocused = ui.commandBarFocused;
   const [isRecording, setIsRecording] = useState(false);
+
+  // Intent Detection logic
+  const detectedMode = draft.toLowerCase().match(/(code|build|debug|refactor|api|repo)/) 
+    ? 'developer' 
+    : draft.toLowerCase().match(/(market|lead|roi|revenue|competitor|sale)/)
+    ? 'founder'
+    : draft.toLowerCase().match(/(learn|study|summarize|explain|teach)/)
+    ? 'student'
+    : currentMode;
+
+  const getPreviewAgents = () => {
+     if (detectedMode === 'developer') return ['Architect', 'Coder', 'Analyst'];
+     if (detectedMode === 'founder') return ['Strategist', 'Researcher', 'Analyst'];
+     if (detectedMode === 'student') return ['Researcher', 'Summarizer', 'Writer'];
+     return ['Generalist'];
+  };
+
+  const previewAgents = getPreviewAgents();
 
   const QUICK_ACTIONS = currentMode === 'student' 
     ? STUDENT_QUICK_ACTIONS 
@@ -275,8 +293,43 @@ export function UniversalCommandBar() {
               setTimeout(() => setFocused(false), 200);
             }}
             placeholder={placeholder}
-            className="w-full h-32 resize-none bg-transparent px-6 py-5 text-lg text-zinc-100 placeholder:text-zinc-600 outline-none leading-relaxed transition-all font-sans"
+            className="w-full h-24 resize-none bg-transparent px-6 py-5 text-lg text-zinc-100 placeholder:text-zinc-600 outline-none leading-relaxed transition-all font-sans"
           />
+
+          {/* 🎯 MISSION PREVIEW OVERLAY */}
+          <AnimatePresence>
+            {draft.trim().length > 3 && isFocused && (
+              <motion.div 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 10 }}
+                className="mx-6 mb-4 p-4 rounded-2xl bg-violet-600/5 border border-violet-500/20 flex items-center justify-between"
+              >
+                 <div className="flex flex-col gap-1.5">
+                    <div className="flex items-center gap-2">
+                       <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border ${
+                          detectedMode === 'developer' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' :
+                          detectedMode === 'founder' ? 'bg-cyan-500/10 border-cyan-500/20 text-cyan-400' :
+                          'bg-violet-500/10 border-violet-500/20 text-violet-400'
+                       }`}>
+                          {detectedMode} mode detected
+                       </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                       {previewAgents.map((agent, i) => (
+                          <div key={i} className="flex items-center gap-1.5">
+                             <div className="w-1.5 h-1.5 rounded-full bg-violet-500/40" />
+                             <span className="text-[10px] text-zinc-400 font-medium">{agent}</span>
+                          </div>
+                       ))}
+                    </div>
+                 </div>
+                 <div className="flex items-center gap-2 text-[10px] font-bold text-violet-400 uppercase tracking-tighter animate-pulse">
+                    <ArrowUp size={12} /> Press Enter to deploy
+                 </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {activeSuggestions.length > 0 && isFocused && (
             <motion.div 

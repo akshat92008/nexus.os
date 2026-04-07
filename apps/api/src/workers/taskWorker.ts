@@ -1,8 +1,11 @@
 /**
- * Nexus OS — Task Worker
+ * Nexus OS — Task Worker (Durable Execution)
  * 
  * Separate process that executes individual agent tasks.
- * Durable: Resumes on crash, handles retries.
+ * Upgraded to handle:
+ * 1. Sandboxed Code Execution
+ * 2. Dynamic Tool Calling
+ * 3. Vector Memory Indexing
  */
 
 import { Worker, Job } from 'bullmq';
@@ -11,7 +14,10 @@ import { runAgent } from '../agentRunner.js';
 import { eventBus } from '../events/eventBus.js';
 import { nexusStateStore } from '../storage/nexusStateStore.js';
 import { tasksQueue, TaskJobData } from '../queue/queue.js';
-import type { TypedArtifact } from '@nexus-os/types';
+import { sandboxManager } from '../sandbox/sandboxManager.js';
+import { toolExecutor } from '../tools/toolExecutor.js';
+import { vectorStore } from '../storage/vectorStore.js';
+import type { TypedArtifact, CodeArtifact, AgentContext, MemoryEntry } from '@nexus-os/types';
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 const connection = new Redis(REDIS_URL, { maxRetriesPerRequest: null });
@@ -36,12 +42,24 @@ export const taskWorker = new Worker<TaskJobData>(
         agentType
       });
 
-      // 3. Build context from DB (replacing local MissionMemory)
-      // contextFields are IDs of previous tasks whose artifacts we need
-      let context = '';
+      // 3. Build AgentContext from DB
+      const context: AgentContext = {
+        entries: [],
+        promptBlock: ''
+      };
+
       if (contextFields && contextFields.length > 0) {
         const artifacts = await nexusStateStore.fetchArtifactsByContext(missionId, contextFields);
-        context = artifacts.map((a: any) => 
+        context.entries = artifacts.map((a: any) => ({
+          key: `artifact:${a.task_id}`,
+          taskId: a.task_id,
+          agentType: a.type,
+          data: a.content,
+          writtenAt: new Date(a.created_at).getTime(),
+          tokensUsed: 0
+        } as MemoryEntry));
+
+        context.promptBlock = artifacts.map((a: any) => 
           `--- Context from Task: ${a.task_id} ---\n${JSON.stringify(a.content, null, 2)}`
         ).join('\n\n');
       }
@@ -55,17 +73,55 @@ export const taskWorker = new Worker<TaskJobData>(
         isAborted: () => false
       });
 
-      // 5. Store Artifact in DB
-      const artifact = await nexusStateStore.storeArtifact({
+      let finalArtifact = result.artifact as TypedArtifact;
+
+      // ── PHASE 1: Sandboxed Code Execution ─────────────────────────────────
+      
+      if (finalArtifact.format === 'code') {
+        const codeArt = finalArtifact as CodeArtifact;
+        console.log(`[Worker] 💻 Code detected in task ${taskId}. Sending to sandbox...`);
+
+        const sandboxResult = await sandboxManager.runCode(
+          codeArt.language as any,
+          codeArt.code
+        );
+
+        // Append execution results to the artifact
+        finalArtifact = {
+          ...codeArt,
+          executionResult: sandboxResult,
+          rawContent: `${codeArt.rawContent || ''}\n\n--- Execution Result ---\n${JSON.stringify(sandboxResult, null, 2)}`
+        } as any;
+
+        // Emit execution event
+        await eventBus.publish(missionId, {
+          type: 'agent_working',
+          taskId,
+          taskLabel: input.label,
+          message: sandboxResult.error ? `Code Execution Failed: ${sandboxResult.error}` : 'Code Execution Succeeded.',
+        } as any);
+      }
+
+      // 5. Store Final Artifact in DB
+      const artifactRecord = await nexusStateStore.storeArtifact({
         missionId,
         taskId,
         type: agentType,
-        content: result.artifact as TypedArtifact,
+        content: finalArtifact,
       });
+
+      // ── PHASE 3: Vector Memory Indexing ──────────────────────────────────
+      try {
+        const indexText = finalArtifact.rawContent || JSON.stringify(finalArtifact);
+        await vectorStore.indexArtifact(artifactRecord.id, indexText);
+      } catch (vecErr) {
+        console.warn(`[Worker] 🧠 Vector indexing failed for artifact ${artifactRecord.id}:`, vecErr);
+        // Don't fail the task if indexing fails
+      }
 
       // 6. Update Task status to 'completed'
       await nexusStateStore.updateTaskStatus(taskId, 'completed', {
-        artifactId: artifact.id,
+        artifactId: artifactRecord.id,
         tokensUsed: result.tokensUsed,
       });
 
@@ -74,24 +130,19 @@ export const taskWorker = new Worker<TaskJobData>(
         type: 'artifact_created',
         taskId,
         missionId,
-        artifact: result.artifact
+        artifact: finalArtifact
       });
 
       await eventBus.publish(missionId, {
         type: 'task_completed',
         taskId,
         missionId,
-        artifact: result.artifact
+        artifact: finalArtifact
       });
 
-      // 8. Trigger MissionWorker to check for next unblocked tasks
-      // By adding a small delay or just signaling completion, the MissionWorker 
-      // can scan the DB for tasks that are now ready.
-      
     } catch (err: any) {
       console.error(`[Worker] ❌ Task failed: ${taskId}`, err);
       
-      // Update Task status to 'failed'
       await nexusStateStore.updateTaskStatus(taskId, 'failed', { error: err.message });
 
       await eventBus.publish(missionId, {
@@ -100,7 +151,7 @@ export const taskWorker = new Worker<TaskJobData>(
         missionId,
         error: err.message
       });
-      throw err; // Allow BullMQ to handle retries
+      throw err;
     }
   },
   { connection, concurrency: 5 }

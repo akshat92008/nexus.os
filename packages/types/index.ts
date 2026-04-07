@@ -459,6 +459,7 @@ export interface ScheduleSnapshot {
   lastRun: number | null;
   enabled: boolean;
   runCount: number;
+  cron?: string;
   triggerType?: string;
   intervalMs?: number;
   createdAt?: number;
