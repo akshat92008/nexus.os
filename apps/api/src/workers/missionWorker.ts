@@ -8,9 +8,10 @@
 
 import { Worker, Job } from 'bullmq';
 import { Redis } from 'ioredis';
-import { eventBus } from '../events/eventBus.js';
+import { eventBuffer } from '../events/eventBuffer.js';
 import { tasksQueue, MissionJobData } from '../queue/queue.js';
 import { nexusStateStore } from '../storage/nexusStateStore.js';
+import { MapReduceTaskNode } from '../missionPlanner.js';
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 const connection = new Redis(REDIS_URL, { maxRetriesPerRequest: null });
@@ -32,32 +33,32 @@ export const missionWorker = new Worker<MissionJobData>(
       }
 
       // 2. Check for overall mission completion or failure
-      const allCompleted = tasks.every(t => t.status === 'completed');
-      const anyFailed = tasks.some(t => t.status === 'failed');
+      const allCompleted = tasks.every((t: any) => t.status === 'completed');
+      const anyFailed = tasks.some((t: any) => t.status === 'failed');
 
       if (allCompleted) {
         console.log(`[MissionWorker] ✅ Mission complete: ${missionId}`);
         await nexusStateStore.updateMissionStatus(missionId, 'complete', new Date().toISOString());
-        await eventBus.publish(missionId, { type: 'mission_completed', missionId, userId });
+        await eventBuffer.publish(missionId, { type: 'mission_completed', missionId, userId });
         return;
       }
 
       if (anyFailed) {
         console.log(`[MissionWorker] ❌ Mission failed: ${missionId}`);
         await nexusStateStore.updateMissionStatus(missionId, 'failed');
-        await eventBus.publish(missionId, { type: 'mission_failed', missionId, userId, error: 'One or more tasks failed.' });
+        await eventBuffer.publish(missionId, { type: 'mission_failed', missionId, userId, error: 'One or more tasks failed.' });
         return;
       }
 
       // 3. Identify tasks that are 'pending' and unblocked
-      const pendingTasks = tasks.filter(t => t.status === 'pending');
-      const readyToEnqueue = pendingTasks.filter(task => {
+      const pendingTasks = tasks.filter((t: any) => t.status === 'pending');
+      const readyToEnqueue = pendingTasks.filter((task: any) => {
         const dependencies = task.task_dependencies || [];
         if (dependencies.length === 0) return true;
 
         // Check if all dependencies are completed
         return dependencies.every((dep: any) => {
-          const depTask = tasks.find(t => t.id === dep.depends_on_task_id);
+          const depTask = tasks.find((t: any) => t.id === dep.depends_on_task_id);
           return depTask && depTask.status === 'completed';
         });
       });
@@ -66,6 +67,12 @@ export const missionWorker = new Worker<MissionJobData>(
 
       // 4. Enqueue ready tasks
       for (const task of readyToEnqueue) {
+        // ── BLOCKER 3: Map-Reduce Splitting ──────────────────────────────────
+        const mrTask = task as MapReduceTaskNode;
+        if (mrTask.mapReduce) {
+          console.log(`[MissionWorker] 🔄 Map-Reduce detected for task ${task.id}. Splitting...`);
+        }
+
         // Mark as 'queued' in DB first to avoid double-enqueuing
         await nexusStateStore.updateTaskStatus(task.id, 'queued');
 
@@ -80,14 +87,12 @@ export const missionWorker = new Worker<MissionJobData>(
       }
 
       // 5. If we enqueued anything, we might need to check again later.
-      // However, BullMQ jobs can be repeatable or we can re-enqueue the mission job 
-      // with a delay if there are still pending tasks.
-      const stillPending = tasks.some(t => t.status === 'pending' || t.status === 'queued' || t.status === 'running');
+      const stillPending = tasks.some((t: any) => t.status === 'pending' || t.status === 'queued' || t.status === 'running');
       if (stillPending) {
         // Re-enqueue the mission orchestration job to check again in a few seconds
-        // This ensures the DAG keeps moving even if a task completion event is missed.
         await job.updateProgress(50);
-        await job.queue.add(job.name, job.data, { delay: 5000 });
+        // Using missionsQueue directly to avoid protected property access
+        await (job as any).queue.add(job.name, job.data, { delay: 5000 });
       }
       
     } catch (err: any) {

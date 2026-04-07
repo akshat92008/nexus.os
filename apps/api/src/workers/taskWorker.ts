@@ -16,6 +16,7 @@ import { nexusStateStore } from '../storage/nexusStateStore.js';
 import { tasksQueue, TaskJobData } from '../queue/queue.js';
 import { sandboxManager } from '../sandbox/sandboxManager.js';
 import { toolExecutor } from '../tools/toolExecutor.js';
+import { eventBuffer } from '../events/eventBuffer.js';
 import { vectorStore } from '../storage/vectorStore.js';
 import type { TypedArtifact, CodeArtifact, AgentContext, MemoryEntry } from '@nexus-os/types';
 
@@ -30,11 +31,31 @@ export const taskWorker = new Worker<TaskJobData>(
     console.log(`[Worker] 🛠️  Executing task: ${taskId} (${agentType}) — Mission: ${missionId}`);
 
     try {
+      // 0. Check for Idempotency: Is this already completed or partially done?
+      const task = await nexusStateStore.getTask(taskId);
+      if (task.status === 'completed') {
+        console.log(`[Worker] ✅ Task ${taskId} already completed. Skipping.`);
+        return;
+      }
+
+      const checkpoint = task.input_payload?._checkpoint;
+      let resumeFromStep = checkpoint?.step || 'start';
+
+      if (resumeFromStep === 'agent_finished' && checkpoint) {
+        console.log(`[Worker] ⏩ Resuming Task ${taskId} from 'agent_finished' checkpoint.`);
+        const result = {
+          artifact: checkpoint.data,
+          tokensUsed: checkpoint.tokensUsed || 0
+        };
+        // We'll define this helper method to handle the sandbox, storage, and indexing logic
+        return await (this as any).handlePostProcessing(job, result, task, input);
+      }
+
       // 1. Update Task status to 'running'
       await nexusStateStore.updateTaskStatus(taskId, 'running');
 
       // 2. Publish start event
-      await eventBus.publish(missionId, {
+      await eventBuffer.publish(missionId, {
         type: 'task_started',
         taskId,
         missionId,
@@ -45,7 +66,12 @@ export const taskWorker = new Worker<TaskJobData>(
       // 3. Build AgentContext from DB
       const context: AgentContext = {
         entries: [],
-        promptBlock: ''
+        promptBlock: '',
+        permissions: {
+          fileAccess: false,
+          networkAccess: true,
+          exec: 'limited'
+        }
       };
 
       if (contextFields && contextFields.length > 0) {
@@ -64,6 +90,9 @@ export const taskWorker = new Worker<TaskJobData>(
         ).join('\n\n');
       }
 
+      // ── BLOCKER 1 Checkpoint: Context Ready ────────────────────────────────
+      await nexusStateStore.updateTaskCheckpoint(taskId, { step: 'context_ready' });
+
       // 4. Run the Agent
       const result = await runAgent({
         task: input,
@@ -73,99 +102,20 @@ export const taskWorker = new Worker<TaskJobData>(
         isAborted: () => false
       });
 
-      let finalArtifact = result.artifact as TypedArtifact;
-
-      if (finalArtifact.format === 'code') {
-        const codeArt = finalArtifact as CodeArtifact;
-        console.log(`[Worker] 💻 Code detected in task ${taskId}. Sending to sandbox...`);
-
-        // Emit sandbox_started event
-        await eventBus.publish(missionId, {
-          type: 'sandbox_started',
-          taskId,
-          command: codeArt.language === 'python' ? 'python3 execution' : `${codeArt.language} execution`,
-        } as any);
-
-        const sandboxResult = await sandboxManager.runCode(
-          codeArt.language as any,
-          codeArt.code,
-          async (type, data) => {
-            // Stream real-time logs to the Commander
-            await eventBus.publish(missionId, {
-              type: type === 'stdout' ? 'sandbox_stdout' : 'sandbox_stderr',
-              taskId,
-              data
-            } as any);
-          }
-        );
-
-        // Emit sandbox_finished event
-        await eventBus.publish(missionId, {
-          type: 'sandbox_finished',
-          taskId,
-          exitCode: sandboxResult.exitCode,
-        } as any);
-
-        // Append execution results to the artifact
-        finalArtifact = {
-          ...codeArt,
-          executionResult: sandboxResult,
-          rawContent: `${codeArt.rawContent || ''}\n\n--- Execution Result ---\n${JSON.stringify(sandboxResult, null, 2)}`
-        } as any;
-
-        // Emit execution summary event
-        await eventBus.publish(missionId, {
-          type: 'agent_working',
-          taskId,
-          taskLabel: input.label,
-          message: sandboxResult.error ? `Code Execution Failed: ${sandboxResult.error}` : 'Code Execution Succeeded.',
-        } as any);
-      }
-
-      // 5. Store Final Artifact in DB
-      const artifactRecord = await nexusStateStore.storeArtifact({
-        missionId,
-        taskId,
-        type: agentType,
-        content: finalArtifact,
+      // ── BLOCKER 1 Checkpoint: Agent Finished ───────────────────────────────
+      await nexusStateStore.updateTaskCheckpoint(taskId, { 
+        step: 'agent_finished', 
+        data: result.artifact,
+        tokensUsed: result.tokensUsed 
       });
 
-      // ── PHASE 3: Vector Memory Indexing ──────────────────────────────────
-      try {
-        const indexText = finalArtifact.rawContent || JSON.stringify(finalArtifact);
-        await vectorStore.indexArtifact(artifactRecord.id, indexText);
-      } catch (vecErr) {
-        console.warn(`[Worker] 🧠 Vector indexing failed for artifact ${artifactRecord.id}:`, vecErr);
-        // Don't fail the task if indexing fails
-      }
-
-      // 6. Update Task status to 'completed'
-      await nexusStateStore.updateTaskStatus(taskId, 'completed', {
-        artifactId: artifactRecord.id,
-        tokensUsed: result.tokensUsed,
-      });
-
-      // 7. Publish completion events
-      await eventBus.publish(missionId, {
-        type: 'artifact_created',
-        taskId,
-        missionId,
-        artifact: finalArtifact
-      });
-
-      await eventBus.publish(missionId, {
-        type: 'task_completed',
-        taskId,
-        missionId,
-        artifact: finalArtifact
-      });
-
+      return await (this as any).handlePostProcessing(job, result, task, input);
     } catch (err: any) {
       console.error(`[Worker] ❌ Task failed: ${taskId}`, err);
       
       await nexusStateStore.updateTaskStatus(taskId, 'failed', { error: err.message });
 
-      await eventBus.publish(missionId, {
+      await eventBuffer.publish(missionId, {
         type: 'task_failed',
         taskId,
         missionId,
@@ -176,6 +126,105 @@ export const taskWorker = new Worker<TaskJobData>(
   },
   { connection, concurrency: 5 }
 );
+
+/**
+ * Helper to handle post-execution logic (Sandbox, DB storage, Vector Indexing)
+ * This allows us to resume from a checkpoint without re-running the agent.
+ */
+(taskWorker as any).handlePostProcessing = async function(
+  job: Job<TaskJobData>, 
+  result: { artifact: any; tokensUsed: number },
+  task: any,
+  input: any
+) {
+  const { taskId, missionId, agentType } = job.data;
+  let finalArtifact = result.artifact as TypedArtifact;
+
+  if (finalArtifact.format === 'code') {
+    const codeArt = finalArtifact as CodeArtifact;
+    console.log(`[Worker] 💻 Code detected in task ${taskId}. Sending to sandbox...`);
+
+    // Emit sandbox_started event
+    await eventBuffer.publish(missionId, {
+      type: 'sandbox_started',
+      taskId,
+      command: codeArt.language === 'python' ? 'python3 execution' : `${codeArt.language} execution`,
+    } as any);
+
+    const sandboxResult = await sandboxManager.runCode(
+      codeArt.language as any,
+      codeArt.code,
+      async (type, data) => {
+        // Stream real-time logs to the Commander via Buffer
+        await eventBuffer.publish(missionId, {
+          type: type === 'stdout' ? 'sandbox_stdout' : 'sandbox_stderr',
+          taskId,
+          data
+        } as any);
+      }
+    );
+
+    // Emit sandbox_finished event
+    await eventBuffer.publish(missionId, {
+      type: 'sandbox_finished',
+      taskId,
+      exitCode: sandboxResult.exitCode,
+    } as any);
+
+    // Append execution results to the artifact
+    finalArtifact = {
+      ...codeArt,
+      executionResult: sandboxResult,
+      rawContent: `${codeArt.rawContent || ''}\n\n--- Execution Result ---\n${JSON.stringify(sandboxResult, null, 2)}`
+    } as any;
+
+    // Emit execution summary event
+    await eventBuffer.publish(missionId, {
+      type: 'agent_working',
+      taskId,
+      taskLabel: input.label,
+      message: sandboxResult.error ? `Code Execution Failed: ${sandboxResult.error}` : 'Code Execution Succeeded.',
+    } as any);
+  }
+
+  // 5. Store Final Artifact in DB
+  const artifactRecord = await nexusStateStore.storeArtifact({
+    missionId,
+    taskId,
+    type: agentType,
+    content: finalArtifact,
+  });
+
+  // ── PHASE 3: Vector Memory Indexing ──────────────────────────────────
+  try {
+    const indexText = finalArtifact.rawContent || JSON.stringify(finalArtifact);
+    await vectorStore.indexArtifact(artifactRecord.id, indexText);
+  } catch (vecErr) {
+    console.warn(`[Worker] 🧠 Vector indexing failed for artifact ${artifactRecord.id}:`, vecErr);
+    // Don't fail the task if indexing fails
+  }
+
+  // 6. Update Task status to 'completed'
+  await nexusStateStore.updateTaskStatus(taskId, 'completed', {
+    artifactId: artifactRecord.id,
+    tokensUsed: result.tokensUsed,
+  });
+
+  // 7. Publish completion events
+  await eventBuffer.publish(missionId, {
+    type: 'artifact_created',
+    taskId,
+    missionId,
+    artifact: finalArtifact
+  });
+
+  await eventBuffer.publish(missionId, {
+    type: 'task_completed',
+    taskId,
+    missionId,
+    artifact: finalArtifact
+  });
+};
 
 taskWorker.on('failed', (job, err) => {
   console.error(`[Worker] 🚨 Job ${job?.id} failed persistently:`, err);

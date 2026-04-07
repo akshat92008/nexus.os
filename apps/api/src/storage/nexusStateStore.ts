@@ -241,6 +241,31 @@ class NexusStateStore {
     if (error) throw new Error(`[NexusStateStore] updateTaskStatus failed: ${error.message}`);
   }
 
+  async updateTaskCheckpoint(taskId: string, checkpoint: { 
+    step: string; 
+    data?: any; 
+    tokensUsed?: number;
+  }) {
+    const client = await getSupabase();
+    
+    // We'll store this in a JSONB 'metadata' or 'checkpoint' column
+    // Let's assume we use 'dag_data' or similar if available, but better to add a column.
+    // For now, let's use a patch on the existing row if we can't add columns easily.
+    const { error } = await client
+      .from('tasks')
+      .update({ 
+        input_payload: { 
+          _checkpoint: {
+            ...checkpoint,
+            updatedAt: new Date().toISOString()
+          }
+        }
+      })
+      .eq('id', taskId);
+
+    if (error) throw new Error(`[NexusStateStore] updateTaskCheckpoint failed: ${error.message}`);
+  }
+
   async storeArtifact(params: {
     missionId: string;
     taskId: string;

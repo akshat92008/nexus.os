@@ -494,11 +494,14 @@ export interface MemoryEntry {
   tokensUsed: number;
   tags?: string[];       // Semantic tags for graph retrieval
   semanticHash?: string; // Optional: vector representation identifier
-}
-
 export interface AgentContext {
   entries: MemoryEntry[];
-  promptBlock: string;   // formatted context ready for injection into prompt
+  promptBlock: string;
+  permissions?: {
+    fileAccess: boolean;
+    networkAccess: boolean;
+    exec: 'limited' | 'full' | 'none';
+  };
 }
 
 // ── Task Registry ──────────────────────────────────────────────────────────

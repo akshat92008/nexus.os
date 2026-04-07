@@ -209,6 +209,18 @@ function detectCycles(nodes: TaskNode[]): string | null {
   return null;
 }
 
+export interface MapReduceOptions {
+  chunkSize: number;
+  maxParallel: number;
+}
+
+export interface MapReduceTaskNode extends TaskNode {
+  mapReduce?: MapReduceOptions;
+}
+
+/**
+ * Validates the DAG and repairs common issues.
+ */
 function validateAndRepair(raw: unknown, goal: string): TaskDAG {
   const plan = raw as any;
   if (!plan || typeof plan !== 'object') throw new Error('Plan is not an object');

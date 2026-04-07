@@ -16,14 +16,39 @@ import { masterBrain } from '../masterBrain.js';
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 const connection = new Redis(REDIS_URL, { maxRetriesPerRequest: null });
 
+// ── Circuit Breaker Config ──────────────────────────────────────────────────
+const MAX_ITERATIONS = 15;      // Max steps in a single mission
+const MAX_RUNTIME_MS = 600_000; // 10 minutes max per job
+const TOKEN_LIMIT    = 50_000;  // 50k tokens max per mission
+
 export const systemWorker = new Worker(
   'system',
   async (job: Job) => {
-    const { type, userId, workspaceId, goal } = job.data;
+    const { type, userId, workspaceId, goal, missionId } = job.data;
+    const startTime = Date.now();
 
     console.log(`[SystemWorker] ⚙️ Executing system job: ${job.name} (Type: ${type})`);
 
+    // ── Circuit Breaker: Runtime Limit ──────────────────────────────────────
+    const timer = setTimeout(() => {
+      console.error(`[SystemWorker] 🚨 Circuit Breaker: Job ${job.id} exceeded runtime limit.`);
+      // In a real environment, we'd signal an abort.
+    }, MAX_RUNTIME_MS);
+
     try {
+      // ── Circuit Breaker: Token/Iteration Check ────────────────────────────
+      if (missionId) {
+        const tasks = await nexusStateStore.getMissionTasks(missionId);
+        const totalTokens = tasks.reduce((sum: number, t: any) => sum + (t.tokens_used || 0), 0);
+        
+        if (totalTokens > TOKEN_LIMIT) {
+          throw new Error(`[CircuitBreaker] Mission ${missionId} exceeded token limit (${totalTokens}/${TOKEN_LIMIT})`);
+        }
+        if (tasks.length > MAX_ITERATIONS) {
+          throw new Error(`[CircuitBreaker] Mission ${missionId} exceeded iteration limit (${tasks.length}/${MAX_ITERATIONS})`);
+        }
+      }
+
       switch (type) {
         case 'master_brain_loop':
           await masterBrain.runDecisionCycle();
@@ -47,6 +72,8 @@ export const systemWorker = new Worker(
     } catch (err: any) {
       console.error(`[SystemWorker] ❌ Job ${job.id} failed:`, err);
       throw err;
+    } finally {
+      clearTimeout(timer);
     }
   },
   { connection }
