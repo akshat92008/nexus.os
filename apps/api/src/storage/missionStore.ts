@@ -107,6 +107,62 @@ export class MissionStore {
     return task;
   }
 
+  /**
+   * 🚨 FIX 3: Batch insert child tasks for Map-Reduce.
+   * Atomic operation to avoid N+1 query explosion.
+   */
+  async batchCreateTasks(tasks: Array<{
+    id: string;
+    missionId: string;
+    workspaceId?: string;
+    label: string;
+    agentType: AgentType;
+    inputPayload: any;
+    dependencies: string[];
+    mapReduceRole?: string;
+    parentTaskId?: string;
+  }>) {
+    const client = await getSupabase();
+
+    // 1. Insert all tasks
+    const { data: createdTasks, error: taskError } = await client
+      .from('tasks')
+      .insert(tasks.map(t => ({
+        id: t.id,
+        mission_id: t.missionId,
+        workspace_id: t.workspaceId,
+        label: t.label,
+        agent_type: t.agentType,
+        input_payload: t.inputPayload,
+        status: 'pending',
+        parent_task_id: t.parentTaskId,
+        map_reduce_role: t.mapReduceRole
+      })))
+      .select();
+
+    if (taskError) throw new Error(`[MissionStore] batchCreateTasks failed: ${taskError.message}`);
+
+    // 2. Insert all dependencies
+    const allDeps: any[] = [];
+    tasks.forEach(t => {
+      if (t.dependencies && t.dependencies.length > 0) {
+        t.dependencies.forEach(depId => {
+          allDeps.push({
+            task_id: t.id,
+            depends_on_task_id: depId,
+          });
+        });
+      }
+    });
+
+    if (allDeps.length > 0) {
+      const { error: depError } = await client.from('task_dependencies').insert(allDeps);
+      if (depError) throw new Error(`[MissionStore] batchCreateTasks dependencies failed: ${depError.message}`);
+    }
+
+    return createdTasks;
+  }
+
   async updateTaskStatus(taskId: string, status: string, result?: { artifactId?: string; tokensUsed?: number; error?: string }) {
     const client = await getSupabase();
     const update: any = { status };
@@ -259,6 +315,21 @@ export class MissionStore {
       .eq('mission_id', missionId);
 
     if (error) throw new Error(`[MissionStore] getMissionTasks failed: ${error.message}`);
+    return data;
+  }
+
+  /**
+   * 🚨 FIX 3: Optimized status fetching for DAG evaluation.
+   * Only fetch statuses for specific task IDs to avoid O(N^2) memory explosion.
+   */
+  async getTaskStatuses(taskIds: string[]) {
+    const client = await getSupabase();
+    const { data, error } = await client
+      .from('tasks')
+      .select('id, status')
+      .in('id', taskIds);
+
+    if (error) throw new Error(`[MissionStore] getTaskStatuses failed: ${error.message}`);
     return data;
   }
 

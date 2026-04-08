@@ -23,6 +23,7 @@ class NexusStateStoreFacade {
   createMission = missionStore.createMission.bind(missionStore);
   updateMissionStatus = missionStore.updateMissionStatus.bind(missionStore);
   createTask = missionStore.createTask.bind(missionStore);
+  batchCreateTasks = missionStore.batchCreateTasks.bind(missionStore);
   updateTaskStatus = missionStore.updateTaskStatus.bind(missionStore);
   completeTaskAtomics = missionStore.completeTaskAtomics.bind(missionStore);
   updateTaskCheckpoint = missionStore.updateTaskCheckpoint.bind(missionStore);
@@ -30,6 +31,7 @@ class NexusStateStoreFacade {
   fetchArtifactsByContext = missionStore.fetchArtifactsByContext.bind(missionStore);
   getTask = missionStore.getTask.bind(missionStore);
   getMissionTasks = missionStore.getMissionTasks.bind(missionStore);
+  getTaskStatuses = missionStore.getTaskStatuses.bind(missionStore);
   getDependentTasks = missionStore.getDependentTasks.bind(missionStore);
   getMissionById = missionStore.getMissionById.bind(missionStore);
   

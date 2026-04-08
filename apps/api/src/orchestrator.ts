@@ -132,6 +132,31 @@ export async function startDurableMission(params: {
 }
 
 /**
+ * Cancel a running mission and cleanup queues.
+ */
+export async function cancelDurableMission(missionId: string): Promise<void> {
+  console.log(`[Orchestrator] 🛑 Canceling mission: ${missionId}`);
+  
+  // 1. Update DB status
+  await nexusStateStore.updateMissionStatus(missionId, 'cancelled');
+  
+  // 2. Fetch all mission tasks to remove from queue
+  const tasks = await nexusStateStore.getMissionTasks(missionId);
+  for (const task of tasks) {
+    if (task.status === 'queued' || task.status === 'pending') {
+      await tasksQueue.remove(`task_${task.id}`).catch(() => {});
+      await nexusStateStore.updateTaskStatus(task.id, 'cancelled');
+    }
+  }
+
+  // 3. Notify
+  await eventBus.publish(missionId, {
+    type: 'mission_cancelled',
+    missionId,
+  } as any);
+}
+
+/**
  * Executes a single ad-hoc action from the UI.
  */
 export async function executeSingleAction(

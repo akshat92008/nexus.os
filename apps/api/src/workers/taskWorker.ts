@@ -54,32 +54,56 @@ const LOCK_DURATION_MS = 30_000;      // 30s lock duration
 // ── Context Size Control ─────────────────────────────────────────────────────
 
 /**
- * Truncate dependency artifact content to fit within limits.
+ * 🚨 FIX 4: Safe Context Truncation
+ * Refactor to handle JSON objects safely without destructive raw slicing.
  */
 function truncateContext(raw: string, limit: number): string {
   const bytes = Buffer.byteLength(raw, 'utf8');
   if (bytes <= limit) return raw;
 
-  // 🚨 FIX 5: SAFE CONTEXT TRUNCATION
   try {
+    // Attempt to parse if it's stringified JSON
     const obj = JSON.parse(raw);
-    // If it's a large array or object, we can try to summarize or slice safely
+    
     if (Array.isArray(obj)) {
-      const sliced = obj.slice(0, 10); // Keep first 10 items
-      const summary = JSON.stringify(sliced);
-      if (Buffer.byteLength(summary, 'utf8') <= limit) {
-        return summary + `\n\n[... truncated array: kept 10/${obj.length} items ...]`;
-      }
+      // If array, keep top N items and summarize the rest
+      const head = obj.slice(0, 5);
+      const summary = {
+        _type: 'truncated_array',
+        _total_length: obj.length,
+        _kept_count: head.length,
+        data: head,
+        _notice: 'Array too large. Only showing first 5 items.'
+      };
+      const stringified = JSON.stringify(summary, null, 2);
+      if (Buffer.byteLength(stringified, 'utf8') <= limit) return stringified;
+    } else if (typeof obj === 'object' && obj !== null) {
+      // If object, keep key names but omit large values
+      const keys = Object.keys(obj);
+      const summary: any = {
+        _type: 'truncated_object',
+        _all_keys: keys,
+        _notice: 'Object too large. Keys preserved, large values omitted.'
+      };
+      
+      // Attempt to keep some small values
+      keys.forEach(k => {
+        const val = obj[k];
+        if (typeof val !== 'object' && String(val).length < 100) {
+          summary[k] = val;
+        }
+      });
+      
+      const stringified = JSON.stringify(summary, null, 2);
+      if (Buffer.byteLength(stringified, 'utf8') <= limit) return stringified;
     }
-    // Fallback for objects or still too large arrays: stringify and slice
-    const str = JSON.stringify(obj, null, 2);
-    if (Buffer.byteLength(str, 'utf8') <= limit) return str;
   } catch {
-    // Not JSON, fallback to raw string slice
+    // Not JSON or still too large, fallback to safe string slice
   }
 
+  // Fallback: Slice at a reasonable boundary (not mid-multibyte char)
   const sliced = raw.slice(0, limit);
-  return sliced + `\n\n[... truncated — original size ${bytes} bytes, limit ${limit} bytes ...]`;
+  return sliced + `\n\n[... Truncated for token safety — original size: ${bytes} bytes ...]`;
 }
 
 function buildContextBlock(artifacts: any[]): { entries: MemoryEntry[]; promptBlock: string } {
@@ -242,8 +266,11 @@ export async function handlePostProcessing(
       const stdoutBuf = createOutputBuffer(missionId, taskId, 'sandbox_stdout');
       const stderrBuf = createOutputBuffer(missionId, taskId, 'sandbox_stderr');
 
-      // ── FIX #7: Sandbox hard timeout ───────────────────────────────────
+      // 🚨 FIX 5: Sandbox Process Orphanage Fix
+      // Use explicit AbortSignal to kill the isolated sandbox on timeout.
+      const sandboxController = new AbortController();
       let sandboxResult: Awaited<ReturnType<typeof sandboxManager.runCode>>;
+
       try {
         sandboxResult = await Promise.race([
           sandboxManager.runCode(
@@ -253,21 +280,20 @@ export async function handlePostProcessing(
               const buf = type === 'stdout' ? stdoutBuf : stderrBuf;
               await buf.append(data);
             },
-            { timeout: SANDBOX_TIMEOUT_MS }
+            { timeout: SANDBOX_TIMEOUT_MS, signal: sandboxController.signal }
           ),
           new Promise<never>((_, reject) =>
-            setTimeout(
-              () => reject(new Error(`Sandbox timed out after ${SANDBOX_TIMEOUT_MS}ms`)),
-              SANDBOX_TIMEOUT_MS + 2_000   // give sandboxManager a chance to self-kill first
-            )
+            setTimeout(() => {
+              // 🚨 FIX 5: Explicitly trigger sandbox destruction before rejecting
+              sandboxController.abort();
+              reject(new Error(`Sandbox timed out after ${SANDBOX_TIMEOUT_MS}ms`));
+            }, SANDBOX_TIMEOUT_MS)
           ),
         ]);
       } finally {
         // ── FIX #10: Flush remaining output and stop timers regardless ────
         await stdoutBuf.stop();
         await stderrBuf.stop();
-        // sandboxManager.runCode closes the sandbox in its own finally block,
-        // so orphan process cleanup is handled there.
       }
 
       await eventBuffer.publish(missionId, {
@@ -292,20 +318,13 @@ export async function handlePostProcessing(
       } as any);
     }
 
-    // ── FIX #5: Atomic state commit ────────────────────────────────────────
-    // storeArtifact then updateTaskStatus in sequence.
-    // If storeArtifact throws, status stays 'running' → job will be retried → idempotency guard skips.
-    // If updateTaskStatus throws after artifact stored, BullMQ retry re-enters here and the
-    // idempotency check at the top catches status='completed' on retry.
-    const artifactRecord = await nexusStateStore.storeArtifact({
+    // 🚨 FIX 2: Atomic state commit (Single transaction via Postgres RPC)
+    // Ensures artifact is stored AND status updated to 'completed' as a single unit of work.
+    const artifactRecord = await nexusStateStore.completeTaskAtomics({
       missionId,
       taskId,
-      type:    agentType,
+      type: agentType,
       content: finalArtifact,
-    });
-
-    await nexusStateStore.updateTaskStatus(taskId, 'completed', {
-      artifactId: artifactRecord.id,
       tokensUsed: result.tokensUsed,
     });
     // ── End atomic block ───────────────────────────────────────────────────

@@ -37,6 +37,8 @@ export interface MissionJobData {
   workspaceId: string;
   goal:        string;
   goalType:    string;
+  type?:       'mission_check';
+  taskId?:     string;
 }
 
 export interface TaskJobData {
