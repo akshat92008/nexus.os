@@ -12,7 +12,7 @@ import { useRef, useCallback } from 'react';
 import { useNexusStore } from '../store/nexusStore';
 import type { NexusSSEEvent } from '@nexus-os/types';
 
-export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL || (typeof window !== 'undefined' ? '' : 'http://localhost:3001');
 
 async function streamSSE(
   input: RequestInfo | URL,

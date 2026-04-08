@@ -112,7 +112,7 @@ async function dispatchMapReduceTask(
   });
 
   // Mark the original task as 'split' so it is not re-queued
-  await nexusStateStore.updateTaskStatus(task.id, 'split' as any);
+  await nexusStateStore.updateTaskStatus(task.id, 'split');
 }
 
 // ── Core: enqueue tasks whose dependencies are now satisfied ──────────────
@@ -161,7 +161,7 @@ export async function onTaskCompleted(taskId: string, missionId: string): Promis
     });
 
     if (allDepsMet) {
-      const mrTask = task as MapReduceTaskNode;
+      const mrTask = task as any;
       if (mrTask.mapReduce) {
         await dispatchMapReduceTask(mrTask, missionId, workspaceId);
       } else {

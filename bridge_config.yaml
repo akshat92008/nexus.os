@@ -1,8 +1,0 @@
-model_list:
-  - model_name: "*"
-    litellm_params:
-      model: groq/llama-3.3-70b-versatile
-      api_key: "os.environ/GROQ_API_KEY"
-      drop_params: true
-      # Explicitly handle common Claude Code incompatibilities
-      custom_llm_provider: "groq"

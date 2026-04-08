@@ -59,20 +59,25 @@ app.use(cors({
 
 app.use(express.json({ limit: '1mb' }));
 
+// 🚨 VERCEL ADAPTER: Export the app as a module
+export default app;
+
 // ── Durable System Initialization ──────────────────────────────────────────
 
-void (async () => {
-  console.log('[API] 🚀 Initializing Nexus OS Durable Services...');
-  
-  try {
-    // Start global mission event listener (reliable DAG orchestration)
-    startMissionEventListener();
+if (!process.env.VERCEL) {
+  void (async () => {
+    console.log('[API] 🚀 Initializing Nexus OS Durable Services...');
     
-    console.log('[API] ✅ Durable Services Initialized.');
-  } catch (err) {
-    console.error('[API] ❌ Durable Services Initialization failed:', err);
-  }
-})();
+    try {
+      // Start global mission event listener (reliable DAG orchestration)
+      startMissionEventListener();
+      
+      console.log('[API] ✅ Durable Services Initialized.');
+    } catch (err) {
+      console.error('[API] ❌ Durable Services Initialization failed:', err);
+    }
+  })();
+}
 
 // ── Routes ──────────────────────────────────────────────────────────────────
 
@@ -276,7 +281,9 @@ app.post('/api/state/:userId', async (req, res) => {
   }
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`[API] ⚡ Nexus OS Backend running at http://0.0.0.0:${PORT}`);
-  console.log(`[API] 🌍 Allowed Origins: ${ALLOWED_ORIGINS.join(', ')}`);
-});
+if (!process.env.VERCEL) {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`[API] ⚡ Nexus OS Backend running at http://0.0.0.0:${PORT}`);
+    console.log(`[API] 🌍 Allowed Origins: ${ALLOWED_ORIGINS.join(', ')}`);
+  });
+}

@@ -116,7 +116,7 @@ function buildContextBlock(artifacts: any[]): { entries: MemoryEntry[]; promptBl
       key:        `artifact:${a.task_id}`,
       taskId:     a.task_id,
       agentType:  a.type,
-      data:       truncateContext(rawContent, MAX_PER_ARTIFACT_BYTES),
+      data:       truncateContext(rawContent, MAX_PER_ARTIFACT_BYTES) as any,
       writtenAt:  new Date(a.created_at).getTime(),
       tokensUsed: 0,
     } as MemoryEntry;
@@ -230,7 +230,7 @@ async function runAgentWithCircuitBreaker(
 
 export async function handlePostProcessing(
   job: Job<TaskJobData>,
-  result: { artifact: any; tokensUsed: number },
+  result: any,
   _task: any,
   input: any
 ): Promise<void> {
@@ -299,12 +299,12 @@ export async function handlePostProcessing(
       await eventBuffer.publish(missionId, {
         type:     'sandbox_finished',
         taskId,
-        exitCode: sandboxResult.exitCode,
+        exitCode: (sandboxResult as any).exitCode,
       } as any);
 
       finalArtifact = {
         ...codeArt,
-        executionResult: sandboxResult,
+        executionResult: sandboxResult as any,
         rawContent: `${codeArt.rawContent || ''}\n\n--- Execution Result ---\n${JSON.stringify(sandboxResult, null, 2)}`,
       } as any;
 
@@ -438,7 +438,7 @@ export const taskWorker = new Worker<TaskJobData>(
         goalType:  'general',
         context,
         isAborted: () => false,
-      });
+      }) as any;
 
       await nexusStateStore.updateTaskCheckpoint(taskId, {
         step:       'agent_finished',

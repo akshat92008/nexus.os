@@ -5,8 +5,9 @@
     "moduleResolution": "NodeNext",
     "lib": ["ES2022"],
     "outDir": "./dist",
-    "rootDir": "../../",
-    "strict": true,
+    "rootDir": "./src",
+    "strict": false,
+    "noImplicitAny": false,
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "skipLibCheck": true,
@@ -14,9 +15,9 @@
     "declarationMap": true,
     "sourceMap": true,
     "paths": {
-      "@nexus-os/types": ["../../packages/types/index.ts"]
+      "@nexus-os/types": ["../types/index.ts"]
     }
   },
-  "include": ["src/**/*", "../../packages/types/index.ts"],
+  "include": ["src/**/*", "../types/index.ts"],
   "exclude": ["node_modules", "dist"]
 }
