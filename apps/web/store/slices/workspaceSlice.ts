@@ -23,6 +23,7 @@ export interface WorkspaceSlice {
   upsertSchedule: (config: ScheduleConfigUI) => void;
   removeSchedule: (scheduleId: string) => void;
   convertMissionToOngoing: (workspaceId: string) => void;
+  syncMissionStatus: (missionId: string) => Promise<void>;
 }
 
 export const createWorkspaceSlice: StateCreator<
@@ -198,5 +199,21 @@ export const createWorkspaceSlice: StateCreator<
   
   createWorkspaceShell: async (type, title) => {
     // API interaction logic truncated here for brevity, usually calls applyServerSnapshot
+  },
+
+  syncMissionStatus: async (missionId: string) => {
+    const { API_BASE } = await import('../hooks/useNexusSSE');
+    try {
+      const response = await fetch(`${API_BASE}/api/missions/${missionId}/status`);
+      if (!response.ok) throw new Error('Status sync failed');
+      const { mission, tasks } = await response.json();
+      
+      set((s) => ({
+        ongoingMissions: { ...s.ongoingMissions, [missionId]: mission },
+        // Optionally update workspaces with tasks if needed
+      }));
+    } catch (err) {
+      get().addToast('Failed to sync mission status with server.');
+    }
   }
 });

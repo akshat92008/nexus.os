@@ -1,1 +1,0 @@
-{"version":3,"file":"studentFormatter.d.ts","sourceRoot":"","sources":["../../../../../src/formatters/studentFormatter.ts"],"names":[],"mappings":"AAAA;;;;;GAKG;AAEH,MAAM,WAAW,aAAa;IAC5B,WAAW,EAAE,MAAM,CAAC;IACpB,SAAS,EAAE,MAAM,EAAE,CAAC;IACpB,KAAK,EAAE,MAAM,CAAC;IACd,SAAS,EAAE,MAAM,EAAE,CAAC;IACpB,aAAa,EAAE,MAAM,CAAC;CACvB;AAED,wBAAgB,mBAAmB,CAAC,OAAO,EAAE,GAAG,GAAG,aAAa,CAW/D"}

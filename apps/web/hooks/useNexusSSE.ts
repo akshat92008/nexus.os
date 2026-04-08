@@ -72,6 +72,7 @@ export async function runActionOrchestration(
 
   interface UseNexusSSEReturn {
   startOrchestration: (goal: string, userId: string, mode?: string) => Promise<void>;
+  subscribeToMission: (missionId: string) => Promise<void>;
   startActionOrchestration: (actionId: string, workspaceId: string, userId: string) => Promise<void>;
   abort: () => void;
 }
@@ -80,117 +81,105 @@ export function useNexusSSE(): UseNexusSSEReturn {
   const abortRef   = useRef<AbortController | null>(null);
   const watchdogRef = useRef<NodeJS.Timeout | null>(null);
   const lastActivityRef = useRef<number>(0);
+  const activeMissionIdRef = useRef<string | null>(null);
   
   const { ingestEvent, startSession } = useNexusStore();
 
-  const abort = useCallback(() => {
+  const cleanup = useCallback(() => {
     if (watchdogRef.current) clearInterval(watchdogRef.current);
     abortRef.current?.abort();
     abortRef.current = null;
   }, []);
 
-  const startOrchestration = useCallback(
-    async (goal: string, userId: string, mode = 'student', retryCount = 0) => {
-      if (retryCount === 0) {
-        abort();
-        startSession(goal, userId);
+  const abort = useCallback(async () => {
+    const missionId = activeMissionIdRef.current;
+    cleanup();
+    
+    if (missionId) {
+      console.log(`[SSE] 🛑 Aborting mission on server: ${missionId}`);
+      try {
+        await fetch(`${API_BASE}/api/missions/${missionId}/cancel`, { method: 'POST' });
+      } catch (err) {
+        console.warn(`[SSE] Failed to send cancel signal to server for ${missionId}`, err);
       }
+    }
+  }, [cleanup]);
 
+  /**
+   * Persistent Subscription: Reconnects to a mission's event stream
+   */
+  const subscribeToMission = useCallback(
+    async (missionId: string, retryCount = 0) => {
+      activeMissionIdRef.current = missionId;
       const controller = new AbortController();
       abortRef.current = controller;
       lastActivityRef.current = Date.now();
 
-      // watchdog timer: Check for silence every 2 seconds
+      // watchdog timer
       if (watchdogRef.current) clearInterval(watchdogRef.current);
       watchdogRef.current = setInterval(() => {
         const silenceDuration = Date.now() - lastActivityRef.current;
         const state = useNexusStore.getState();
-        const status = state.session.status;
-        const isPaused = state.session.systemPauseUntil !== null;
-        
-        // Only force reconnect if NOT paused and silence duration exceeds threshold
-        if ((status === 'routing' || status === 'running') && !isPaused && silenceDuration > 6000) {
-          console.warn(`[Watchdog] ⚠️ No activity for ${silenceDuration}ms (and not paused). Forcing reconnect...`);
-          startOrchestration(goal, userId, mode, retryCount + 1);
+        if (state.session.status === 'running' && silenceDuration > 10000) {
+          console.warn(`[Watchdog] ⚠️ No mission activity for ${silenceDuration}ms. Reconnecting stream...`);
+          subscribeToMission(missionId, retryCount + 1);
         }
-      }, 2000);
+      }, 5000);
+
+      try {
+        await streamSSE(
+          `${API_BASE}/api/events/stream?missionId=${missionId}`,
+          { signal: controller.signal },
+          (event) => {
+            lastActivityRef.current = Date.now();
+            ingestEvent(event);
+          }
+        );
+      } catch (err) {
+        if ((err as Error).name === 'AbortError') return;
+        if (retryCount < 5) {
+          setTimeout(() => subscribeToMission(missionId, retryCount + 1), 2000);
+        }
+      }
+    },
+    [ingestEvent]
+  );
+
+  const startOrchestration = useCallback(
+    async (goal: string, userId: string, mode = 'student') => {
+      cleanup();
+      startSession(goal, userId);
 
       try {
         const response = await fetch(`${API_BASE}/api/orchestrate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ goal: goal.trim(), userId, mode }),
-          signal: controller.signal,
         });
 
-        if (!response.ok || !response.body) {
-          const err = await response.json().catch(() => ({ error: 'Connection failed' }));
-          ingestEvent({ type: 'error', message: err.error ?? 'Unknown error' });
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({ error: 'Trigger failed' }));
+          ingestEvent({ type: 'error', message: err.error ?? 'Orchestration trigger failed' });
           return;
         }
 
-        const reader  = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer    = '';
+        const { missionId } = await response.json();
+        console.log(`[SSE] 🚀 Mission triggered: ${missionId}. Subscribing to stream...`);
+        subscribeToMission(missionId);
 
-        const processChunk = (chunk: string) => {
-          lastActivityRef.current = Date.now(); // Track that we actually got bytes
-          buffer += chunk;
-          const lines = buffer.split('\n');
-          buffer = lines.pop() ?? '';
-
-          for (const line of lines) {
-            if (!line.startsWith('data: ')) continue;
-            const jsonStr = line.slice(6).trim();
-            if (!jsonStr) continue;
-
-            try {
-              const event = JSON.parse(jsonStr) as NexusSSEEvent;
-              // Update activity on valid events too
-              lastActivityRef.current = Date.now();
-              ingestEvent(event);
-            } catch (e) {
-              // Ignore parse errors on whitespace pings
-            }
-          }
-        };
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) {
-            const currentState = useNexusStore.getState().session.status;
-            if ((currentState === 'routing' || currentState === 'running') && retryCount < 3) {
-              console.warn(`[SSE] Stream ended. Retrying (${retryCount + 1}/3)...`);
-              setTimeout(() => startOrchestration(goal, userId, mode, retryCount + 1), 1000);
-            }
-            break;
-          }
-          processChunk(decoder.decode(value, { stream: true }));
-        }
-
-      } catch (err) {
-        if ((err as Error).name === 'AbortError') return;
-        if (retryCount < 3) {
-          setTimeout(() => startOrchestration(goal, userId, mode, retryCount + 1), 1500);
-        } else {
-          ingestEvent({
-            type:    'error',
-            message: err instanceof Error ? err.message : 'Network failure',
-          });
-        }
-      } finally {
-        if (retryCount >= 3) {
-            if (watchdogRef.current) clearInterval(watchdogRef.current);
-            abortRef.current = null;
-        }
+      } catch (err: any) {
+        ingestEvent({
+          type:    'error',
+          message: err instanceof Error ? err.message : 'Network failure',
+        });
       }
     },
-    [abort, startSession, ingestEvent]
+    [cleanup, startSession, ingestEvent, subscribeToMission]
   );
 
   const startActionOrchestration = useCallback(
     async (actionId: string, workspaceId: string, userId: string) => {
-      abort();
+      cleanup();
       
       const controller = new AbortController();
       abortRef.current = controller;
@@ -211,8 +200,8 @@ export function useNexusSSE(): UseNexusSSEReturn {
         abortRef.current = null;
       }
     },
-    [abort, ingestEvent]
+    [cleanup, ingestEvent]
   );
 
-  return { startOrchestration, startActionOrchestration, abort };
+  return { startOrchestration, subscribeToMission, startActionOrchestration, abort };
 }

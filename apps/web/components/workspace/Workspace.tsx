@@ -4,16 +4,17 @@ import { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Hexagon, Zap, Activity, Clock, AlertCircle, X as CloseIcon } from 'lucide-react';
 
-import { UniversalCommandBar } from './UniversalCommandBar';
-import { SandboxRouter } from './SandboxRouter';
-import { WorkspaceHistorySidebar } from './WorkspaceHistorySidebar';
-import { GraphCanvas } from './GraphCanvas';
-import { ActivityTimeline } from './ActivityTimeline';
-import { AgentsView } from './AgentsView';
-import { UnifiedInbox } from './UnifiedInbox';
-import { FileSystemView } from './FileSystemView';
-import { ApprovalModal } from './ApprovalModal';
-import { AppLauncher } from './AppLauncher';
+import dynamic from 'next/dynamic';
+
+const UniversalCommandBar = dynamic(() => import('./UniversalCommandBar').then(mod => mod.UniversalCommandBar), { ssr: false });
+const SandboxRouter = dynamic(() => import('./SandboxRouter').then(mod => mod.SandboxRouter), { ssr: false });
+const GraphCanvas = dynamic(() => import('./GraphCanvas').then(mod => mod.GraphCanvas), { ssr: false });
+const AgentsView = dynamic(() => import('./AgentsView').then(mod => mod.AgentsView), { ssr: false });
+const UnifiedInbox = dynamic(() => import('./UnifiedInbox').then(mod => mod.UnifiedInbox), { ssr: false });
+const FileSystemView = dynamic(() => import('./FileSystemView').then(mod => mod.FileSystemView), { ssr: false });
+const ActivityTimeline = dynamic(() => import('./ActivityTimeline').then(mod => mod.ActivityTimeline), { ssr: false });
+const ApprovalModal = dynamic(() => import('./ApprovalModal').then(mod => mod.ApprovalModal), { ssr: false });
+const AppLauncher = dynamic(() => import('./AppLauncher').then(mod => mod.AppLauncher), { ssr: false });
 
 import { useNexusStore, selectIsRunning } from '../../store/nexusStore';
 

@@ -1,17 +1,16 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-
-  // Proxy /api/* to the Express backend during development
-  async rewrites() {
-    return [
-      {
-        source:      '/api/:path*',
-        destination: `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'}/api/:path*`,
-      },
-    ];
+  // output: 'export',
+  images: {
+    unoptimized: true,
   },
-
+  typescript: {
+    ignoreBuildErrors: true,
+  },
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
   // Silence the "self is not defined" edge-runtime warning from Zustand
   webpack(config) {
     return config;

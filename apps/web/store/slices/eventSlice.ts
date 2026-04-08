@@ -94,11 +94,33 @@ export const createEventSlice: StateCreator<
         break;
       }
 
+      case 'wave_start':
+        set((s) => ({
+          waves: { ...s.waves, currentWave: (event as any).waveIndex, waveStatus: 'running' }
+        }));
+        break;
+
+      case 'wave_complete':
+        set((s) => ({
+          waves: { ...s.waves, waveStatus: 'idle' }
+        }));
+        break;
+
+      case 'synthesis_start':
+        get().addToast('Critical Analysis: Starting multi-agent synthesis...');
+        break;
+
+      case 'sandbox_stdout':
+        // Optional: append to a terminal buffer if visible
+        break;
+
       case 'done':
         set((s) => ({
-          session: { ...s.session, status: 'complete', completedAt: Date.now(), durationMs: (event as any).durationMs },
-          ledger: { ...s.ledger, totalFeeUsd: (event as any).totalFeeUsd, totalTokensUsed: (event as any).totalTokensUsed }
+          session: { ...s.session, status: 'complete', completedAt: Date.now() },
+          ledger: { ...s.ledger, totalFeeUsd: (event as any).totalFeeUsd }
         }));
+        // Auto-persist on completion
+        get().persistServerState();
         break;
 
       case 'error':

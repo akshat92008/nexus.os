@@ -494,6 +494,8 @@ export interface MemoryEntry {
   tokensUsed: number;
   tags?: string[];       // Semantic tags for graph retrieval
   semanticHash?: string; // Optional: vector representation identifier
+}
+
 export interface AgentContext {
   entries: MemoryEntry[];
   promptBlock: string;
