@@ -30,6 +30,8 @@ class NexusStateStoreFacade {
   fetchArtifactsByContext = missionStore.fetchArtifactsByContext.bind(missionStore);
   getTask = missionStore.getTask.bind(missionStore);
   getMissionTasks = missionStore.getMissionTasks.bind(missionStore);
+  getDependentTasks = missionStore.getDependentTasks.bind(missionStore);
+  getMissionById = missionStore.getMissionById.bind(missionStore);
   
   // Schedules
   upsertSchedule = missionStore.upsertSchedule.bind(missionStore);

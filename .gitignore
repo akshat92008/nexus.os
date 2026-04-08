@@ -1,18 +1,18 @@
 # Dependencies
-node_modules/
-.pnp/
+/node_modules
+/.pnp
 .pnp.js
 
 # Testing
-coverage/
+/coverage
 
 # Next.js
-.next/
-out/
+/.next/
+/out/
 
 # Production
-build/
-dist/
+/build
+/dist
 
 # Environment Variables
 .env
@@ -25,7 +25,6 @@ dist/
 # OS Files
 .DS_Store
 Thumbs.db
-*.DS_Store
 
 # Misc
 .vercel
@@ -35,6 +34,7 @@ next-env.d.ts
 # Nexus OS specific
 nexus-os-updated/
 files (3)/
-nexus-state.json
-audit_bundle.zip
-audit_bundle/
+node_modules/
+.DS_Store
+
+.aider*

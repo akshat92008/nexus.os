@@ -18,7 +18,7 @@ class SandboxManager {
     language: 'python' | 'javascript' | 'bash', 
     code: string,
     onLog?: (type: 'stdout' | 'stderr', data: string) => void,
-    options?: { timeout?: number }
+    options?: { timeout?: number; signal?: AbortSignal }
   ): Promise<SandboxResult> {
     let sandbox: any = null;
     const stdout: string[] = [];
@@ -26,9 +26,15 @@ class SandboxManager {
     const timeout = options?.timeout ?? this.TIMEOUT_MS;
 
     try {
-      // 1. Initialize sandbox (requires E2B_API_KEY in process.env)
-      sandbox = await (Sandbox as any).create({ timeout });
+      // 🚨 HARDEN 4: Enhanced lifecycle management
+      sandbox = await (Sandbox as any).create({ 
+        timeout,
+        ...(options?.signal ? { signal: options.signal } : {})
+      });
+      
       console.log(`[SandboxManager] 🚀 Executing ${language} code with ${timeout}ms timeout...`);
+
+      if (options?.signal?.aborted) throw new Error('Sandbox aborted before start');
 
       if (language === 'python') {
         // Python runs in a notebook-style environment
@@ -91,8 +97,9 @@ class SandboxManager {
       };
     } finally {
       if (sandbox) {
+        // 🚨 HARDEN 4: Explicit SIGKILL / Isolation teardown
         await sandbox.close();
-        console.log('[SandboxManager] 🧹 Sandbox destroyed.');
+        console.log('[SandboxManager] 🧹 Sandbox destroyed (Isolated Teardown).');
       }
     }
   }

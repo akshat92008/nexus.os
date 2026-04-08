@@ -41,14 +41,15 @@ const SANDBOX_FLUSH_INTERVAL_MS = 250;
 /** Maximum buffer size before a forced flush (bytes). */
 const SANDBOX_FLUSH_BUFFER_BYTES = 1_024;
 
-/** BullMQ lock extension interval — must be shorter than the worker lockDuration. */
-const LOCK_EXTEND_INTERVAL_MS = 15_000;
-
-/** Circuit breaker: max total tokens consumed by a single runAgent call. */
+/** Maximum total tokens consumed by a single runAgent call. */
 const CIRCUIT_MAX_TOKENS = 8_000;
 
 /** Circuit breaker: hard wall-clock timeout for a single agent run (ms). */
 const CIRCUIT_AGENT_TIMEOUT_MS = 120_000;
+
+// 🚨 FIX 8: BULLMQ LOCK SAFETY
+const LOCK_EXTEND_INTERVAL_MS = 5_000; // 5s extension
+const LOCK_DURATION_MS = 30_000;      // 30s lock duration
 
 // ── Context Size Control ─────────────────────────────────────────────────────
 
@@ -59,7 +60,24 @@ function truncateContext(raw: string, limit: number): string {
   const bytes = Buffer.byteLength(raw, 'utf8');
   if (bytes <= limit) return raw;
 
-  // Slice to limit and append a truncation notice
+  // 🚨 FIX 5: SAFE CONTEXT TRUNCATION
+  try {
+    const obj = JSON.parse(raw);
+    // If it's a large array or object, we can try to summarize or slice safely
+    if (Array.isArray(obj)) {
+      const sliced = obj.slice(0, 10); // Keep first 10 items
+      const summary = JSON.stringify(sliced);
+      if (Buffer.byteLength(summary, 'utf8') <= limit) {
+        return summary + `\n\n[... truncated array: kept 10/${obj.length} items ...]`;
+      }
+    }
+    // Fallback for objects or still too large arrays: stringify and slice
+    const str = JSON.stringify(obj, null, 2);
+    if (Buffer.byteLength(str, 'utf8') <= limit) return str;
+  } catch {
+    // Not JSON, fallback to raw string slice
+  }
+
   const sliced = raw.slice(0, limit);
   return sliced + `\n\n[... truncated — original size ${bytes} bytes, limit ${limit} bytes ...]`;
 }
@@ -195,12 +213,17 @@ export async function handlePostProcessing(
   const { taskId, missionId, agentType } = job.data;
   let finalArtifact = result.artifact as TypedArtifact;
 
-  // ── Lock Extension: keep the job lock alive during long sandbox runs ──────
+  // 🚨 FIX 8: BULLMQ LOCK SAFETY (5s extension, lightweight check)
   const lockExtender = setInterval(async () => {
     try {
-      await job.extendLock(job.token ?? '', LOCK_EXTEND_INTERVAL_MS * 4);
+      if (job.isActive()) {
+        await job.extendLock(job.token ?? '', LOCK_DURATION_MS);
+      } else {
+        clearInterval(lockExtender);
+      }
     } catch (e) {
       console.warn(`[Worker] ⚠️ Could not extend lock for job ${job.id}:`, e);
+      clearInterval(lockExtender);
     }
   }, LOCK_EXTEND_INTERVAL_MS);
 
@@ -324,10 +347,24 @@ export const taskWorker = new Worker<TaskJobData>(
     console.log(`[Worker] 🛠️  Executing task: ${taskId} (${agentType}) — Mission: ${missionId}`);
 
     try {
-      // 0. Idempotency guard
+      // 🚨 HARDEN 1 & 3: Atomic execution claim (distributed lock)
+      // Attempt to move status from 'queued' to 'running' atomically.
       const task = await nexusStateStore.getTask(taskId);
       if (task.status === 'completed') {
         console.log(`[Worker] ✅ Task ${taskId} already completed. Skipping.`);
+        return;
+      }
+
+      if (task.status === 'running' && !task.input_payload?._checkpoint) {
+        // Someone else is already running this, and no checkpoint exists.
+        console.warn(`[Worker] ⚠️ Task ${taskId} is already running elsewhere. Skipping.`);
+        return;
+      }
+
+      const claimed = await nexusStateStore.updateTaskStatus(taskId, 'running');
+      if (!claimed && !task.input_payload?._checkpoint) {
+        // Someone else claimed it first.
+        console.warn(`[Worker] ⚠️ Task ${taskId} could not be claimed for execution. Already claimed?`);
         return;
       }
 
@@ -343,9 +380,6 @@ export const taskWorker = new Worker<TaskJobData>(
         };
         return await handlePostProcessing(job, result, task, input);
       }
-
-      // 1. Mark running
-      await nexusStateStore.updateTaskStatus(taskId, 'running');
 
       // 2. Publish start event
       await eventBuffer.publish(missionId, {

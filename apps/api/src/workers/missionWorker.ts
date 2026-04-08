@@ -59,31 +59,38 @@ async function dispatchMapReduceTask(
 
   console.log(`[MissionWorker] 🔀 Map-Reduce: splitting task ${task.id} into ${chunks.length} map chunks`);
 
-  // Create child map-task records and enqueue them
-  for (let i = 0; i < chunks.length; i++) {
-    const childTaskId = `${task.id}_map_${i}`;
+  // 🚨 HARDEN 2: Chunked queuing for fan-outs (DDoS prevention)
+  const CONCURRENCY_LIMIT = 5; // Process only 5 chunk creations at a time
+  for (let i = 0; i < chunks.length; i += CONCURRENCY_LIMIT) {
+    const batch = chunks.slice(i, i + CONCURRENCY_LIMIT);
+    
+    await Promise.all(batch.map(async (chunk, batchIdx) => {
+      const idx = i + batchIdx;
+      const childTaskId = `${task.id}_map_${idx}`;
 
-    await nexusStateStore.createTask({
-      id:          childTaskId,
-      missionId,
-      label:       `${task.label} [map ${i + 1}/${chunks.length}]`,
-      agentType:   task.agent_type,
-      inputPayload: { ...input, items: undefined, text: undefined, chunk: chunks[i] },
-      dependencies: [],
-      mapReduceRole: 'map',
-      parentTaskId: task.id,
-    });
+      await nexusStateStore.createTask({
+        id:          childTaskId,
+        missionId,
+        label:       `${task.label} [map ${idx + 1}/${chunks.length}]`,
+        agentType:   task.agent_type,
+        inputPayload: { ...input, items: undefined, text: undefined, chunk },
+        dependencies: [],
+        mapReduceRole: 'map',
+        parentTaskId: task.id,
+      });
 
-    await nexusStateStore.updateTaskStatus(childTaskId, 'queued');
-
-    await tasksQueue.add(`task_${childTaskId}`, {
-      taskId:       childTaskId,
-      missionId,
-      workspaceId,
-      agentType:    task.agent_type,
-      input:        { ...task, id: childTaskId, label: `${task.label} [map ${i + 1}]` },
-      contextFields: [],
-    });
+      const claimed = await nexusStateStore.updateTaskStatus(childTaskId, 'queued');
+      if (claimed) {
+        await tasksQueue.add(`task_${childTaskId}`, {
+          taskId:       childTaskId,
+          missionId,
+          workspaceId,
+          agentType:    task.agent_type,
+          input:        { ...task, id: childTaskId, label: `${task.label} [map ${idx + 1}]` },
+          contextFields: [],
+        });
+      }
+    }));
   }
 
   // Create a reduce task that depends on all map children
@@ -108,10 +115,64 @@ async function dispatchMapReduceTask(
 export async function onTaskCompleted(taskId: string, missionId: string): Promise<void> {
   console.log(`[MissionWorker] 🔔 task_completed: ${taskId} → checking mission ${missionId}`);
 
-  const tasks = await nexusStateStore.getMissionTasks(missionId);
-  if (!tasks || tasks.length === 0) return;
+  // 🚨 FIX 4: Optimized dependency check
+  // If bootstrap, we need all tasks. Otherwise, we only check tasks dependent on taskId.
+  let tasksToCheck: any[] = [];
+  if (taskId === '__bootstrap__') {
+    tasksToCheck = await nexusStateStore.getMissionTasks(missionId);
+  } else {
+    tasksToCheck = await nexusStateStore.getDependentTasks(taskId);
+  }
 
-  // Resolve mission-level terminal states first
+  if (!tasksToCheck || tasksToCheck.length === 0) {
+    // Check if mission is complete if no more dependent tasks
+    const allTasks = await nexusStateStore.getMissionTasks(missionId);
+    await checkMissionCompletion(missionId, allTasks);
+    return;
+  }
+
+  // For dependent tasks, we still need full mission state to verify ALL deps are done
+  const allTasks = await nexusStateStore.getMissionTasks(missionId);
+  
+  // Fetch workspaceId
+  const missionMeta = await nexusStateStore.getMissionById(missionId).catch(() => null);
+  const workspaceId: string = missionMeta?.workspace_id ?? '';
+
+  for (const task of tasksToCheck) {
+    if (task.status !== 'pending') continue;
+
+    const deps: any[] = task.task_dependencies || [];
+    const allDepsMet = deps.every((dep: any) => {
+      const depTask = allTasks.find((t: any) => t.id === dep.depends_on_task_id);
+      return depTask && depTask.status === 'completed';
+    });
+
+    if (allDepsMet) {
+      const mrTask = task as MapReduceTaskNode;
+      if (mrTask.mapReduce) {
+        await dispatchMapReduceTask(mrTask, missionId, workspaceId);
+      } else {
+        // 🚨 FIX 1: Atomic updateTaskStatus acts as distributed lock
+        const updated = await nexusStateStore.updateTaskStatus(task.id, 'queued');
+        if (updated) {
+          await tasksQueue.add(`task_${task.id}`, {
+            taskId:       task.id,
+            missionId,
+            workspaceId,
+            agentType:    task.agent_type,
+            input:        task.input_payload,
+            contextFields: (task.task_dependencies || []).map((d: any) => d.depends_on_task_id),
+          });
+          console.log(`[MissionWorker] 🚀 Enqueued task ${task.id} for mission ${missionId}`);
+        }
+      }
+    }
+  }
+
+  await checkMissionCompletion(missionId, allTasks);
+}
+
+async function checkMissionCompletion(missionId: string, tasks: any[]) {
   const activeTasks = tasks.filter((t: any) => t.status !== 'split');
   const allCompleted = activeTasks.every((t: any) => t.status === 'completed');
   const anyFailed    = activeTasks.some((t: any)  => t.status === 'failed');
@@ -125,10 +186,7 @@ export async function onTaskCompleted(taskId: string, missionId: string): Promis
       userId:    '',
       error:     'One or more tasks failed.',
     });
-    return;
-  }
-
-  if (allCompleted) {
+  } else if (allCompleted) {
     console.log(`[MissionWorker] ✅ Mission complete: ${missionId}`);
     await nexusStateStore.updateMissionStatus(missionId, 'complete', new Date().toISOString());
     await eventBuffer.publish(missionId, {
@@ -136,45 +194,6 @@ export async function onTaskCompleted(taskId: string, missionId: string): Promis
       missionId,
       userId:    '',
     });
-    return;
-  }
-
-  // Find tasks that are pending and unblocked
-  const readyToEnqueue = tasks.filter((task: any) => {
-    if (task.status !== 'pending') return false;
-    const deps: any[] = task.task_dependencies || [];
-    if (deps.length === 0) return true;
-    return deps.every((dep: any) => {
-      const depTask = tasks.find((t: any) => t.id === dep.depends_on_task_id);
-      return depTask && depTask.status === 'completed';
-    });
-  });
-
-  // Fetch workspaceId from one of the already-running tasks' mission context
-  const missionMeta = await nexusStateStore.getMissionById?.(missionId).catch(() => null);
-  const workspaceId: string = missionMeta?.workspace_id ?? '';
-
-  for (const task of readyToEnqueue) {
-    const mrTask = task as MapReduceTaskNode;
-
-    if (mrTask.mapReduce) {
-      await dispatchMapReduceTask(mrTask, missionId, workspaceId);
-      continue;
-    }
-
-    // Mark 'queued' atomically before enqueue to prevent double execution
-    await nexusStateStore.updateTaskStatus(task.id, 'queued');
-
-    await tasksQueue.add(`task_${task.id}`, {
-      taskId:       task.id,
-      missionId,
-      workspaceId,
-      agentType:    task.agent_type,
-      input:        task.input_payload,
-      contextFields: (task.task_dependencies || []).map((d: any) => d.depends_on_task_id),
-    });
-
-    console.log(`[MissionWorker] 🚀 Enqueued task ${task.id} for mission ${missionId}`);
   }
 }
 
@@ -185,6 +204,15 @@ export function startMissionEventListener(): void {
     if (event.type === 'task_completed' && event.taskId && event.missionId) {
       try {
         await onTaskCompleted(event.taskId, event.missionId);
+        // 🚨 FIX 2: Reliable fallback (BullMQ mission check)
+        await missionsQueue.add(`check_${event.missionId}`, {
+          missionId: event.missionId,
+          taskId: event.taskId,
+          type: 'mission_check'
+        }, { 
+          jobId: `check_${event.missionId}_${event.taskId}`, // Idempotent check
+          removeOnComplete: true 
+        });
       } catch (err) {
         console.error('[MissionWorker] ❌ onTaskCompleted error:', err);
       }

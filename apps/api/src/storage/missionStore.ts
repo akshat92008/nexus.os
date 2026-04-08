@@ -117,12 +117,26 @@ export class MissionStore {
     if (result?.tokensUsed) update.tokens_used = result.tokensUsed;
     if (result?.error) update.error = result.error;
 
-    const { error } = await client
+    // 🚨 FIX 1: DAG RACE CONDITION (DOUBLE ENQUEUE)
+    // Use atomic status check as a distributed lock
+    const query = client
       .from('tasks')
       .update(update)
       .eq('id', taskId);
 
+    if (status === 'queued') {
+      query.eq('status', 'pending');
+    } else if (status === 'running') {
+      // 🚨 HARDEN 1 & 3: Allow claiming from 'queued' or 'running' (for retries)
+      query.in('status', ['queued', 'running']);
+    }
+
+    const { data, error } = await query.select('id');
+
     if (error) throw new Error(`[MissionStore] updateTaskStatus failed: ${error.message}`);
+    
+    // Return boolean indicating if update actually happened
+    return data && data.length > 0;
   }
 
   async completeTaskAtomics(params: {
@@ -133,6 +147,8 @@ export class MissionStore {
     tokensUsed: number;
   }) {
     const client = await getSupabase();
+    
+    // 🚨 FIX 3: TRUE ATOMIC COMPLETION (Transaction-like RPC)
     const { data, error } = await client.rpc('complete_task_atomic', {
       p_mission_id: params.missionId,
       p_task_id: params.taskId,
@@ -143,12 +159,14 @@ export class MissionStore {
     });
 
     if (error) {
+      // Fallback only if RPC is missing or fatal error occurs
       console.error('[MissionStore] atomic completion failed, falling back to sequential...', error);
       const artifact = await this.storeArtifact(params);
-      await this.updateTaskStatus(params.taskId, 'completed', {
+      const updated = await this.updateTaskStatus(params.taskId, 'completed', {
         artifactId: artifact.id,
         tokensUsed: params.tokensUsed
       });
+      if (!updated) throw new Error(`[MissionStore] atomic completion failed: task ${params.taskId} already completed or not running`);
       return artifact;
     }
     return data;
@@ -221,6 +239,18 @@ export class MissionStore {
     return data;
   }
 
+  async getMissionById(missionId: string) {
+    const client = await getSupabase();
+    const { data, error } = await client
+      .from('missions')
+      .select('*')
+      .eq('id', missionId)
+      .single();
+
+    if (error) throw new Error(`[MissionStore] getMissionById failed: ${error.message}`);
+    return data;
+  }
+
   async getMissionTasks(missionId: string) {
     const client = await getSupabase();
     const { data, error } = await client
@@ -230,6 +260,18 @@ export class MissionStore {
 
     if (error) throw new Error(`[MissionStore] getMissionTasks failed: ${error.message}`);
     return data;
+  }
+
+  // 🚨 FIX 4: Optimized dependent task fetching
+  async getDependentTasks(taskId: string) {
+    const client = await getSupabase();
+    const { data, error } = await client
+      .from('task_dependencies')
+      .select('task_id, tasks!inner(*, task_dependencies(depends_on_task_id))')
+      .eq('depends_on_task_id', taskId);
+
+    if (error) throw new Error(`[MissionStore] getDependentTasks failed: ${error.message}`);
+    return data.map((d: any) => d.tasks);
   }
 
   async upsertSchedule(userId: string, schedule: ScheduleSnapshot) {
