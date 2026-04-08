@@ -11,6 +11,7 @@
 import { useRef, useCallback } from 'react';
 import { useNexusStore } from '../store/nexusStore';
 import type { NexusSSEEvent } from '@nexus-os/types';
+import { createClient } from '../lib/supabase';
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL || (typeof window !== 'undefined' ? '' : 'http://localhost:3001');
 
@@ -19,7 +20,14 @@ async function streamSSE(
   init: RequestInit,
   ingestEvent: (event: NexusSSEEvent) => void
 ) {
-  const response = await fetch(input, init);
+  const supabase = createClient();
+  const { data: { session } } = await supabase.auth.getSession();
+  const headers = new Headers(init.headers);
+  if (session?.access_token) {
+    headers.set('Authorization', `Bearer ${session.access_token}`);
+  }
+
+  const response = await fetch(input, { ...init, headers });
 
   if (!response.ok || !response.body) {
     const err = await response.json().catch(() => ({ error: 'Connection failed' }));
@@ -98,7 +106,16 @@ export function useNexusSSE(): UseNexusSSEReturn {
     if (missionId) {
       console.log(`[SSE] 🛑 Aborting mission on server: ${missionId}`);
       try {
-        await fetch(`${API_BASE}/api/missions/${missionId}/cancel`, { method: 'POST' });
+        const supabase = createClient();
+        const { data: { session } } = await supabase.auth.getSession();
+        const headers: Record<string, string> = {};
+        if (session?.access_token) {
+          headers['Authorization'] = `Bearer ${session.access_token}`;
+        }
+        await fetch(`${API_BASE}/api/missions/${missionId}/cancel`, { 
+          method: 'POST',
+          headers
+        });
       } catch (err) {
         console.warn(`[SSE] Failed to send cancel signal to server for ${missionId}`, err);
       }
@@ -146,15 +163,30 @@ export function useNexusSSE(): UseNexusSSEReturn {
   );
 
   const startOrchestration = useCallback(
-    async (goal: string, userId: string, mode = 'student') => {
+    async (goal: string, mode = 'student') => {
       cleanup();
+      
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id;
+      
+      if (!userId) {
+        ingestEvent({ type: 'error', message: 'You must be signed in to start a mission' });
+        return;
+      }
+
       startSession(goal, userId);
 
       try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (session?.access_token) {
+          headers['Authorization'] = `Bearer ${session.access_token}`;
+        }
+
         const response = await fetch(`${API_BASE}/api/orchestrate`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ goal: goal.trim(), userId, mode }),
+          headers,
+          body: JSON.stringify({ goal: goal.trim(), mode }),
         });
 
         if (!response.ok) {

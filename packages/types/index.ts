@@ -12,6 +12,15 @@
 
 // ── Legacy types (kept for backward compat) ────────────────────────────────
 
+
+
+export interface MapReduceTaskNode extends TaskNode {
+  mapReduce?: boolean;
+  mapReduceRole?: 'map' | 'reduce';
+  input_payload?: any;
+  agent_type: AgentType;
+}
+
 export type AgentType =
   | 'researcher'
   | 'analyst'
@@ -451,6 +460,8 @@ export interface CalendarState {
   events: CalendarEventRecord[];
 }
 
+export type FrequencyType = 'once' | 'daily' | 'weekly' | 'monthly' | 'cron';
+
 export interface ScheduleSnapshot {
   scheduleId: string;
   workspaceId: string;
@@ -790,4 +801,23 @@ export interface GraphEdge {
 export interface GraphData {
   nodes: GraphNode[];
   edges: GraphEdge[];
+}
+
+// ── Frequency Scheduler ──────────────────────────────────────────────────
+export type FrequencyType = 'hourly' | 'daily' | 'weekly' | 'monthly' | 'research';
+
+// ── Agent Run Result ─────────────────────────────────────────────────────
+export interface AgentRunResult {
+  artifact: TypedArtifact;
+  tokensUsed: number;
+  rawContent: string;
+}
+
+// ── MapReduce Task Node ──────────────────────────────────────────────────
+export interface MapReduceTaskNode {
+  id: string;
+  label: string;
+  agentType: AgentType;
+  chunks: string[];
+  reduceStrategy: 'merge' | 'vote' | 'summarize';
 }
