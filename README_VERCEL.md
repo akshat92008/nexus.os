@@ -25,12 +25,18 @@ Connect your repository to Vercel. Vercel will automatically detect the pnpm mon
 ### 3. Configure Environment Variables on Vercel
 Add the following variables to your Vercel project:
 
--   `NEXT_PUBLIC_API_URL`: The URL of your Vercel deployment (or your custom domain).
+-   `NEXT_PUBLIC_API_URL`: The URL of your **Render API** (e.g., `https://nexus-api.onrender.com`).
+-   `NEXT_PUBLIC_SUPABASE_URL`: Your Supabase Project URL.
+-   `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Your Supabase Anon Key.
 -   `GROQ_API_KEY`: Your Groq API key.
 -   `SUPABASE_URL`: Your Supabase URL.
 -   `SUPABASE_SERVICE_KEY`: Your Supabase Service Key.
 -   `REDIS_URL`: Your Upstash Redis URL (must be `rediss://` for TLS).
 -   `E2B_API_KEY`: Your E2B API key.
+
+> [!IMPORTANT]
+> When deploying to Vercel, the **`NEXT_PUBLIC_API_URL` must point to your Render API URL**, NOT a Vercel URL.
+> BullMQ workers cannot run on Vercel — the API and workers must remain on Render or Railway for proper task orchestration.
 
 ### 4. Deploy the Workers (Crucial)
 Since Vercel will kill serverless functions after execution, the missions will never progress unless you have workers running elsewhere.
