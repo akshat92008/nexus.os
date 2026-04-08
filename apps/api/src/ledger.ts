@@ -30,7 +30,7 @@ import type {
   LedgerRow,
   LedgerSummary,
   LedgerUpdateEvent,
-} from '../../../packages/types/index.js';
+} from '@nexus-os/types';
 
 // ── In-Memory Fallback ─────────────────────────────────────────────────────
 // Used when Supabase env vars are absent (local dev / CI).

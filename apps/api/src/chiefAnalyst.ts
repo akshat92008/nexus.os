@@ -34,7 +34,7 @@ import type {
   KeyInsight,
   CriterionResult,
   NextStep,
-} from '../../../packages/types/index.js';
+} from '@nexus-os/types';
 import type { RateLimitGovernor } from './rateLimitGovernor.js';
 import { orchestrateDAG } from './orchestrator.js';
 import { TaskRegistry } from './taskRegistry.js';
@@ -351,7 +351,6 @@ export async function runChiefAnalyst(
       dag: correctionDag,
       memory: correctionMemory,
       registry: correctionRegistry,
-      governor,
       userId: `remediation_${dag.missionId}`,
       sessionId: `remediation_${dag.missionId}`,
       res: sseRes,

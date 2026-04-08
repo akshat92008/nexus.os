@@ -4,7 +4,7 @@
  * Helper functions for DAG validation, deduplication, and cycle detection.
  */
 
-import { TaskNode } from '../../../packages/types/index.js';
+import { TaskNode } from '@nexus-os/types';
 
 const SIMILARITY_THRESHOLD = 0.55;
 

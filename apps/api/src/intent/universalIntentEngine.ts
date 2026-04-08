@@ -1,6 +1,6 @@
 import { planMission } from '../missionPlanner.js';
 import { routeIntent, type OSMode } from '../intentRouter.js';
-import type { TaskDAG, GoalType } from '../../../../packages/types/index.js';
+import type { TaskDAG, GoalType } from '@nexus-os/types';
 
 export type IntentCategory = 'learning' | 'business' | 'productivity' | 'research' | 'coding' | 'general';
 
@@ -51,7 +51,7 @@ export async function planUniversalMission(goal: string, preferredMode?: string)
   }
 
   try {
-    const { intent, tasks, formatter } = routeIntent(goal, activeMode);
+    const { intent, tasks, formatter } = await routeIntent(goal, activeMode);
     
     console.log(`[UniversalIntentEngine] Mission starting via ${activeMode.toUpperCase()} layer.`);
 

@@ -19,6 +19,7 @@ import { tasksQueue, TaskJobData } from '../queue/queue.js';
 import { sandboxManager } from '../sandbox/sandboxManager.js';
 import { eventBuffer } from '../events/eventBuffer.js';
 import { vectorStore } from '../storage/vectorStore.js';
+import { startLockExtension } from './utils/workerUtils.js';
 import type { TypedArtifact, CodeArtifact, AgentContext, MemoryEntry } from '@nexus-os/types';
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
@@ -237,19 +238,8 @@ export async function handlePostProcessing(
   const { taskId, missionId, agentType } = job.data;
   let finalArtifact = result.artifact as TypedArtifact;
 
-  // 🚨 FIX 8: BULLMQ LOCK SAFETY (5s extension, lightweight check)
-  const lockExtender = setInterval(async () => {
-    try {
-      if (job.isActive()) {
-        await job.extendLock(job.token ?? '', LOCK_DURATION_MS);
-      } else {
-        clearInterval(lockExtender);
-      }
-    } catch (e) {
-      console.warn(`[Worker] ⚠️ Could not extend lock for job ${job.id}:`, e);
-      clearInterval(lockExtender);
-    }
-  }, LOCK_EXTEND_INTERVAL_MS);
+  // 🚨 FIX 8: BULLMQ LOCK SAFETY 
+  const stopLockExtension = startLockExtension(job, taskId, LOCK_EXTEND_INTERVAL_MS, LOCK_DURATION_MS);
 
   try {
     if ((finalArtifact as CodeArtifact).format === 'code') {
@@ -352,7 +342,7 @@ export async function handlePostProcessing(
     });
 
   } finally {
-    clearInterval(lockExtender);
+    stopLockExtension();
   }
 }
 

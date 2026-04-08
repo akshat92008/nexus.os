@@ -14,7 +14,7 @@
  * for persistence across server restarts. The async flush is fire-and-forget.
  */
 
-import type { TaskStatus, TaskRecord } from '../../../packages/types/index.js';
+import type { TaskStatus, TaskRecord } from '@nexus-os/types';
 
 const LOCK_TIMEOUT_MS = 90_000; // Zombie lock threshold: 90s
 

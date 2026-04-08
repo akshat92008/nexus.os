@@ -13,7 +13,9 @@ import type {
   WorkspaceSection,
   WorkspaceTask,
   TypedArtifact,
-} from '../../../packages/types/index.js';
+  KeyInsight,
+  NextStep,
+} from '@nexus-os/types';
 
 // ── Domain-Specific Output Types ───────────────────────────────────────────
 
@@ -63,11 +65,10 @@ export type FormattedOutput =
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
-function ensureArray<T>(val: any): T[] {
-  if (Array.isArray(val)) return val;
-  if (!val) return [];
-  if (typeof val === 'object' && Object.keys(val).length > 0) return [val as T];
-  return [];
+function ensureArray<T = unknown>(val: unknown): T[] {
+  if (Array.isArray(val)) return val as T[];
+  if (val == null) return [];
+  return [val as T];
 }
 
 function formatLead(raw: any): LeadProfile {
@@ -92,18 +93,18 @@ function formatLead(raw: any): LeadProfile {
 
 const leadGenRule = {
   format(synthesis: SynthesisArtifact): LeadGenOutput {
-    const d = synthesis.deliverable || {};
-    const rawLeads = ensureArray(d.leads ?? d.lead_list ?? []).map(formatLead);
+    const d = (synthesis.deliverable ?? {}) as Record<string, any>;
+    const rawLeads = ensureArray<any>(d.leads ?? d.lead_list ?? []).map(formatLead);
 
     return {
       niche: String(d.niche ?? synthesis.keyInsights?.[0]?.insight ?? 'Unspecified'),
       executiveSummary: synthesis.executiveSummary || 'Lead generation complete.',
       leads: rawLeads,
-      pipeline: (d.pipeline ?? d.sales_pipeline) as any,
-      outreachMessages: ensureArray(d.outreachMessages ?? d.outreach_messages),
-      keyInsights: ensureArray(synthesis.keyInsights).map((i) => i.insight),
-      gaps: ensureArray(synthesis.gaps),
-      nextSteps: ensureArray(synthesis.nextSteps),
+      pipeline: d.pipeline ?? d.sales_pipeline,
+      outreachMessages: ensureArray<any>(d.outreachMessages ?? d.outreach_messages),
+      keyInsights: ensureArray<KeyInsight>(synthesis.keyInsights).map((i) => i.insight),
+      gaps: ensureArray<string>(synthesis.gaps),
+      nextSteps: ensureArray<NextStep>(synthesis.nextSteps),
     };
   },
 };
@@ -112,26 +113,26 @@ const researchRule = {
   format(synthesis: SynthesisArtifact): ResearchOutput {
     return {
       executiveSummary: synthesis.executiveSummary || 'Research complete.',
-      keyInsights: ensureArray(synthesis.keyInsights).map((i) => ({
+      keyInsights: ensureArray<KeyInsight>(synthesis.keyInsights).map((i) => ({
         insight: i.insight || 'No insight provided',
         confidence: i.confidence || 'medium',
       })),
-      recommendations: ensureArray(synthesis.deliverable?.recommendations),
-      gaps: ensureArray(synthesis.gaps),
-      nextSteps: ensureArray(synthesis.nextSteps),
+      recommendations: ensureArray<string>((synthesis.deliverable as any)?.recommendations),
+      gaps: ensureArray<string>(synthesis.gaps),
+      nextSteps: ensureArray<NextStep>(synthesis.nextSteps),
     };
   },
 };
 
 const strategyRule = {
   format(synthesis: SynthesisArtifact): StrategyOutput {
-    const d = synthesis.deliverable || {};
+    const d = (synthesis.deliverable ?? {}) as Record<string, any>;
     return {
       executiveSummary: synthesis.executiveSummary || 'Strategy finalized.',
-      roadmap: ensureArray(d.roadmap),
-      risks: ensureArray(d.risks),
-      quickWins: ensureArray(d.quickWins),
-      nextSteps: ensureArray(synthesis.nextSteps),
+      roadmap: ensureArray<any>(d.roadmap),
+      risks: ensureArray<any>(d.risks),
+      quickWins: ensureArray<string>(d.quickWins),
+      nextSteps: ensureArray<NextStep>(synthesis.nextSteps),
     };
   },
 };
@@ -140,13 +141,13 @@ const generalRule = {
   format(synthesis: SynthesisArtifact): GeneralOutput {
     return {
       executiveSummary: synthesis.executiveSummary || 'Task complete.',
-      keyInsights: ensureArray(synthesis.keyInsights).map((i) => ({
+      keyInsights: ensureArray<KeyInsight>(synthesis.keyInsights).map((i) => ({
         insight: i.insight || 'Info block',
         confidence: i.confidence || 'high',
       })),
-      deliverable: synthesis.deliverable || {},
-      gaps: ensureArray(synthesis.gaps),
-      nextSteps: ensureArray(synthesis.nextSteps),
+      deliverable: (synthesis.deliverable ?? {}) as Record<string, any>,
+      gaps: ensureArray<string>(synthesis.gaps),
+      nextSteps: ensureArray<NextStep>(synthesis.nextSteps),
     };
   },
 };
@@ -160,7 +161,6 @@ const DOMAIN_RULES: any = {
   code:     generalRule,
   general:  generalRule,
 };
-
 // ── Workspace Transformation (V3) ──────────────────────────────────────────
 
 export function transformToWorkspace(
@@ -171,7 +171,7 @@ export function transformToWorkspace(
   intermediateArtifacts: Map<string, TypedArtifact>
 ): Workspace {
   const sections: WorkspaceSection[] = [];
-  const d = synthesis.deliverable || {};
+  const d = (synthesis.deliverable ?? {}) as Record<string, any>}) as Record<string, any>;
 
   // 1. Insights
   sections.push({
@@ -185,7 +185,7 @@ export function transformToWorkspace(
   });
 
   // 2. Data/Table
-  const rawLeads = ensureArray(d.leads ?? d.lead_list ?? d.dataPoints);
+  const rawLeads = ensureArray((d as any).leads ?? (d as any).lead_list ?? (d as any).dataPoints);
   if (rawLeads.length > 0) {
     sections.push({
       id: 'sec_table',
@@ -197,7 +197,7 @@ export function transformToWorkspace(
   }
 
   // 3. Roadmap/Tasks
-  const roadmapRaw = ensureArray(d.roadmap ?? d.pipeline?.stages ?? synthesis.nextSteps);
+  const roadmapRaw = ensureArray((d as any).roadmap ?? (d as any).pipeline?.stages ?? synthesis.nextSteps);
   const tasks: WorkspaceTask[] = roadmapRaw.map((phase: any, i: number) => ({
     id: `task_${i}`,
     title: phase.action ?? phase.label ?? phase.title ?? String(phase),
@@ -214,12 +214,12 @@ export function transformToWorkspace(
   });
 
   // 4. Document Content
-  if (d.body || d.document || d.notes || d.code) {
+  if ((d as any).body || (d as any).document || (d as any).notes || (d as any).code) {
     sections.push({
       id: 'sec_doc',
       type: 'document',
       title: 'Final Deliverable',
-      content: String(d.body ?? d.document ?? d.notes ?? d.code ?? ''),
+      content: String((d as any).body ?? (d as any).document ?? (d as any).notes ?? (d as any).code ?? ''),
       description: 'Human-readable result.',
     });
   }

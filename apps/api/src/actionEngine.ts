@@ -1,4 +1,4 @@
-import type { Workspace, NextAction, WorkspaceTask } from '../../../packages/types/index.js';
+import type { Workspace, NextAction, WorkspaceTask } from '@nexus-os/types';
 
 export function generateNextActions(workspace: Workspace): NextAction[] {
   const actions: NextAction[] = [];

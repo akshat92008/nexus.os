@@ -29,7 +29,7 @@ import type {
   ResearchArtifact,
   AnalysisArtifact,
   StrategyArtifact,
-} from '../../../packages/types/index.js';
+} from '@nexus-os/types';
 
 // ── Graph Types ─────────────────────────────────────────────────────────────
 

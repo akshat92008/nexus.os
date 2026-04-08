@@ -63,7 +63,7 @@ export class UserStateStore {
   async getUserState(userId: string): Promise<UserStateSnapshot> {
     const client = await getSupabase();
     const { data, error } = await client
-      .from('user_states')
+      .from('nexus_state')
       .select('state')
       .eq('id', userId)
       .single();
@@ -92,7 +92,7 @@ export class UserStateStore {
     };
 
     const { error } = await client
-      .from('user_states')
+      .from('nexus_state')
       .upsert({ id: userId, state: nextState, updated_at: new Date().toISOString() });
 
     if (error) throw new Error(`[UserStateStore] syncUserState failed: ${error.message}`);

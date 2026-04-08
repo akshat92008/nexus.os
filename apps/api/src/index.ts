@@ -13,6 +13,7 @@ console.log("🚀 [HEARTBEAT] The API is starting up...");
 import express, { type Request, type Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import { rateLimit } from 'express-rate-limit';
 import { planMission }      from './missionPlanner.js';
 import { 
   startDurableMission, 
@@ -25,6 +26,7 @@ import { approvalGuard }   from './ApprovalGuard.js';
 import { startMissionEventListener } from './workers/missionWorker.js';
 import './workers/taskWorker.js'; // Ensure task worker is initialized
 import type { OrchestrateRequest } from '@nexus-os/types';
+import { requireAuth } from './middleware/auth.js';
 
 dotenv.config();
 
@@ -34,20 +36,11 @@ const app: express.Express = express();
 const PORT = parseInt(process.env.PORT ?? '3001');
 
 // 🚨 ARCHITECTURAL DECISION: CORS / SSE Allowed Origins
-// Added support for cloud-hybrid deployment (Vercel/Netlify)
-const ALLOWED_ORIGINS = [
-  'http://localhost:3000',
-  'tauri://localhost',
-  'https://tauri.localhost',
-  /\.vercel\.app$/,      // Allow any Vercel deployment
-  /\.netlify\.app$/      // Allow any Netlify deployment
-];
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ?? 'http://localhost:3000').split(',').map(s => s.trim());
 
 app.use(cors({ 
   origin: (origin, callback) => {
-    if (!origin || ALLOWED_ORIGINS.some(pattern => 
-      typeof pattern === 'string' ? pattern === origin : pattern.test(origin)
-    )) {
+    if (!origin || ALLOWED_ORIGINS.includes(origin)) {
       callback(null, true);
     } else {
       console.warn(`[CORS] Blocked origin: ${origin}`);
@@ -93,13 +86,16 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Apply requireAuth to all subsequent routes
+app.use(requireAuth);
+
 /**
  * Readiness Check (Dependencies)
  */
 app.get('/api/ready', async (req, res) => {
   try {
     const client = await nexusStateStore.getSupabaseClient();
-    const { error: dbError } = await client.from('missions').select('count', { count: 'exact', head: true }).limit(1);
+    const { error: dbError } = await client.from('nexus_missions').select('count', { count: 'exact', head: true }).limit(1);
     
     // We check Redis via the eventBus (which has ioredis connections)
     // Simple ping check
@@ -120,11 +116,20 @@ app.get('/api/ready', async (req, res) => {
 /**
  * Orchestration (Durable DAG Execution)
  */
-app.post('/api/orchestrate', async (req: Request<{}, {}, OrchestrateRequest>, res: Response) => {
-  const { goal, userId, workspaceId, archMode = 'legacy' } = req.body;
+const orchestrateLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests' },
+});
 
-  if (!goal || !userId) {
-    return res.status(400).json({ error: 'Goal and userId are required.' });
+app.post('/api/orchestrate', orchestrateLimiter, async (req: Request<{}, {}, OrchestrateRequest>, res: Response) => {
+  const { goal, workspaceId, archMode = 'agentic' } = req.body;
+  const userId = req.user!.id;
+
+  if (!goal) {
+    return res.status(400).json({ error: 'Goal is required.' });
   }
 
   try {
@@ -149,6 +154,9 @@ app.get('/api/missions/:id/status', async (req, res) => {
   const { id } = req.params;
   try {
     const mission = await nexusStateStore.getMissionById(id);
+    if (!mission || mission.user_id !== req.user!.id) {
+      return res.status(404).json({ error: 'Mission not found' });
+    }
     const tasks = await nexusStateStore.getMissionTasks(id);
     res.json({ mission, tasks });
   } catch (err: any) {
@@ -162,6 +170,10 @@ app.get('/api/missions/:id/status', async (req, res) => {
 app.post('/api/missions/:id/cancel', async (req, res) => {
   const { id } = req.params;
   try {
+    const mission = await nexusStateStore.getMissionById(id);
+    if (!mission || mission.user_id !== req.user!.id) {
+      return res.status(404).json({ error: 'Mission not found' });
+    }
     await cancelDurableMission(id);
     res.json({ status: 'cancelled', missionId: id });
   } catch (err: any) {
@@ -179,9 +191,11 @@ app.get('/api/artifacts/:id', async (req, res) => {
     if (!task || !task.output_artifact_id) {
       return res.status(404).json({ error: 'Artifact not found for this task' });
     }
-    // Artifacts are stored in the tasks table as JSON in output_payload 
-    // or referenced by output_artifact_id. Assuming missionStore fetches
-    // task object which includes the artifact data or link.
+    // Simple check: check if mission belongs to user
+    const mission = await nexusStateStore.getMissionById(task.mission_id);
+    if (!mission || mission.user_id !== req.user!.id) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
     res.json(task);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -196,6 +210,16 @@ app.get('/api/events/stream', async (req, res) => {
 
   if (!missionId || typeof missionId !== 'string') {
     return res.status(400).json({ error: 'missionId is required' });
+  }
+
+  // Verify ownership
+  try {
+    const mission = await nexusStateStore.getMissionById(missionId);
+    if (!mission || mission.user_id !== req.user!.id) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to verify mission ownership' });
   }
 
   // SSE Headers
@@ -221,60 +245,22 @@ app.get('/api/events/stream', async (req, res) => {
 });
 
 /**
- * Mission Management
- */
-app.get('/api/missions/:missionId', async (req, res) => {
-  try {
-    const tasks = await nexusStateStore.getMissionTasks(req.params.missionId);
-    res.json({ tasks });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/api/missions/:missionId/cancel', async (req, res) => {
-  try {
-    await cancelDurableMission(req.params.missionId);
-    res.json({ status: 'cancelled' });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-/**
- * Artifact Retrieval
- */
-app.get('/api/artifacts/:artifactId', async (req, res) => {
-  try {
-    const client = await nexusStateStore.getSupabaseClient();
-    const { data, error } = await client
-      .from('artifacts')
-      .select('*')
-      .eq('id', req.params.artifactId)
-      .single();
-
-    if (error) throw error;
-    res.json(data);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-/**
  * User State Management
  */
-app.get('/api/state/:userId', async (req, res) => {
+app.get('/api/state', async (req, res) => {
+  const userId = req.user!.id;
   try {
-    const state = await nexusStateStore.getUserState(req.params.userId);
+    const state = await nexusStateStore.getUserState(userId);
     res.json(state);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.post('/api/state/:userId', async (req, res) => {
+app.post('/api/state', async (req, res) => {
+  const userId = req.user!.id;
   try {
-    const state = await nexusStateStore.syncUserState(req.params.userId, req.body);
+    const state = await nexusStateStore.syncUserState(userId, req.body);
     res.json(state);
   } catch (err: any) {
     res.status(500).json({ error: err.message });

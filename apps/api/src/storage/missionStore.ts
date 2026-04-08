@@ -36,7 +36,7 @@ export class MissionStore {
     }
 
     const { data, error } = await client
-      .from('missions')
+      .from('nexus_missions')
       .insert({
         id: params.id,
         user_id: params.userId,
@@ -59,7 +59,7 @@ export class MissionStore {
     if (completedAt) update.completed_at = completedAt;
 
     const { error } = await client
-      .from('missions')
+      .from('nexus_missions')
       .update(update)
       .eq('id', missionId);
 
@@ -298,7 +298,7 @@ export class MissionStore {
   async getMissionById(missionId: string) {
     const client = await getSupabase();
     const { data, error } = await client
-      .from('missions')
+      .from('nexus_missions')
       .select('*')
       .eq('id', missionId)
       .single();

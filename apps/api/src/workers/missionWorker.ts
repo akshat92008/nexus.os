@@ -12,7 +12,6 @@ import { eventBus } from '../events/eventBus.js';
 import { eventBuffer } from '../events/eventBuffer.js';
 import { tasksQueue, missionsQueue, MissionJobData } from '../queue/queue.js';
 import { nexusStateStore } from '../storage/nexusStateStore.js';
-import type { MapReduceTaskNode } from '../missionPlanner.js';
 import type { NexusEvent } from '../db/models.js';
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
@@ -41,7 +40,7 @@ function chunkText(text: string, maxChars = 2000): string[] {
 // ── Map-Reduce Dispatch ───────────────────────────────────────────────────
 
 async function dispatchMapReduceTask(
-  task: MapReduceTaskNode,
+  task: any,
   missionId: string,
   workspaceId: string
 ): Promise<void> {

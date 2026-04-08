@@ -5,7 +5,7 @@
  * to re-evaluate the TaskDAG after each wave.
  */
 
-import type { TaskDAG, TaskNode, MemoryEntry } from '../../../packages/types/index.js';
+import type { TaskDAG, TaskNode, MemoryEntry } from '@nexus-os/types';
 
 interface SupervisorDecision {
   status: 'proceed' | 'drill_down' | 'pivot';

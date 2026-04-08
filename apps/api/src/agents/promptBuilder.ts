@@ -1,4 +1,4 @@
-import { TaskNode, GoalType, AgentContext } from '../../../packages/types/index.js';
+import { TaskNode, GoalType, AgentContext } from '@nexus-os/types';
 import { AGENT_ROLES, CONSTRAINTS } from './agentConfig.js';
 
 /**

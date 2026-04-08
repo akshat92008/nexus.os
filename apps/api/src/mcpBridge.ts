@@ -18,7 +18,7 @@ import type {
   ArtifactDepositedEvent,
   HandoffEvent,
   ExportFormat,
-} from '../../../packages/types/index.js';
+} from '@nexus-os/types';
 
 // ── Export Builders ────────────────────────────────────────────────────────
 

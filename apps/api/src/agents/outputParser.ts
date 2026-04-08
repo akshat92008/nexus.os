@@ -7,7 +7,7 @@ import {
   ResearchArtifact, 
   AnalysisArtifact, 
   StrategyArtifact 
-} from '../../../packages/types/index.js';
+} from '@nexus-os/types';
 
 /**
  * Attempts to parse LLM response into a TypedArtifact.

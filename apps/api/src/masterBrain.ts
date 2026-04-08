@@ -1,12 +1,8 @@
-/**
- * Agentic OS — Master Brain V2 (Durable & Stateless)
- *
- * The central intelligence singleton that persists across ALL requests.
- * Refactored to be stateless and triggered by BullMQ repeatable jobs.
- */
-
 import { nexusStateStore } from './storage/nexusStateStore.js';
 import { systemQueue } from './queue/queue.js';
+import { eventBus } from './events/eventBus.js';
+import { getSupabase } from './storage/supabaseClient.js';
+import { GROQ_API_URL } from './agents/agentConfig.js';
 import type { TaskDAG, OngoingMission } from '@nexus-os/types';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -88,14 +84,103 @@ class MasterBrainV2 {
    */
   async runDecisionCycle() {
     console.log('[MasterBrain] 🧠 Running Decision Cycle...');
-    
-    // In a real refactor, this would:
-    // 1. Fetch all active missions from DB
-    // 2. Scan for stalled tasks (Risks)
-    // 3. Score potential next actions
-    // 4. Update user_states in Supabase with new insights
-    
-    // This makes the Master Brain horizontally scalable as any worker can run this.
+    const supabase = await getSupabase();
+
+    // 1. Fetch active missions
+    const { data: missions, error: mError } = await supabase
+      .from('nexus_missions')
+      .select('*')
+      .in('status', ['running', 'paused']);
+
+    if (mError) {
+      console.error('[MasterBrain] Failed to fetch active missions:', mError);
+      return;
+    }
+
+    const now = new Date();
+
+    for (const mission of missions) {
+      // 2. Check for stalled tasks (> 3 mins)
+      const { data: tasks, error: tError } = await supabase
+        .from('tasks')
+        .select('*')
+        .eq('mission_id', mission.id)
+        .eq('status', 'running');
+
+      if (!tError && tasks) {
+        for (const task of tasks) {
+          const startedAt = new Date(task.started_at || task.created_at);
+          const diffMins = (now.getTime() - startedAt.getTime()) / 60000;
+
+          if (diffMins > 3) {
+            console.warn(`[MasterBrain] 🚨 Task ${task.id} stalled for ${diffMins.toFixed(1)}m. Marking failed.`);
+            await nexusStateStore.updateTaskStatus(task.id, 'failed', { error: 'Task timeout: stalled for more than 3 minutes' });
+            
+            await eventBus.publish(mission.id, {
+              type: 'neural_hud_alert',
+              missionId: mission.id,
+              severity: 'high',
+              message: `Task "${task.label}" stalled and was auto-terminated.`,
+              timestamp: now.getTime()
+            } as any);
+          }
+        }
+      }
+
+      // 3. Resume paused missions older than 10 mins
+      if (mission.status === 'paused') {
+        const updatedAt = new Date(mission.updated_at || mission.created_at);
+        const diffMins = (now.getTime() - updatedAt.getTime()) / 60000;
+
+        if (diffMins > 10) {
+          console.log(`[MasterBrain] ⏯️ Resuming mission ${mission.id} (paused for ${diffMins.toFixed(1)}m)`);
+          await systemQueue.add('resume_mission', { missionId: mission.id });
+        }
+      }
+    }
+
+    // 4. Scan complete missions from last 24h for Strategic Overview
+    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+    const { data: completeMissions, error: cError } = await supabase
+      .from('nexus_missions')
+      .select('goal, status, updated_at')
+      .eq('status', 'complete')
+      .gt('updated_at', yesterday);
+
+    if (!cError && completeMissions && completeMissions.length > 0) {
+      const missionSummary = completeMissions.map(m => `- ${m.goal}`).join('\n');
+      const prompt = `You are the Nexus OS Master Brain. Analyze these recently completed missions and provide a 1-sentence 'Strategic Overview' of the system's current momentum. Return as JSON: { "overview": string }.\n\nMissions:\n${missionSummary}`;
+
+      try {
+        const response = await fetch(GROQ_API_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+          },
+          body: JSON.stringify({
+            model: 'llama-3.3-70b-versatile',
+            temperature: 0.3,
+            response_format: { type: 'json_object' },
+            messages: [
+              { role: 'system', content: 'You are a strategic system analyzer. Return valid JSON.' },
+              { role: 'user', content: prompt },
+            ],
+          }),
+        });
+
+        if (response.ok) {
+          const result = await response.json() as any;
+          const overview = result.choices?.[0]?.message?.content;
+          if (overview) {
+            console.log('[MasterBrain] 📈 Strategic Overview:', overview);
+            // Optionally store this in a global state or emit event
+          }
+        }
+      } catch (err) {
+        console.error('[MasterBrain] Groq analysis failed:', err);
+      }
+    }
   }
 
   /**
@@ -109,4 +194,3 @@ class MasterBrainV2 {
 }
 
 export const masterBrain = new MasterBrainV2();
-// We no longer call start() here; the API server calls initDurableLoops() on startup.

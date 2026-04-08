@@ -9,10 +9,18 @@ import {
   TaskNode,
   GoalType,
   AgentType,
-} from '../../../packages/types/index.js';
+} from '@nexus-os/types';
 import { findBestAgentForType } from './agents/agentRegistry.js';
 import { universalPlanner } from './core/universalPlanner.js';
 import type { ArchitectureMode } from '@nexus-os/types';
+
+export interface MapReduceTaskNode {
+  id: string;
+  label: string;
+  agentType: import('@nexus-os/types').AgentType;
+  chunks: string[];
+  reduceStrategy: 'merge' | 'vote' | 'summarize';
+}
 
 // Modular Imports
 import { SYSTEM_PROMPT, getDomainGuidance } from './planning/plannerPrompts.js';

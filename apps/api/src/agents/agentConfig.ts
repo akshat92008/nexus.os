@@ -1,4 +1,4 @@
-import { AgentType } from '../../../packages/types/index.js';
+import { AgentType } from '@nexus-os/types';
 
 export const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 export const GROQ_FAST_MODEL = 'llama-3.1-8b-instant';

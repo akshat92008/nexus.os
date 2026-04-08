@@ -12,7 +12,7 @@ import {
   AgentContext, 
   TypedArtifact, 
   GoalType 
-} from '../../../packages/types/index.js';
+} from '@nexus-os/types';
 
 import { 
   GROQ_API_URL, 

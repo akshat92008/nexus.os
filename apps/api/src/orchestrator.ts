@@ -15,8 +15,10 @@ import { MissionMemory } from './missionMemory.js';
 import { getGlobalGovernor } from './rateLimitGovernor.js';
 import { runAgent } from './agents/agentRunner.js'; // Note path fix if needed
 import { runChiefAnalyst } from './chiefAnalyst.js';
-import { formatOutput, formattedOutputToLegacyContent, transformToWorkspace, formatStudentToWorkspace } from './outputFormatter.js';
+import { formatOutput, transformToWorkspace } from './outputFormatter.js';
 import { ledger } from './ledger.js';
+import { nexusStateStore } from './storage/nexusStateStore.js';
+import { missionsQueue } from './queue/queue.js';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -212,8 +214,109 @@ export async function executeSingleAction(
   isAborted:  () => boolean
 ): Promise<void> {
   console.log(`[Orchestrator] ⚡ Executing ad-hoc action: ${actionId}`);
-  safeEmit(res, { type: 'agent_working', taskId: actionId, message: 'Executing...' }, isAborted);
-  await sleep(1500);
-  safeEmit(res, { type: 'agent_complete', taskId: actionId }, isAborted);
+  
+  // Load workspace from Supabase via nexusStateStore using workspaceId
+  const state = await nexusStateStore.getUserState(userId);
+  const workspace = state.workspaces.find(w => w.id === workspaceId);
+  
+  if (!workspace) {
+    throw new Error(`Workspace ${workspaceId} not found`);
+  }
+
+  // Find the action by actionId in workspace.nextActions array
+  const action = (workspace.nextActions ?? []).find(a => a.id === actionId);
+  if (!action) {
+    throw new Error(`Action ${actionId} not found in workspace ${workspaceId}`);
+  }
+
+  // Build a single-node TaskDAG where goal = action.title and node agentType comes from action type
+  const taskId = `action_${actionId}`;
+  const node: TaskNode = {
+    id: taskId,
+    label: action.title,
+    agentType: (action.type === 'execute' ? 'researcher' : 'analyst') as AgentType,
+    dependencies: [],
+    contextFields: [],
+    expectedOutput: { format: 'prose' },
+    goalAlignment: 1,
+    priority: action.priority as TaskPriority,
+    maxRetries: 1,
+  };
+
+  const dag: TaskDAG = {
+    missionId: `adhoc_${actionId}_${Date.now()}`,
+    goal: action.title,
+    goalType: workspace.goalType || 'general',
+    nodes: [node],
+    successCriteria: [action.title],
+    estimatedWaves: 1,
+  };
+
+  // Create fresh MissionMemory and TaskRegistry
+  const memory = new MissionMemory(dag.missionId, dag.goal);
+  const registry = new TaskRegistry(dag.missionId);
+  registry.initTask(node.id);
+
+  const deps: OrchestratorDeps = {
+    dag,
+    memory,
+    registry,
+    userId,
+    sessionId: dag.missionId,
+    res,
+    isAborted,
+  };
+
+  // Call executeTask(node, deps, 0) directly
+  await executeTask(node, deps, 0);
+
+  // Emit { type: 'action_complete', actionId, artifact } via SSE when done
+  const entry = memory.read(node.id);
+  const artifact = entry?.data;
+
+  safeEmit(res, { 
+    type: 'action_complete', 
+    actionId, 
+    artifact 
+  }, isAborted);
+}
+
+/**
+ * Starts a durable mission. This is the public entry point called by the API route.
+ * Creates the DAG via the mission planner then runs orchestrateDAG.
+ */
+export async function startDurableMission(params: {
+  goal: string;
+  goalType: import('@nexus-os/types').GoalType;
+  userId: string;
+  sessionId: string;
+  res: import('express').Response;
+  isAborted: () => boolean;
+}): Promise<void> {
+  const { planMission } = await import('./missionPlanner.js');
+  const dag = await planMission(params.goal);
+  const memory = new (await import('./missionMemory.js')).MissionMemory(params.sessionId);
+  const registry = new (await import('./taskRegistry.js')).TaskRegistry();
+
+  await orchestrateDAG({
+    dag,
+    memory,
+    registry,
+    userId: params.userId,
+    sessionId: params.sessionId,
+    res: params.res,
+    isAborted: params.isAborted,
+  });
+}
+
+/**
+ * Cancels a running mission by its ID.
+ * In this architecture, cancellation is handled by the SSE abort signal.
+ * This function is a no-op stub kept for API compatibility.
+ */
+export async function cancelDurableMission(missionId: string): Promise<void> {
+  console.log(`[Orchestrator] Mission ${missionId} cancel requested.`);
+  // Cancellation is handled client-side via the isAborted() closure.
+  // Add Supabase mission status update here when persistence is wired.
 }
 

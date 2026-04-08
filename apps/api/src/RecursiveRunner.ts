@@ -5,7 +5,7 @@
  * sub-orchestrators for complex tasks.
  */
 
-import type { TaskNode, TaskDAG, MemoryEntry } from '../../../packages/types/index.js';
+import type { TaskNode, TaskDAG, MemoryEntry } from '@nexus-os/types';
 
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const POWER_MODEL = 'llama-3.3-70b-versatile';
