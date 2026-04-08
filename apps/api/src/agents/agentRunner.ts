@@ -6,6 +6,7 @@
  */
 
 import type { Response } from 'express';
+import { Sandbox } from '@e2b/code-interpreter';
 import { semanticBridge } from './services/SemanticBridge.js';
 import { 
   TaskNode, 
@@ -47,6 +48,34 @@ export interface AgentRunResult {
   rawContent: string;
 }
 
+// ── E2B Code Execution ────────────────────────────────────────────────────
+
+async function executeCodeWithE2B(code: string): Promise<{ stdout: string; stderr: string }> {
+  const apiKey = process.env.E2B_API_KEY;
+  if (!apiKey) {
+    console.warn('[AgentRunner] E2B_API_KEY not set, skipping code execution');
+    return { stdout: 'E2B not configured', stderr: '' };
+  }
+
+  try {
+    const sandbox = await Sandbox.create({ apiKey });
+    console.log('[AgentRunner] 🔌 E2B Sandbox initialized');
+    
+    const execution = await sandbox.runCode(code, 'python');
+    console.log('[AgentRunner] ✅ Code executed successfully');
+    
+    await sandbox.kill();
+    
+    return {
+      stdout: execution.logs.stdout.join('\n'),
+      stderr: execution.logs.stderr.join('\n'),
+    };
+  } catch (err: any) {
+    console.error('[AgentRunner] ❌ E2B code execution failed:', err.message);
+    return { stdout: '', stderr: `E2B execution error: ${err.message}` };
+  }
+}
+
 async function runGroq(opts: {
   system: string;
   user: string;
@@ -55,6 +84,8 @@ async function runGroq(opts: {
   temperature: number;
   jsonMode?: boolean;
   signal?: AbortSignal;
+  enableStreaming?: boolean;
+  onStreamChunk?: (chunk: string) => void;
 }) {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) throw new Error('GROQ_API_KEY not set');
@@ -69,6 +100,7 @@ async function runGroq(opts: {
       model: opts.model,
       temperature: opts.temperature,
       max_tokens: Math.min(opts.maxTokens, HARD_TOKEN_LIMIT),
+      stream: opts.enableStreaming ?? false,
       ...(opts.jsonMode ? { response_format: { type: 'json_object' } } : {}),
       messages: [
         { role: 'system', content: opts.system },
@@ -88,6 +120,56 @@ async function runGroq(opts: {
     throw new Error(`Groq API ${response.status}: ${errText.slice(0, 200)}`);
   }
 
+  // Handle streaming response
+  if (opts.enableStreaming && response.body) {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let content = '';
+    let totalTokens = 0;
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const dataStr = line.slice(6);
+          if (dataStr === '[DONE]') continue;
+
+          try {
+            const data = JSON.parse(dataStr);
+            const delta = data?.choices?.[0]?.delta;
+            const finishReason = data?.choices?.[0]?.finish_reason;
+
+            if (delta?.content) {
+              const text = delta.content;
+              content += text;
+              if (opts.onStreamChunk) opts.onStreamChunk(text);
+            }
+
+            if (finishReason === 'stop' && data?.usage) {
+              totalTokens = (data.usage.completion_tokens ?? 0) + (data.usage.prompt_tokens ?? 0);
+            }
+          } catch {
+            // Skip unparseable lines
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    return {
+      content,
+      tokens: totalTokens,
+    };
+  }
+
+  // Non-streaming response
   const data = (await response.json()) as any;
   const content = data?.choices?.[0]?.message?.content ?? '[No output]';
 
@@ -176,6 +258,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
       Respond ONLY with final verified content.
     `;
 
+    // Enable streaming for the judge in Council of Three
     const { content: verifiedContent, tokens: judgeTokens } = await callGroq({
       system: expectsJson
         ? 'You are a master logic judge. Return ONLY valid JSON.'
@@ -185,9 +268,30 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
       maxTokens,
       temperature: 0.1,
       jsonMode: expectsJson,
+      enableStreaming: !!sseRes,
+      onStreamChunk: sseRes ? (chunk: string) => {
+        if (chunk.length > 0) {
+          try {
+            sseRes.write(`data: ${JSON.stringify({
+              type: 'agent_output_chunk',
+              taskId: task.id,
+              chunk: chunk,
+            })}\n\n`);
+          } catch {
+            // Socket may be closed
+          }
+        }
+      } : undefined,
     });
 
     const artifact = parseTypedArtifact(verifiedContent, task);
+    
+    // For coder agents, execute generated code via E2B
+    if (task.agentType === 'coder' && (artifact as any).code) {
+      const { stdout, stderr } = await executeCodeWithE2B((artifact as any).code);
+      (artifact as any).executionOutput = { stdout, stderr };
+    }
+    
     clearTimeout(runtimeTimer);
     return { artifact, tokensUsed: specialist1.tokens + specialist2.tokens + judgeTokens, rawContent: verifiedContent };
   }
@@ -196,6 +300,9 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
   const isIntelligenceTask = ['researcher', 'analyst', 'chief_analyst'].includes(task.agentType);
   const model = (isIntelligenceTask || task.priority === 'critical') ? GROQ_POWER_MODEL : GROQ_FAST_MODEL;
 
+  // Enable streaming for high-budget agents to stream long outputs in real-time
+  const shouldStream = (maxTokens >= 2000) && !!sseRes;
+
   const { content, tokens } = await callGroq({
     system,
     user,
@@ -203,9 +310,34 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
     maxTokens,
     temperature: task.agentType === 'analyst' ? 0.3 : 0.6,
     jsonMode: expectsJson,
+    enableStreaming: shouldStream,
+    onStreamChunk: shouldStream ? (chunk: string) => {
+      // Stream individual chunks via SSE for real-time UI updates
+      if (sseRes && chunk.length > 0) {
+        try {
+          sseRes.write(`data: ${JSON.stringify({
+            type: 'agent_output_chunk',
+            taskId: task.id,
+            chunk: chunk,
+          })}\n\n`);
+        } catch {
+          // Socket may be closed, fail silently
+        }
+      }
+    } : undefined,
   });
 
   const artifact = parseTypedArtifact(content, task);
+  
+  // For coder agents, attempt code execution via E2B and append results to artifact
+  if (task.agentType === 'coder' && (artifact as any).code) {
+    const { stdout, stderr } = await executeCodeWithE2B((artifact as any).code);
+    (artifact as any).executionOutput = { stdout, stderr };
+    if (stderr) {
+      console.warn(`[AgentRunner] Code execution returned stderr: ${stderr}`);
+    }
+  }
+  
   console.log(`[AgentRunner] ✅ ${task.agentType.toUpperCase()} finished task: ${task.id} (${Date.now() - startMs}ms)`);
 
   clearTimeout(runtimeTimer);

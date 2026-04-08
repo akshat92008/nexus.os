@@ -15,6 +15,7 @@ const FileSystemView = dynamic(() => import('./FileSystemView').then(mod => mod.
 const ActivityTimeline = dynamic(() => import('./ActivityTimeline').then(mod => mod.ActivityTimeline), { ssr: false });
 const ApprovalModal = dynamic(() => import('./ApprovalModal').then(mod => mod.ApprovalModal), { ssr: false });
 const AppLauncher = dynamic(() => import('./AppLauncher').then(mod => mod.AppLauncher), { ssr: false });
+const OnboardingWizard = dynamic(() => import('./OnboardingWizard').then(mod => mod.OnboardingWizard), { ssr: false });
 
 import { useNexusStore, selectIsRunning } from '../../store/nexusStore';
 
@@ -106,6 +107,8 @@ export function Workspace() {
       <UnifiedInbox isOpen={ui.inboxOpen} onClose={toggleInbox} />
       <FileSystemView />
       <ApprovalModal />
+      
+      {!ui.isOnboardingComplete && <OnboardingWizard />}
     </div>
   );
 }

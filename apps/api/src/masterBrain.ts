@@ -189,7 +189,53 @@ class MasterBrainV2 {
    */
   async runGlobalReflection() {
     console.log('[MasterBrain] 🧠 Running Global Reflection...');
-    // Implementation for cross-mission opportunity detection
+    const supabase = await getSupabase();
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    const { data: missions } = await supabase
+      .from('nexus_missions')
+      .select('goal, user_id, status, updated_at')
+      .gt('updated_at', sevenDaysAgo);
+
+    if (!missions || missions.length === 0) return;
+
+    const byUser = missions.reduce((acc: any, m: any) => {
+      if (!acc[m.user_id]) acc[m.user_id] = [];
+      acc[m.user_id].push(m.goal);
+      return acc;
+    }, {});
+
+    for (const [userId, goals] of Object.entries(byUser)) {
+      const prompt = `You are the Nexus OS Strategic Reflector. Analyze these mission goals from the last 7 days:\n${(goals as string[]).map(g => `- ${g}`).join('\n')}\n\nReturn JSON: { "risks": [{"title":string,"severity":"critical"|"high"|"medium","mitigation":string}], "themes": string[], "strategicGaps": string[] }`;
+
+      try {
+        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
+          body: JSON.stringify({
+            model: 'llama-3.3-70b-versatile', temperature: 0.3,
+            response_format: { type: 'json_object' },
+            messages: [
+              { role: 'system', content: 'You are a strategic AI analyst. Return valid JSON only.' },
+              { role: 'user', content: prompt },
+            ],
+          }),
+        });
+        if (!response.ok) continue;
+        const result = await response.json() as any;
+        const reflection = JSON.parse(result.choices?.[0]?.message?.content ?? '{}');
+
+        await supabase.from('nexus_state')
+          .upsert({ id: userId, state: { globalReflection: reflection }, updated_at: new Date().toISOString() }, { onConflict: 'id' });
+
+        const criticalRisks = (reflection.risks ?? []).filter((r: any) => r.severity === 'critical');
+        for (const risk of criticalRisks) {
+          await eventBus.publish(userId, { type: 'neural_hud_alert', severity: 'critical', message: `Strategic Risk: ${risk.title}`, timestamp: Date.now() } as any);
+        }
+      } catch (err) {
+        console.error(`[MasterBrain] Reflection failed for user ${userId}:`, err);
+      }
+    }
   }
 }
 

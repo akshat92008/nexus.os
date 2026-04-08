@@ -198,6 +198,7 @@ export interface NexusStore {
     invoicingViewOpen:  boolean;
     calendarViewOpen:   boolean;
     graphViewOpen:      boolean;
+    isOnboardingComplete: boolean;
   };
 
   // Actions
@@ -217,6 +218,7 @@ export interface NexusStore {
   addToast:              (message: string) => void;
   removeToast:           (id: string) => void;
   setError:              (v: string | null) => void;
+  setOnboardingComplete: () => void;
 
   setActiveWorkspace:    (id: string | null) => void;
   updateSectionContent:  (workspaceId: string, sectionId: string, newContent: any) => void;

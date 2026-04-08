@@ -14,13 +14,6 @@
 
 
 
-export interface MapReduceTaskNode extends TaskNode {
-  mapReduce?: boolean;
-  mapReduceRole?: 'map' | 'reduce';
-  input_payload?: any;
-  agent_type: AgentType;
-}
-
 export type AgentType =
   | 'researcher'
   | 'analyst'
@@ -459,8 +452,6 @@ export interface CalendarEventRecord {
 export interface CalendarState {
   events: CalendarEventRecord[];
 }
-
-export type FrequencyType = 'once' | 'daily' | 'weekly' | 'monthly' | 'cron';
 
 export interface ScheduleSnapshot {
   scheduleId: string;

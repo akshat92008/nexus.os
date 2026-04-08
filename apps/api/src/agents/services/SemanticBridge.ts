@@ -5,7 +5,7 @@
  * artifacts into a structured "Mission World-State" or "Briefing".
  */
 
-import type { TaskNode, MemoryEntry } from '../../../../packages/types/index.js';
+import type { TaskNode, MemoryEntry } from '@nexus-os/types';
 
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const POWER_MODEL = 'llama-3.3-70b-versatile';

@@ -18,6 +18,7 @@ export interface UISlice {
     invoicingViewOpen: boolean;
     calendarViewOpen: boolean;
     graphViewOpen: boolean;
+    isOnboardingComplete: boolean;
   };
   toasts: Array<{ id: string; message: string; count: number; timestamp: number }>;
   pendingApproval: { taskId: string; taskLabel: string; reason: string } | null;
@@ -42,6 +43,7 @@ export interface UISlice {
   toggleGraphView: () => void;
   closeAllModals: () => void;
   setAppLauncherOpen: (v: boolean) => void;
+  setOnboardingComplete: () => void;
 }
 
 export const createUISlice: StateCreator<
@@ -66,6 +68,7 @@ export const createUISlice: StateCreator<
     invoicingViewOpen: false,
     calendarViewOpen: false,
     graphViewOpen: false,
+    isOnboardingComplete: false,
   },
   toasts: [],
   pendingApproval: null,
@@ -219,4 +222,8 @@ export const createUISlice: StateCreator<
       graphViewOpen: false,
     }
   })),
+  setOnboardingComplete: () => {
+    set((s) => ({ ui: { ...s.ui, isOnboardingComplete: true } }));
+    void get().persistServerState();
+  },
 });

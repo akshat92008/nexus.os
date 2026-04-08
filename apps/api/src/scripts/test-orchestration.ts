@@ -6,6 +6,7 @@
 
 import 'dotenv/config';
 import { startDurableMission } from '../orchestrator.js';
+import { planMission } from '../missionPlanner.js';
 import { nexusStateStore } from '../storage/nexusStateStore.js';
 import { eventBus } from '../events/eventBus.js';
 
@@ -18,8 +19,13 @@ async function testDrive() {
 
   try {
     // 1. Trigger Orchestration
-    const result = await startDurableMission(testGoal, userId, 'student');
-    const { missionId } = result;
+    const dag = await planMission(testGoal);
+    await startDurableMission({
+      dag,
+      userId,
+      workspaceId: 'ws_test_prod_001'
+    });
+    const { missionId } = dag;
 
     console.log(`✅ Mission Created: ${missionId}`);
 

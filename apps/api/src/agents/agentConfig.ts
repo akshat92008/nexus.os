@@ -8,10 +8,10 @@ export const TOKEN_BUDGET: Record<AgentType, number> = {
   researcher: 1400,
   analyst: 1400,
   strategist: 1200,
-  writer: 1000,
-  coder: 1000,
+  writer: 2000,
+  coder: 2500,
   summarizer: 600,
-  chief_analyst: 1800,
+  chief_analyst: 3000,
 };
 
 export const AGENT_ROLES: Record<AgentType, string> = {

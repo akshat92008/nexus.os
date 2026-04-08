@@ -7,10 +7,16 @@ import { Job } from 'bullmq';
 export function startLockExtension(job: Job, taskId: string, intervalMs = 15000, extensionMs = 30000) {
   const interval = setInterval(async () => {
     try {
-      await job.extendLock(extensionMs);
-      console.log(`[WorkerUtils] 🔒 Extended lock for task ${taskId}`);
+      const active = await job.isActive();
+      if (active) {
+        await job.extendLock(job.token ?? '', extensionMs);
+        console.log(`[WorkerUtils] 🔒 Extended lock for task ${taskId}`);
+      } else {
+        clearInterval(interval);
+      }
     } catch (err) {
       console.warn(`[WorkerUtils] ⚠️ Failed to extend lock for task ${taskId}:`, err);
+      clearInterval(interval);
     }
   }, intervalMs);
 
