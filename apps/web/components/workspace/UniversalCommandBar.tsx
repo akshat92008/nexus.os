@@ -53,9 +53,11 @@ export function UniversalCommandBar() {
 
   const handleAbort = () => { abort(); resetWS(); };
 
-  if (isRunning || session.status !== 'idle') {
+  const isTrulyRunning = isRunning || (session.status !== 'idle' && session.goal && session.id);
+
+  if (isTrulyRunning) {
     return (
-      <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-4xl mx-auto space-y-3 z-20">
+      <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-4xl mx-auto space-y-3 pointer-events-auto z-[300]">
         <div className="relative rounded-2xl border border-violet-500/50 bg-zinc-900/80 p-4 flex items-center justify-between backdrop-blur-xl">
            <div className="flex items-center gap-3">
               <Zap size={16} className="text-violet-400 animate-pulse" />
@@ -70,7 +72,7 @@ export function UniversalCommandBar() {
   }
 
   return (
-    <div className="flex flex-col items-center justify-center w-full max-w-4xl mx-auto space-y-10 z-20">
+    <div className="flex flex-col items-center justify-center w-full max-w-4xl mx-auto space-y-10 z-[200] pointer-events-auto">
       <CommandInput
         draft={draft} setDraft={setDraft}
         isFocused={ui.commandBarFocused} setFocused={setFocused}

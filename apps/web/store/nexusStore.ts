@@ -102,10 +102,15 @@ export const useNexusStore = create<NexusStore>()(
     })),
     {
       name: 'nexus-os-v2.6-storage',
-      // only persist core UI prefs and session ID locally
+      // only persist core UI prefs. Never persist 'running' states which can lead to UI deadlocks.
       partialize: (state) => ({
         ui: state.ui,
-        session: { ...state.session, id: state.session.id },
+        activeWorkspaceId: state.activeWorkspaceId,
+        session: { 
+          ...state.session, 
+          status: 'idle', // Always boot to idle
+          id: state.session.id 
+        },
       }),
     }
   )

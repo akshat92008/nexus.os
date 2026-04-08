@@ -45,11 +45,6 @@ export function OmniChatView() {
           </p>
         </motion.div>
 
-        {/* The Beautiful Chatbox - Large Scale Variant */}
-        <div className="w-full scale-110 motion-safe:animate-pulse-subtle">
-          <UniversalCommandBar />
-        </div>
-
         {/* Subtle OS Interaction Hints */}
         <div className="flex justify-center gap-16 text-zinc-600/60 font-black text-[10px] uppercase tracking-[0.2em] pt-8">
            <div className="flex items-center gap-3"><span className="text-zinc-800">⌘K</span> Focus</div>
