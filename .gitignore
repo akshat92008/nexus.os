@@ -27,6 +27,9 @@
 Thumbs.db
 
 # Misc
+.aider.chat.history.md
+.aider.input.history
+.aider.tags.cache.v3
 .vercel
 *.tsbuildinfo
 next-env.d.ts
