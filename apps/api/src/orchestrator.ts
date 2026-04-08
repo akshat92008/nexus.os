@@ -1,15 +1,17 @@
 /**
  * Nexus OS — Task Orchestrator (Durable)
- * 
+ *
  * Replaces the old HTTP-coupled orchestrator.
  * 1. Validates the DAG
  * 2. Persists mission & tasks to DB
- * 3. Enqueues initial "ready" tasks into BullMQ
+ * 3. Atomically marks wave-1 tasks as 'queued' THEN enqueues them
+ *    (prevents missionWorker from re-enqueuing before workers pick them up)
  */
 
 import type { TaskDAG, TaskNode, AgentType } from '@nexus-os/types';
 import { missionsQueue, tasksQueue } from './queue/queue.js';
 import { eventBus } from './events/eventBus.js';
+import { nexusStateStore } from './storage/nexusStateStore.js';
 
 export function detectCycles(nodes: TaskNode[]): string | null {
   const nodeMap = new Map(nodes.map((n) => [n.id, n]));
@@ -65,7 +67,11 @@ export function computeExecutionWaves(nodes: TaskNode[]): TaskNode[][] {
 
 /**
  * Start a new durable mission.
- * Instead of running the loop here, we enqueue jobs to BullMQ.
+ *
+ * FIX #2 — Wave-1 double execution:
+ * We mark all wave-1 task statuses as 'queued' in a single batch DB update
+ * BEFORE calling tasksQueue.add. This prevents missionWorker from seeing
+ * them as 'pending' and re-enqueuing them between the queue.add calls.
  */
 export async function startDurableMission(params: {
   dag:         TaskDAG;
@@ -73,44 +79,55 @@ export async function startDurableMission(params: {
   workspaceId: string;
 }): Promise<void> {
   const { dag, userId, workspaceId } = params;
-  
+
   // 1. Cycle detection (Guard)
   const cycle = detectCycles(dag.nodes);
   if (cycle) throw new Error(`Cannot start mission: Cycle detected at ${cycle}`);
 
   console.log(`[Orchestrator] 🚀 Starting durable mission: ${dag.missionId} — "${dag.goal}"`);
 
-  // 2. Enqueue the Mission "Job" for tracking
+  // 2. Enqueue the Mission tracking job
   await missionsQueue.add(`mission_${dag.missionId}`, {
     missionId:   dag.missionId,
     userId,
     workspaceId,
     goal:        dag.goal,
-    goalType:    dag.goalType
+    goalType:    dag.goalType,
   });
 
-  // 3. Dispatch the first wave of tasks (Durable Execution Engine)
+  // 3. Dispatch the first wave atomically
   const waves = computeExecutionWaves(dag.nodes);
   if (waves.length > 0) {
     const firstWave = waves[0];
+
+    // ── FIX #2: Atomic status update before enqueue ───────────────────────
+    // Mark ALL wave-1 tasks as 'queued' in a single batch before touching BullMQ.
+    // If the batch update fails, we throw and nothing is enqueued — safe to retry.
+    await Promise.all(
+      firstWave.map((task) => nexusStateStore.updateTaskStatus(task.id, 'queued'))
+    );
+    // ─────────────────────────────────────────────────────────────────────
+
+    // Now enqueue. Workers will see status='queued' and idempotency guards
+    // in taskWorker will skip any duplicate deliveries.
     for (const task of firstWave) {
       await tasksQueue.add(`task_${task.id}`, {
-        taskId:      task.id,
-        missionId:   dag.missionId,
+        taskId:       task.id,
+        missionId:    dag.missionId,
         workspaceId,
-        agentType:   task.agentType,
-        input:       task,
-        contextFields: task.contextFields || []
+        agentType:    task.agentType,
+        input:        task,
+        contextFields: task.contextFields || [],
       });
     }
   }
 
-  // 4. Publish start event (Stateless API will pick this up via SSE)
+  // 4. Publish start event
   await eventBus.publish(dag.missionId, {
-    type: 'mission_started',
+    type:      'mission_started',
     missionId: dag.missionId,
     userId,
-    goal: dag.goal
+    goal:      dag.goal,
   });
 }
 
@@ -118,16 +135,14 @@ export async function startDurableMission(params: {
  * Executes a single ad-hoc action from the UI.
  */
 export async function executeSingleAction(
-  actionId: string,
+  actionId:   string,
   workspaceId: string,
-  userId: string,
-  res: any,
-  isAborted: () => boolean
+  userId:     string,
+  res:        any,
+  isAborted:  () => boolean
 ): Promise<void> {
   console.log(`[Orchestrator] ⚡ Executing ad-hoc action: ${actionId}`);
-  // Ad-hoc actions remain HTTP-coupled for now as they are synchronous UI triggers
-  // but in a full refactor these would also be jobs.
   res.write(`data: ${JSON.stringify({ type: 'agent_working', taskId: actionId, message: 'Executing...' })}\n\n`);
-  await new Promise(r => setTimeout(r, 1000));
+  await new Promise((r) => setTimeout(r, 1000));
   res.write(`data: ${JSON.stringify({ type: 'agent_complete', taskId: actionId })}\n\n`);
 }

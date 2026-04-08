@@ -50,6 +50,18 @@ class EventBus {
   }
 
   /**
+   * Global listener for internal OS orchestration (event-driven)
+   */
+  async subscribeGlobal(handler: (event: NexusEvent) => void): Promise<void> {
+    const channel = 'nexus_global_events';
+    if (!this.listeners.has(channel)) {
+      this.listeners.set(channel, new Set());
+      await this.subscriber.subscribe(channel);
+    }
+    this.listeners.get(channel)!.add(handler);
+  }
+
+  /**
    * Unsubscribe from events
    */
   async unsubscribe(missionId: string, handler: (event: NexusEvent) => void): Promise<void> {

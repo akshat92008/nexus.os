@@ -9,7 +9,7 @@ export interface SandboxResult {
 }
 
 class SandboxManager {
-  private readonly TIMEOUT_MS = 60_000; // 1 minute limit
+  private readonly TIMEOUT_MS = 30_000; // 🧱 FIX 6: 30s hard limit
 
   /**
    * Run code in the sandbox and capture output.
@@ -17,17 +17,18 @@ class SandboxManager {
   async runCode(
     language: 'python' | 'javascript' | 'bash', 
     code: string,
-    onLog?: (type: 'stdout' | 'stderr', data: string) => void
+    onLog?: (type: 'stdout' | 'stderr', data: string) => void,
+    options?: { timeout?: number }
   ): Promise<SandboxResult> {
-    let sandbox: any = null; // Use any to bypass E2B version inconsistencies in type checking
+    let sandbox: any = null;
     const stdout: string[] = [];
     const stderr: string[] = [];
+    const timeout = options?.timeout ?? this.TIMEOUT_MS;
 
     try {
       // 1. Initialize sandbox (requires E2B_API_KEY in process.env)
-      // Using Sandbox.create() as it is the most common v2 pattern
-      sandbox = await (Sandbox as any).create();
-      console.log(`[SandboxManager] 🚀 Executing ${language} code...`);
+      sandbox = await (Sandbox as any).create({ timeout });
+      console.log(`[SandboxManager] 🚀 Executing ${language} code with ${timeout}ms timeout...`);
 
       if (language === 'python') {
         // Python runs in a notebook-style environment
@@ -71,7 +72,7 @@ class SandboxManager {
             stderr.push(data);
             onLog?.('stderr', data);
           },
-          timeout: this.TIMEOUT_MS,
+          timeout,
         });
 
         return {
