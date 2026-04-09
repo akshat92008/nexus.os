@@ -11,9 +11,54 @@ import {
   Lightbulb, FileText, FileSpreadsheet, Download, FileJson, X, Kanban,
   Search, Globe, Zap, TrendingUp, Target
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import type { WorkspaceSection, ExportFormat } from '@nexus-os/types';
 import { exportArtifact } from '../../lib/exportArtifact';
 import { useState, useCallback } from 'react';
+import React from 'react';
+
+class CanvasErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean }> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error) {
+    console.error('[WorkspaceCanvas] Render error:', error);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex items-center justify-center h-full">
+          <div className="text-center text-zinc-600">
+            <p className="text-zinc-400 text-sm mb-1">Workspace render error</p>
+            <p className="text-xs">Your mission is still running in the background</p>
+            <button
+              className="mt-3 text-xs text-violet-400 hover:text-violet-300 underline"
+              onClick={() => this.setState({ hasError: false })}
+            >
+              Reload canvas
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function EmptyWorkspace() {
+  return (
+    <div className="flex h-full items-center justify-center px-6 py-12">
+      <div className="text-center text-zinc-400 max-w-md">
+        <p className="text-lg font-semibold text-white mb-2">No workspace selected</p>
+        <p className="text-sm text-zinc-500">Start a new mission or select an existing workspace to get started.</p>
+      </div>
+    </div>
+  );
+}
 
 function renderSection(workspaceId: string, section: WorkspaceSection) {
   switch (section.type) {
@@ -114,9 +159,9 @@ export function WorkspaceCanvas() {
     await startOrchestration(newGoal, userId, currentMode);
   }, [activeId, userId, workspaces, startOrchestration, currentMode]);
 
-  if (!activeId) return null;
+  if (!activeId) return <EmptyWorkspace />;
   const workspace = workspaces[activeId];
-  if (!workspace) return null;
+  if (!workspace) return <EmptyWorkspace />;
 
   const handleGlobalExport = async (format: ExportFormat) => {
     // For workspace-wide export, we use the session ID linked to the mission
@@ -133,7 +178,8 @@ export function WorkspaceCanvas() {
   };
 
   return (
-    <div className="flex-1 w-full max-w-5xl mx-auto space-y-6 pb-20 fade-in">
+    <CanvasErrorBoundary>
+      <div className="flex-1 w-full max-w-5xl mx-auto space-y-6 pb-20 fade-in">
       {isSimulated && showSimulatedBanner && (
         <motion.div 
           initial={{ opacity: 0, y: -10 }}
@@ -240,6 +286,7 @@ export function WorkspaceCanvas() {
       <div className="flex flex-col gap-8">
         {workspace.sections.map(sec => renderSection(workspace.id, sec))}
       </div>
-    </div>
+      </div>
+    </CanvasErrorBoundary>
   );
 }

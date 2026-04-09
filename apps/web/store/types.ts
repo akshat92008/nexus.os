@@ -198,8 +198,7 @@ export interface NexusStore {
     invoicingViewOpen:  boolean;
     calendarViewOpen:   boolean;
     graphViewOpen:      boolean;
-    isOnboardingComplete: boolean;
-  };
+    isOnboardingComplete: boolean;    showAuth:           boolean;  };
 
   // Actions
   ingestEvent:    (event: NexusSSEEvent) => void;

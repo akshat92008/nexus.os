@@ -9,8 +9,25 @@ import { Queue, Worker, Job } from 'bullmq';
 import { Redis } from 'ioredis';
 import type { TaskNode, AgentType } from '@nexus-os/types';
 
-const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
-const connection = new Redis(REDIS_URL, { maxRetriesPerRequest: null });
+const REDIS_URL = process.env.REDIS_URL;
+if (!REDIS_URL) {
+  console.error('[Queue] FATAL: Redis unavailable. Set REDIS_URL in .env');
+  throw new Error('[Queue] FATAL: Redis unavailable. Set REDIS_URL in .env');
+}
+
+let connection: Redis;
+try {
+  connection = new Redis(REDIS_URL, { 
+    maxRetriesPerRequest: null,
+    connectTimeout: 5000,
+  });
+  connection.on('error', (err) => {
+    console.error('[Queue] Redis connection error:', err.message);
+  });
+} catch (err: any) {
+  console.error('[Queue] FATAL: Redis unavailable. Set REDIS_URL in .env');
+  throw err;
+}
 
 // ── Queue Definitions ────────────────────────────────────────────────────────
 

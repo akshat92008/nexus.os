@@ -17,7 +17,9 @@ services:
         sync: true
       - key: SUPABASE_ANON_KEY
         sync: true
-      - key: GROQ_API_KEY
+      - key: OPENROUTER_API_KEY
+        sync: true
+      - key: APP_URL
         sync: true
       - key: REDIS_URL
         fromService:
@@ -41,7 +43,9 @@ services:
         sync: true
       - key: SUPABASE_ANON_KEY
         sync: true
-      - key: GROQ_API_KEY
+      - key: OPENROUTER_API_KEY
+        sync: true
+      - key: APP_URL
         sync: true
       - key: REDIS_URL
         fromService:
@@ -52,5 +56,7 @@ services:
 databases:
   - name: nexus-redis
     type: redis
-    plan: free
+    # Render Redis is paid. For a free ioredis-compatible alternative, 
+    # users should set REDIS_URL to an Upstash connection string in envVars.
+    plan: starter
     ipAllowList: [] # Standard internal access only

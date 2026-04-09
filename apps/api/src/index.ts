@@ -12,6 +12,7 @@
 console.log("🚀 [HEARTBEAT] The API is starting up...");
 import express, { type Request, type Response } from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
 import dotenv from 'dotenv';
 import { rateLimit } from 'express-rate-limit';
 import { planMission }      from './missionPlanner.js';
@@ -34,6 +35,17 @@ dotenv.config();
 // ── App Setup ──────────────────────────────────────────────────────────────
 
 const app: express.Express = express();
+
+app.use(helmet({
+  contentSecurityPolicy: false,
+}));
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
+
 const PORT = parseInt(process.env.PORT ?? '3001');
 
 // 🚨 ARCHITECTURAL DECISION: CORS / SSE Allowed Origins
@@ -172,6 +184,28 @@ app.get('/api/ready', async (req, res) => {
  */
 app.get('/api/agents', async (req, res) => {
   res.json(Object.values(AGENT_REGISTRY));
+});
+
+/**
+ * Marketplace Agents (Public)
+ */
+const MARKETPLACE_AGENTS = [
+  { id: 'gtm-strategist', name: 'GTM Strategist', description: 'Go-to-market planning for B2B SaaS in India', persona: 'founder', capabilities: ['market sizing', 'channel strategy', 'ICP definition'], installCount: 142 },
+  { id: 'lead-hunter', name: 'Lead Hunter', description: 'Finds and qualifies B2B leads in Indian markets', persona: 'founder', capabilities: ['lead research', 'email personalisation', 'LinkedIn prospecting'], installCount: 98 },
+  { id: 'code-reviewer', name: 'Code Reviewer', description: 'Reviews PRs, finds bugs, suggests refactors', persona: 'developer', capabilities: ['TypeScript', 'React', 'Node.js', 'security audit'], installCount: 215 },
+  { id: 'api-architect', name: 'API Architect', description: 'Designs REST and GraphQL APIs with full documentation', persona: 'developer', capabilities: ['API design', 'OpenAPI spec', 'schema validation'], installCount: 87 },
+  { id: 'essay-coach', name: 'Essay Coach', description: 'Structures and improves academic essays and reports', persona: 'student', capabilities: ['argument structure', 'citations', 'grammar'], installCount: 174 },
+  { id: 'exam-prep', name: 'Exam Prep', description: 'Creates revision plans, flashcards and mock questions', persona: 'student', capabilities: ['flashcards', 'practice questions', 'study schedule'], installCount: 63 },
+];
+
+app.get('/api/marketplace/agents', (req, res) => {
+  res.json(MARKETPLACE_AGENTS);
+});
+
+app.post('/api/marketplace/agents/:id/install', (req, res) => {
+  const agent = MARKETPLACE_AGENTS.find(a => a.id === req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent not found' });
+  res.json({ success: true, agentId: req.params.id, message: `${agent.name} installed successfully` });
 });
 
 /**

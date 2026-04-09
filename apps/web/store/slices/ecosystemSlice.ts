@@ -20,11 +20,15 @@ export interface EcosystemSlice {
     risks: number;
   };
   memorySystems: MemorySystems;
+  availableAgents: any[];
+  installedAgentIds: string[];
 
   addInboxEntry: (entry: Omit<InboxEntry, 'id' | 'timestamp' | 'read'>) => void;
   markInboxRead: (id: string) => void;
   clearInbox: () => void;
   fetchBrainStats: () => Promise<void>;
+  fetchAvailableAgents: () => Promise<void>;
+  installAgent: (agentId: string) => Promise<void>;
   
   startTimeEntry: (taskId: string, label: string) => void;
   stopTimeEntry: () => void;
@@ -60,6 +64,8 @@ export const createEcosystemSlice: StateCreator<
   calendar: { events: [] },
   brainStats: { totalMissions: 0, activeMissions: 0, globalActions: 0, opportunities: 0, risks: 0 },
   memorySystems: initialMemorySystems,
+  availableAgents: [],
+  installedAgentIds: [],
 
   addInboxEntry: (entry) => set((s) => ({
     inbox: [{ ...entry, id: crypto.randomUUID(), timestamp: Date.now(), read: false }, ...s.inbox]
@@ -111,5 +117,28 @@ export const createEcosystemSlice: StateCreator<
 
   fetchBrainStats: async () => {
     // API Placeholder
+  },
+
+  fetchAvailableAgents: async () => {
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/marketplace/agents`);
+      const agents = await res.json();
+      set({ availableAgents: agents });
+    } catch (err) {
+      console.error('[Store] Failed to fetch marketplace agents:', err);
+    }
+  },
+
+  installAgent: async (agentId: string) => {
+    try {
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/marketplace/agents/${agentId}/install`, {
+        method: 'POST',
+      });
+      set((state: any) => ({
+        installedAgentIds: [...state.installedAgentIds, agentId],
+      }));
+    } catch (err) {
+      console.error('[Store] Failed to install agent:', err);
+    }
   },
 });

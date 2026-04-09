@@ -5,6 +5,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Hexagon, Zap, Activity, Clock, AlertCircle, X as CloseIcon } from 'lucide-react';
 
 import dynamic from 'next/dynamic';
+import { createClient } from '../../lib/supabase';
+import { Auth } from '../Auth';
+import { ConnectionStatus } from './ConnectionStatus';
 
 const UniversalCommandBar = dynamic(() => import('./UniversalCommandBar').then(mod => mod.UniversalCommandBar), { ssr: false });
 const SandboxRouter = dynamic(() => import('./SandboxRouter').then(mod => mod.SandboxRouter), { ssr: false });
@@ -30,12 +33,23 @@ export function Workspace() {
   const ui = useNexusStore((s) => s.ui);
   const toggleInbox = useNexusStore((s) => s.toggleInbox);
 
-  useEffect(() => {
-    const userId = localStorage.getItem('nexus_user_id') ?? `user_${Math.random().toString(36).slice(2, 10)}`;
-    localStorage.setItem('nexus_user_id', userId);
-    useNexusStore.getState().setUserId(userId);
-    void hydrateFromServer(userId);
-  }, [hydrateFromServer]);
+  useEffect(() => { 
+     const initAuth = async () => { 
+       const supabase = createClient(); 
+       const { data: { session } } = await supabase.auth.getSession(); 
+       if (session?.user) { 
+         useNexusStore.getState().setUserId(session.user.id); 
+         useNexusStore.getState().setShowAuth(false);
+         void hydrateFromServer(session.user.id); 
+       } else { 
+         useNexusStore.getState().setUserId(''); 
+         useNexusStore.getState().setShowAuth(true);
+       } 
+     }; 
+     void initAuth(); 
+   }, [hydrateFromServer]); 
+
+  if (ui.showAuth) return <Auth />;
 
   return (
     <div className="h-screen w-screen overflow-hidden flex flex-col bg-[#0F1115] text-zinc-100 font-sans relative selection:bg-violet-500/30">
@@ -107,7 +121,7 @@ export function Workspace() {
       <UnifiedInbox isOpen={ui.inboxOpen} onClose={toggleInbox} />
       <FileSystemView />
       <ApprovalModal />
-      
+      <ConnectionStatus />
       {!ui.isOnboardingComplete && <OnboardingWizard />}
     </div>
   );

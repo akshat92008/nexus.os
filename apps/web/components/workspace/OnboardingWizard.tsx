@@ -9,6 +9,7 @@ import {
 import { useNexusStore } from '../../store/nexusStore';
 import { useModeStore, NexusMode } from '../../store/modeStore';
 import { useNexusSSE } from '../../hooks/useNexusSSE';
+import { createClient } from '../../lib/supabase';
 
 const Personas = [
   {
@@ -45,15 +46,34 @@ export function OnboardingWizard() {
   const { startOrchestration } = useNexusSSE();
   const userId = useNexusStore((s) => s.session.userId);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (localStorage.getItem('nexus_onboarded') === 'true') {
+      setOnboardingComplete();
+    }
+  }, [setOnboardingComplete]);
+
   const handleFinish = async () => {
     if (!selectedPersona || !missionGoal || !userId) return;
     setIsFinishing(true);
-    
-    // Smooth transition
-    await new Promise(r => setTimeout(r, 2000));
-    
+
+    try {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase.from('nexus_state').upsert({
+          id: user.id,
+          state: { onboarding: { persona: selectedPersona, missionGoal }, completedAt: Date.now() }
+        });
+      }
+    } catch (error) {
+      console.error('[Onboarding] Failed to persist onboarding state', error);
+    }
+
+    localStorage.setItem('nexus_onboarded', 'true');
     setMode(selectedPersona);
     setOnboardingComplete();
+    await new Promise((resolve) => setTimeout(resolve, 2000));
     void startOrchestration(missionGoal, selectedPersona);
   };
 

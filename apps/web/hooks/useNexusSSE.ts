@@ -8,17 +8,20 @@
 
 'use client';
 
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useState } from 'react';
 import { useNexusStore } from '../store/nexusStore';
 import type { NexusSSEEvent } from '@nexus-os/types';
 import { createClient } from '../lib/supabase';
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL || (typeof window !== 'undefined' ? '' : 'http://localhost:3001');
+const MAX_RETRIES = 8;
+const BASE_DELAY = 1000;
 
 async function streamSSE(
   input: RequestInfo | URL,
   init: RequestInit,
-  ingestEvent: (event: NexusSSEEvent) => void
+  ingestEvent: (event: NexusSSEEvent) => void,
+  onOpen?: () => void
 ) {
   const supabase = createClient();
   const { data: { session } } = await supabase.auth.getSession();
@@ -32,8 +35,10 @@ async function streamSSE(
   if (!response.ok || !response.body) {
     const err = await response.json().catch(() => ({ error: 'Connection failed' }));
     ingestEvent({ type: 'error', message: err.error ?? 'Unknown error' });
-    return;
+    throw new Error(err.error ?? 'Connection failed');
   }
+
+  onOpen?.();
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -54,7 +59,9 @@ async function streamSSE(
 
       try {
         ingestEvent(JSON.parse(jsonStr) as NexusSSEEvent);
-      } catch {}
+      } catch {
+        // ignore malformed event payloads
+      }
     }
   }
 }
@@ -78,26 +85,43 @@ export async function runActionOrchestration(
   );
 }
 
-  interface UseNexusSSEReturn {
+interface UseNexusSSEReturn {
   startOrchestration: (goal: string, userId: string, mode?: string) => Promise<void>;
   subscribeToMission: (missionId: string) => Promise<void>;
   startActionOrchestration: (actionId: string, workspaceId: string, userId: string) => Promise<void>;
   abort: () => void;
+  status: 'connecting' | 'connected' | 'reconnecting' | 'failed';
+  retryCount: number;
+  manualRetry: () => void;
 }
 
 export function useNexusSSE(): UseNexusSSEReturn {
-  const abortRef   = useRef<AbortController | null>(null);
-  const watchdogRef = useRef<NodeJS.Timeout | null>(null);
+  const [status, setStatus] = useState<'connecting' | 'connected' | 'reconnecting' | 'failed'>('connecting');
+  const [retryCount, setRetryCount] = useState(0);
+  const abortRef = useRef<AbortController | null>(null);
+  const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastActivityRef = useRef<number>(0);
   const activeMissionIdRef = useRef<string | null>(null);
   
   const { ingestEvent, startSession } = useNexusStore();
 
+  const clearRetryTimeout = useCallback(() => {
+    if (retryTimeoutRef.current) {
+      clearTimeout(retryTimeoutRef.current);
+      retryTimeoutRef.current = null;
+    }
+  }, []);
+
   const cleanup = useCallback(() => {
-    if (watchdogRef.current) clearInterval(watchdogRef.current);
+    if (watchdogRef.current) {
+      clearInterval(watchdogRef.current);
+      watchdogRef.current = null;
+    }
+    clearRetryTimeout();
     abortRef.current?.abort();
     abortRef.current = null;
-  }, []);
+  }, [clearRetryTimeout]);
 
   const abort = useCallback(async () => {
     const missionId = activeMissionIdRef.current;
@@ -122,24 +146,35 @@ export function useNexusSSE(): UseNexusSSEReturn {
     }
   }, [cleanup]);
 
-  /**
-   * Persistent Subscription: Reconnects to a mission's event stream
-   */
   const subscribeToMission = useCallback(
-    async (missionId: string, retryCount = 0) => {
+    async (missionId: string, attempt = 0) => {
+      // Cleanup previous watchdog and abort existing requests
+      if (watchdogRef.current) {
+        clearInterval(watchdogRef.current);
+        watchdogRef.current = null;
+      }
+      if (abortRef.current) {
+        abortRef.current.abort();
+      }
+
       activeMissionIdRef.current = missionId;
+      setRetryCount(attempt);
+      setStatus(attempt > 0 ? 'reconnecting' : 'connecting');
+
       const controller = new AbortController();
       abortRef.current = controller;
       lastActivityRef.current = Date.now();
 
-      // watchdog timer
-      if (watchdogRef.current) clearInterval(watchdogRef.current);
       watchdogRef.current = setInterval(() => {
         const silenceDuration = Date.now() - lastActivityRef.current;
-        const state = useNexusStore.getState();
-        if (state.session.status === 'running' && silenceDuration > 10000) {
+        // Use the store's current state correctly
+        const { session } = useNexusStore.getState();
+        
+        if (session.status === 'running' && silenceDuration > 15000) {
           console.warn(`[Watchdog] ⚠️ No mission activity for ${silenceDuration}ms. Reconnecting stream...`);
-          subscribeToMission(missionId, retryCount + 1);
+          // Clear current interval before recursing to prevent leaks
+          if (watchdogRef.current) clearInterval(watchdogRef.current);
+          void subscribeToMission(missionId, attempt + 1);
         }
       }, 5000);
 
@@ -150,21 +185,48 @@ export function useNexusSSE(): UseNexusSSEReturn {
           (event) => {
             lastActivityRef.current = Date.now();
             ingestEvent(event);
+          },
+          () => {
+            setStatus('connected');
+            setRetryCount(0);
           }
         );
       } catch (err) {
         if ((err as Error).name === 'AbortError') return;
-        if (retryCount < 5) {
-          setTimeout(() => subscribeToMission(missionId, retryCount + 1), 2000);
+
+        const nextAttempt = attempt + 1;
+        if (nextAttempt > MAX_RETRIES) {
+          setStatus('failed');
+          setRetryCount(nextAttempt);
+          return;
         }
+
+        setStatus('reconnecting');
+        setRetryCount(nextAttempt);
+        const delay = Math.min(BASE_DELAY * Math.pow(2, attempt), 30000);
+        retryTimeoutRef.current = setTimeout(() => {
+          void subscribeToMission(missionId, nextAttempt);
+        }, delay);
       }
     },
     [ingestEvent]
   );
 
+  const connect = useCallback(() => {
+    const missionId = activeMissionIdRef.current;
+    clearRetryTimeout();
+    setRetryCount(0);
+    setStatus('connecting');
+    if (missionId) {
+      void subscribeToMission(missionId, 0);
+    }
+  }, [clearRetryTimeout, subscribeToMission]);
+
   const startOrchestration = useCallback(
     async (goal: string, mode = 'student') => {
       cleanup();
+      setStatus('connecting');
+      setRetryCount(0);
       
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
@@ -197,7 +259,7 @@ export function useNexusSSE(): UseNexusSSEReturn {
 
         const { missionId } = await response.json();
         console.log(`[SSE] 🚀 Mission triggered: ${missionId}. Subscribing to stream...`);
-        subscribeToMission(missionId);
+        void subscribeToMission(missionId);
 
       } catch (err: any) {
         ingestEvent({
@@ -235,5 +297,5 @@ export function useNexusSSE(): UseNexusSSEReturn {
     [cleanup, ingestEvent]
   );
 
-  return { startOrchestration, subscribeToMission, startActionOrchestration, abort };
+  return { startOrchestration, subscribeToMission, startActionOrchestration, abort, status, retryCount, manualRetry: connect };
 }

@@ -109,6 +109,39 @@ const nodeTypes = {
   ),
 };
 
+class CanvasErrorBoundary extends React.Component<{}, { hasError: boolean }> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex items-center justify-center h-full text-zinc-500 text-sm">
+          <div className="text-center">
+            <p className="text-zinc-400 mb-2">Visualization error</p>
+            <p className="text-zinc-600 text-xs">Mission is still running in the background</p>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function EmptyCanvas() {
+  return (
+    <div className="flex h-full items-center justify-center bg-zinc-950/90 rounded-3xl border border-dashed border-zinc-800 p-10 text-center text-zinc-400">
+      <div>
+        <p className="text-lg font-semibold text-white mb-2">No mission graph available yet</p>
+        <p className="text-sm text-zinc-500">Start an orchestration to visualize mission progress.</p>
+      </div>
+    </div>
+  );
+}
+
 interface GraphCanvasProps {
   sessionId: string;
   refreshInterval?: number;
@@ -155,20 +188,26 @@ export function GraphCanvas({ sessionId, refreshInterval = 5000 }: GraphCanvasPr
     return () => clearInterval(interval);
   }, [fetchGraphData, refreshInterval]);
 
+  if (!nodes?.length && !loading) {
+    return <EmptyCanvas />;
+  }
+
   return (
     <div className="w-full h-full bg-transparent relative overflow-hidden flex flex-col">
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        nodeTypes={nodeTypes}
-        fitView
-        fitViewOptions={{ padding: 0.2 }}
-        className="w-full h-full"
-      >
-        <Background gap={32} color="rgba(255,255,255,0.03)" variant={BackgroundVariant.Dots} />
-      </ReactFlow>
+      <CanvasErrorBoundary>
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          nodeTypes={nodeTypes}
+          fitView
+          fitViewOptions={{ padding: 0.2 }}
+          className="w-full h-full"
+        >
+          <Background gap={32} color="rgba(255,255,255,0.03)" variant={BackgroundVariant.Dots} />
+        </ReactFlow>
+      </CanvasErrorBoundary>
 
       <AnimatePresence>
         {loading && (

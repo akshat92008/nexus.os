@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Search, 
@@ -18,6 +18,7 @@ import {
   Filter
 } from 'lucide-react';
 import { useNexusStore } from '../../store/nexusStore';
+import { createClient } from '../../lib/supabase';
 
 const CATEGORIES = ['All', 'Productivity', 'Business', 'Learning', 'Finance', 'Creative', 'Technical'];
 
@@ -33,19 +34,50 @@ const ICON_MAP: Record<string, any> = {
 };
 
 export function AgentMarketplace() {
-  const { ui, toggleAgentsView, installedAgentIds, installAgent, availableAgents, fetchAvailableAgents } = useNexusStore();
+  const { ui, toggleAgentsView, installedAgentIds, installAgent } = useNexusStore();
   const [activeCategory, setActiveCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
+  const [agents, setAgents] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchAgents = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        throw new Error('Authentication required');
+      }
+
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/agents`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to load agents');
+      }
+
+      setAgents(data);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to load agents');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    if (ui.agentsViewOpen) {
-      fetchAvailableAgents();
-    }
-  }, [ui.agentsViewOpen, fetchAvailableAgents]);
+    if (!ui.agentsViewOpen) return;
+    void fetchAgents();
+  }, [ui.agentsViewOpen, fetchAgents]);
 
   if (!ui.agentsViewOpen) return null;
 
-  const agents = availableAgents.map(a => ({
+  const mappedAgents = agents.map(a => ({
     ...a,
     icon: ICON_MAP[a.icon] || Sparkles,
     color: 'text-violet-400', // Default colors if not in registry
@@ -55,7 +87,7 @@ export function AgentMarketplace() {
     users: Math.floor(Math.random() * 10) + 'k', // Random for now
   }));
 
-  const filteredAgents = agents.filter(agent => {
+  const filteredAgents = mappedAgents.filter(agent => {
     const matchesCategory = activeCategory === 'All' || 
                            agent.category.toLowerCase() === activeCategory.toLowerCase();
     const matchesSearch = agent.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -154,37 +186,55 @@ export function AgentMarketplace() {
 
               {/* Grid */}
               <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                  {filteredAgents.map((agent) => (
-                    <motion.div
-                      layout
-                      key={agent.id}
-                      className="p-6 rounded-[28px] bg-zinc-900/30 border border-zinc-800/80 hover:border-violet-500/30 transition-all cursor-pointer group hover:bg-zinc-900/50"
+                {error ? (
+                  <div className="flex h-full flex-col items-center justify-center gap-4 rounded-3xl border border-red-500/20 bg-red-950/20 p-8 text-center">
+                    <p className="text-sm font-semibold text-red-300">{error}</p>
+                    <button
+                      onClick={() => void fetchAgents()}
+                      className="rounded-2xl bg-violet-600 px-5 py-3 text-sm font-bold text-white hover:bg-violet-500 transition-all"
                     >
-                      <div className="flex items-start justify-between mb-4">
-                        <div className={`p-3 rounded-2xl ${agent.bg} ${agent.color} transition-transform group-hover:scale-110`}>
-                          <agent.icon size={24} />
-                        </div>
-                        <div className="flex flex-col items-end">
-                           <div className="flex items-center gap-1 text-emerald-400 mb-1">
-                              <span className="text-xs font-bold">{agent.rating}</span>
-                              <Sparkles size={12} fill="currentColor" />
-                           </div>
-                           <span className="text-[10px] font-black text-zinc-600 uppercase tracking-tighter">{agent.users} users</span>
-                        </div>
+                      Retry
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                    {loading ? Array.from({ length: 6 }).map((_, idx) => (
+                      <div key={idx} className="animate-pulse rounded-[28px] border border-zinc-800/80 bg-zinc-900/30 p-6">
+                        <div className="h-8 w-8 rounded-2xl bg-zinc-800/70 mb-5" />
+                        <div className="h-5 w-3/4 rounded-xl bg-zinc-800/70 mb-3" />
+                        <div className="h-4 w-full rounded-xl bg-zinc-800/70 mb-2" />
+                        <div className="h-4 w-5/6 rounded-xl bg-zinc-800/70 mt-auto" />
                       </div>
+                    )) : filteredAgents.map((agent) => (
+                      <motion.div
+                        layout
+                        key={agent.id}
+                        className="p-6 rounded-[28px] bg-zinc-900/30 border border-zinc-800/80 hover:border-violet-500/30 transition-all cursor-pointer group hover:bg-zinc-900/50"
+                      >
+                        <div className="flex items-start justify-between mb-4">
+                          <div className={`p-3 rounded-2xl ${agent.bg} ${agent.color} transition-transform group-hover:scale-110`}>
+                            <agent.icon size={24} />
+                          </div>
+                          <div className="flex flex-col items-end">
+                             <div className="flex items-center gap-1 text-emerald-400 mb-1">
+                                <span className="text-xs font-bold">{agent.rating}</span>
+                                <Sparkles size={12} fill="currentColor" />
+                             </div>
+                             <span className="text-[10px] font-black text-zinc-600 uppercase tracking-tighter">{agent.users} users</span>
+                          </div>
+                        </div>
 
-                      <h3 className="text-lg font-bold text-zinc-100 mb-2 group-hover:text-violet-400 transition-colors">
-                        {agent.name}
-                      </h3>
-                      <p className="text-sm text-zinc-500 leading-relaxed mb-6 h-10 line-clamp-2">
-                        {agent.description}
-                      </p>
+                        <h3 className="text-lg font-bold text-zinc-100 mb-2 group-hover:text-violet-400 transition-colors">
+                          {agent.name}
+                        </h3>
+                        <p className="text-sm text-zinc-500 leading-relaxed mb-6 h-10 line-clamp-2">
+                          {agent.description}
+                        </p>
 
-                      <div className="flex items-center justify-between mt-auto">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-zinc-600">
-                          {agent.category}
-                        </span>
+                        <div className="flex items-center justify-between mt-auto">
+                          <span className="text-[10px] font-black uppercase tracking-widest text-zinc-600">
+                            {agent.category}
+                          </span>
                         
                         {agent.installed ? (
                           <div className="flex items-center gap-1.5 text-emerald-400 font-bold text-xs uppercase tracking-wider">

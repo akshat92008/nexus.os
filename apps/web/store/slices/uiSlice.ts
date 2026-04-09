@@ -99,6 +99,7 @@ export const createUISlice: StateCreator<
   removeToast: (id) => set((s) => ({ toasts: s.toasts.filter(t => t.id !== id) })),
 
   setAppLauncherOpen: (v) => set((s) => ({ ui: { ...s.ui, appLauncherOpen: v } })),
+  setShowAuth: (v) => set((s) => ({ ui: { ...s.ui, showAuth: v } })),
 
   toggleAppLauncher: () => set((s) => ({
     ui: { ...s.ui, appLauncherOpen: !s.ui.appLauncherOpen, agentsViewOpen: false, searchViewOpen: false, libraryViewOpen: false }
