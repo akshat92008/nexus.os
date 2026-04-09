@@ -1,8 +1,7 @@
-import { nexusStateStore } from './storage/nexusStateStore.js';
-import { systemQueue } from './queue/queue.js';
-import { eventBus } from './events/eventBus.js';
-import { getSupabase } from './storage/supabaseClient.js';
-import { GROQ_API_URL } from './agents/agentConfig.js';
+import { 
+  MODEL_POWER 
+} from './agents/agentConfig.js';
+import { llmRouter } from './llm/LLMRouter.js';
 import type { TaskDAG, OngoingMission } from '@nexus-os/types';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -151,31 +150,18 @@ class MasterBrainV2 {
       const missionSummary = completeMissions.map(m => `- ${m.goal}`).join('\n');
       const prompt = `You are the Nexus OS Master Brain. Analyze these recently completed missions and provide a 1-sentence 'Strategic Overview' of the system's current momentum. Return as JSON: { "overview": string }.\n\nMissions:\n${missionSummary}`;
 
-      try {
-        const response = await fetch(GROQ_API_URL, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-          },
-          body: JSON.stringify({
-            model: 'llama-3.3-70b-versatile',
-            temperature: 0.3,
-            response_format: { type: 'json_object' },
-            messages: [
-              { role: 'system', content: 'You are a strategic system analyzer. Return valid JSON.' },
-              { role: 'user', content: prompt },
-            ],
-          }),
+        const res = await llmRouter.call({
+          system: 'You are a strategic system analyzer. Return valid JSON.',
+          user: prompt,
+          model: MODEL_POWER,
+          temperature: 0.3,
+          jsonMode: true,
         });
 
-        if (response.ok) {
-          const result = await response.json() as any;
-          const overview = result.choices?.[0]?.message?.content;
-          if (overview) {
-            console.log('[MasterBrain] 📈 Strategic Overview:', overview);
-            // Optionally store this in a global state or emit event
-          }
+        const overview = JSON.parse(res.content).overview;
+        if (overview) {
+          console.log('[MasterBrain] 📈 Strategic Overview:', overview);
+          // Optionally store this in a global state or emit event
         }
       } catch (err) {
         console.error('[MasterBrain] Groq analysis failed:', err);
@@ -209,21 +195,15 @@ class MasterBrainV2 {
       const prompt = `You are the Nexus OS Strategic Reflector. Analyze these mission goals from the last 7 days:\n${(goals as string[]).map(g => `- ${g}`).join('\n')}\n\nReturn JSON: { "risks": [{"title":string,"severity":"critical"|"high"|"medium","mitigation":string}], "themes": string[], "strategicGaps": string[] }`;
 
       try {
-        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
-          body: JSON.stringify({
-            model: 'llama-3.3-70b-versatile', temperature: 0.3,
-            response_format: { type: 'json_object' },
-            messages: [
-              { role: 'system', content: 'You are a strategic AI analyst. Return valid JSON only.' },
-              { role: 'user', content: prompt },
-            ],
-          }),
+        const res = await llmRouter.call({
+          system: 'You are a strategic AI analyst. Return valid JSON only.',
+          user: prompt,
+          model: MODEL_POWER,
+          temperature: 0.3,
+          jsonMode: true,
         });
-        if (!response.ok) continue;
-        const result = await response.json() as any;
-        const reflection = JSON.parse(result.choices?.[0]?.message?.content ?? '{}');
+
+        const reflection = JSON.parse(res.content ?? '{}');
 
         await supabase.from('nexus_state')
           .upsert({ id: userId, state: { globalReflection: reflection }, updated_at: new Date().toISOString() }, { onConflict: 'id' });

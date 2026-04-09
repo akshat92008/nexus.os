@@ -35,11 +35,14 @@ import type {
   CriterionResult,
   NextStep,
 } from '@nexus-os/types';
-import type { RateLimitGovernor } from './rateLimitGovernor.js';
-import { orchestrateDAG } from './orchestrator.js';
+import { llmRouter } from './llm/LLMRouter.js';
 import { TaskRegistry } from './taskRegistry.js';
 import { MissionMemory } from './missionMemory.js';
 import { ledger } from './ledger.js';
+
+import { 
+  MODEL_POWER 
+} from './agents/agentConfig.js';
 
 export interface StrategicDecision {
   recommendation: string;
@@ -47,8 +50,7 @@ export interface StrategicDecision {
   cons: string[];
 }
 
-const GROQ_API_URL      = 'https://api.groq.com/openai/v1/chat/completions';
-const SYNTHESIS_MODEL   = 'llama-3.3-70b-versatile'; // larger model for final synthesis
+const SYNTHESIS_MODEL   = MODEL_POWER; // larger model for final synthesis
 const SYNTHESIS_TOKENS  = 1400;
 
 // ── Conflict Detection ─────────────────────────────────────────────────────
@@ -107,32 +109,23 @@ async function deepSemanticAuditor(
     }
   `;
 
-  const callGroq = async (): Promise<DeepSemanticAuditResult> => {
-    const res = await fetch(GROQ_API_URL, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: SYNTHESIS_MODEL,
-        messages: [{ role: 'user', content: prompt }],
-        response_format: { type: 'json_object' },
-        temperature: 0.1,
-      }),
+  const callLLM = async (): Promise<DeepSemanticAuditResult> => {
+    const res = await llmRouter.call({
+      system: 'You are a master information synthesizer.',
+      user: prompt,
+      model: SYNTHESIS_MODEL,
+      temperature: 0.1,
+      jsonMode: true,
     });
 
-    if (!res.ok) throw new Error(`Groq API Error: ${res.status}`);
-    const data = await res.json() as any;
-    const rawContent = data.choices[0].message.content;
-    const auditResult = JSON.parse(rawContent) as DeepSemanticAuditResult;
+    const auditResult = JSON.parse(res.content) as DeepSemanticAuditResult;
 
     console.log(`[ChiefAnalyst] Deep Semantic Audit: ${auditResult.status.toUpperCase()} - ${auditResult.reasoning}`);
     return auditResult;
   };
 
   try {
-    return await governor.execute(callGroq);
+    return await governor.execute(callLLM);
   } catch (err) {
     console.error('[ChiefAnalyst] Deep Semantic Audit failed, proceeding with existing data:', err);
     return { status: 'ok', reasoning: 'Audit failed, proceeding with existing data.' };
@@ -378,46 +371,25 @@ export async function runChiefAnalyst(
 
   const { system, user } = buildSynthesisPrompt(dag, entries, conflicts);
 
-  const callGroq = async (): Promise<SynthesisArtifact> => {
+  const callLLM = async (): Promise<SynthesisArtifact> => {
     if (isAborted()) throw new Error('[Canceled] Mission aborted before synthesis');
 
-    const response = await fetch(GROQ_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: SYNTHESIS_MODEL,
-        temperature: 0.2,
-        max_tokens: SYNTHESIS_TOKENS,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: user },
-        ],
-      }),
+    const res = await llmRouter.call({
+      system,
+      user,
+      model: SYNTHESIS_MODEL,
+      temperature: 0.2,
+      maxTokens: SYNTHESIS_TOKENS,
+      jsonMode: true,
       signal: AbortSignal.timeout(35000),
     });
 
-    if (response.status === 429) {
-      const retryAfter = response.headers.get('retry-after');
-      throw new Error(`429 Too Many Requests${retryAfter ? ` retry-after: ${retryAfter}` : ''}`);
-    }
-
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`Groq API ${response.status}: ${errText.slice(0, 200)}`);
-    }
-
-    const data = (await response.json()) as any;
-    const rawText: string = data?.choices?.[0]?.message?.content ?? '';
-    const parsed = extractJSON(rawText);
+    const parsed = extractJSON(res.content);
     return buildSynthesisArtifact(parsed);
   };
 
   // Run through the governor for rate-limit protection
-  const synthesis = await governor.execute(callGroq);
+  const synthesis = await governor.execute(callLLM);
 
   console.log(
     `[ChiefAnalyst] ✅ Synthesis complete — ` +

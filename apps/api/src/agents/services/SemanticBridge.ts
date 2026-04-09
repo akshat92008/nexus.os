@@ -7,8 +7,10 @@
 
 import type { TaskNode, MemoryEntry } from '@nexus-os/types';
 
-const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const POWER_MODEL = 'llama-3.3-70b-versatile';
+import { 
+  MODEL_POWER 
+} from '../agentConfig.js';
+import { llmRouter } from '../../llm/LLMRouter.js';
 
 export interface MissionWorldState {
   summary: string;
@@ -85,22 +87,14 @@ export class SemanticBridge {
     `;
 
     try {
-      const res = await fetch(GROQ_API_URL, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: POWER_MODEL,
-          messages: [{ role: 'system', content: 'You are a master information synthesizer.' }, { role: 'user', content: prompt }],
-          temperature: 0.1,
-        }),
+      const res = await llmRouter.call({
+        system: 'You are a master information synthesizer.',
+        user: prompt,
+        model: MODEL_POWER,
+        temperature: 0.1,
       });
 
-      if (!res.ok) throw new Error(`Groq API Error: ${res.status}`);
-      const data = await res.json() as any;
-      return data.choices[0].message.content;
+      return res.content;
     } catch (err) {
       console.error('[SemanticBridge] Briefing synthesis failed:', err);
       return workingContext;
@@ -121,20 +115,14 @@ export class SemanticBridge {
     `;
 
     try {
-      const res = await fetch(GROQ_API_URL, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: POWER_MODEL,
-          messages: [{ role: 'user', content: prompt }],
-          temperature: 0.0,
-        }),
+      const res = await llmRouter.call({
+        system: 'Summarize mission artifacts.',
+        user: prompt,
+        model: MODEL_POWER,
+        temperature: 0.0,
       });
-      const data = await res.json() as any;
-      return data.choices[0].message.content;
+
+      return res.content;
     } catch (err) {
       console.error('[SemanticBridge] Summarization failed:', err);
       return 'Archived context summary unavailable.';

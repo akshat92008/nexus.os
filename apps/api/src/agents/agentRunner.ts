@@ -16,9 +16,8 @@ import {
 } from '@nexus-os/types';
 
 import { 
-  GROQ_API_URL, 
-  GROQ_FAST_MODEL, 
-  GROQ_POWER_MODEL, 
+  MODEL_FAST, 
+  MODEL_POWER, 
   TOKEN_BUDGET 
 } from './agentConfig.js';
 
@@ -76,108 +75,7 @@ async function executeCodeWithE2B(code: string): Promise<{ stdout: string; stder
   }
 }
 
-async function runGroq(opts: {
-  system: string;
-  user: string;
-  model: string;
-  maxTokens: number;
-  temperature: number;
-  jsonMode?: boolean;
-  signal?: AbortSignal;
-  enableStreaming?: boolean;
-  onStreamChunk?: (chunk: string) => void;
-}) {
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) throw new Error('GROQ_API_KEY not set');
-
-  const response = await fetch(GROQ_API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: opts.model,
-      temperature: opts.temperature,
-      max_tokens: Math.min(opts.maxTokens, HARD_TOKEN_LIMIT),
-      stream: opts.enableStreaming ?? false,
-      ...(opts.jsonMode ? { response_format: { type: 'json_object' } } : {}),
-      messages: [
-        { role: 'system', content: opts.system },
-        { role: 'user', content: opts.user },
-      ],
-    }),
-    signal: opts.signal || AbortSignal.timeout(MAX_TASK_RUNTIME_MS),
-  });
-
-  if (response.status === 429) {
-    const retryAfter = response.headers.get('retry-after');
-    throw new Error(`429 Too Many Requests${retryAfter ? ` retry-after: ${retryAfter}` : ''}`);
-  }
-
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`Groq API ${response.status}: ${errText.slice(0, 200)}`);
-  }
-
-  // Handle streaming response
-  if (opts.enableStreaming && response.body) {
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let content = '';
-    let totalTokens = 0;
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split('\n');
-
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          const dataStr = line.slice(6);
-          if (dataStr === '[DONE]') continue;
-
-          try {
-            const data = JSON.parse(dataStr);
-            const delta = data?.choices?.[0]?.delta;
-            const finishReason = data?.choices?.[0]?.finish_reason;
-
-            if (delta?.content) {
-              const text = delta.content;
-              content += text;
-              if (opts.onStreamChunk) opts.onStreamChunk(text);
-            }
-
-            if (finishReason === 'stop' && data?.usage) {
-              totalTokens = (data.usage.completion_tokens ?? 0) + (data.usage.prompt_tokens ?? 0);
-            }
-          } catch {
-            // Skip unparseable lines
-          }
-        }
-      }
-    } finally {
-      reader.releaseLock();
-    }
-
-    return {
-      content,
-      tokens: totalTokens,
-    };
-  }
-
-  // Non-streaming response
-  const data = (await response.json()) as any;
-  const content = data?.choices?.[0]?.message?.content ?? '[No output]';
-
-  return {
-    content,
-    tokens: (data?.usage?.completion_tokens ?? 0) + (data?.usage?.prompt_tokens ?? 0),
-  };
-}
+import { llmRouter } from '../llm/LLMRouter.js';
 
 // ── CORE EXECUTION ──────────────────────────────────────────────────────────
 
@@ -205,14 +103,33 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
     })}\n\n`);
   }
 
-  async function callGroq(args: Parameters<typeof runGroq>[0]) {
+  async function callLLM(args: {
+    system: string;
+    user: string;
+    model: string;
+    maxTokens: number;
+    temperature: number;
+    jsonMode: boolean;
+    enableStreaming?: boolean;
+    onStreamChunk?: (chunk: string) => void;
+  }) {
     if (steps >= MAX_AGENT_STEPS) throw new Error(`[Limits] Max steps exceeded (${MAX_AGENT_STEPS})`);
     steps += 1;
-    const res = await runGroq({ ...args, signal: controller.signal });
+    
+    const res = await llmRouter.call({
+      ...args,
+      signal: controller.signal,
+    });
+
     totalTokens += res.tokens;
+    
     if (totalTokens > MAX_TOTAL_TOKENS) throw new Error(`[Limits] Max tokens exceeded (${totalTokens} > ${MAX_TOTAL_TOKENS})`);
+    
     return res;
   }
+
+  const callGroq = callLLM; // Maintain compatibility for the rest of the file
+
 
   // 1. Semantic Context Synthesis
   const briefing = context.entries.length > 0
@@ -235,8 +152,8 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
     console.log(`[AgentRunner] ⚖️ Council of Three activated for Critical Task: ${task.id}`);
     
     const [specialist1, specialist2] = await Promise.all([
-      callGroq({ system, user, model: GROQ_FAST_MODEL, maxTokens, temperature: 0.4, jsonMode: expectsJson }),
-      callGroq({ system, user, model: GROQ_FAST_MODEL, maxTokens, temperature: 0.7, jsonMode: expectsJson }),
+      callGroq({ system, user, model: MODEL_FAST, maxTokens, temperature: 0.4, jsonMode: expectsJson }),
+      callGroq({ system, user, model: MODEL_FAST, maxTokens, temperature: 0.7, jsonMode: expectsJson }),
     ]);
 
     const judgePrompt = `
@@ -264,7 +181,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
         ? 'You are a master logic judge. Return ONLY valid JSON.'
         : 'You are a master logic judge.',
       user: judgePrompt,
-      model: GROQ_POWER_MODEL,
+      model: MODEL_POWER,
       maxTokens,
       temperature: 0.1,
       jsonMode: expectsJson,
@@ -298,7 +215,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
 
   // Standard execution
   const isIntelligenceTask = ['researcher', 'analyst', 'chief_analyst'].includes(task.agentType);
-  const model = (isIntelligenceTask || task.priority === 'critical') ? GROQ_POWER_MODEL : GROQ_FAST_MODEL;
+  const model = (isIntelligenceTask || task.priority === 'critical') ? MODEL_POWER : MODEL_FAST;
 
   // Enable streaming for high-budget agents to stream long outputs in real-time
   const shouldStream = (maxTokens >= 2000) && !!sseRes;

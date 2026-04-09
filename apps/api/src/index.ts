@@ -25,6 +25,7 @@ import { nexusStateStore }  from './storage/nexusStateStore.js';
 import { approvalGuard }   from './ApprovalGuard.js';
 import { startMissionEventListener } from './workers/missionWorker.js';
 import './workers/taskWorker.js'; // Ensure task worker is initialized
+import { AGENT_REGISTRY } from './agents/agentRegistry.js';
 import type { OrchestrateRequest } from '@nexus-os/types';
 import { requireAuth } from './middleware/auth.js';
 
@@ -111,6 +112,13 @@ app.get('/api/ready', async (req, res) => {
   } catch (err: any) {
     res.status(503).json({ status: 'unready', error: err.message });
   }
+});
+
+/**
+ * Agent Registry
+ */
+app.get('/api/agents', async (req, res) => {
+  res.json(Object.values(AGENT_REGISTRY));
 });
 
 /**

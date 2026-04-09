@@ -30,6 +30,7 @@ import type {
   AnalysisArtifact,
   StrategyArtifact,
 } from '@nexus-os/types';
+import { vectorStore } from './storage/vectorStore.js';
 
 // ── Graph Types ─────────────────────────────────────────────────────────────
 
@@ -375,6 +376,14 @@ export class MissionMemory {
     this.pruneMemory();
 
     await this.flushToSupabase(key, entry);
+
+    // Sync to vector memory
+    const artifactContent = artifact.rawContent ?? JSON.stringify(artifact);
+    try {
+      await vectorStore.storeAgentArtifact(taskId, agentType, artifactContent);
+    } catch (err) {
+      console.error('[Memory] Vector store sync failed:', err);
+    }
 
     if (sseRes && !isAborted()) {
       const preview = artifact.rawContent?.slice(0, 150) ??

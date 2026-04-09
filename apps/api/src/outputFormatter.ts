@@ -171,7 +171,7 @@ export function transformToWorkspace(
   intermediateArtifacts: Map<string, TypedArtifact>
 ): Workspace {
   const sections: WorkspaceSection[] = [];
-  const d = (synthesis.deliverable ?? {}) as Record<string, any>}) as Record<string, any>;
+  const d = (synthesis.deliverable ?? {}) as Record<string, any>;
 
   // 1. Insights
   sections.push({

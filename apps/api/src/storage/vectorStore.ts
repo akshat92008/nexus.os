@@ -1,64 +1,50 @@
-/**
- * Nexus OS — Vector Store (Semantic Recall)
- *
- * Handles embedding generation and similarity search using PgVector.
- * Provides long-term memory for agents.
- */
+import { getSupabase } from './supabaseClient.js';
 
-import OpenAI from 'openai';
-import { nexusStateStore } from './nexusStateStore.js';
+const EMBED_URL = 'https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+async function getEmbedding(text: string): Promise<number[]> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error('GEMINI_API_KEY not set — free at aistudio.google.com');
 
-class VectorStore {
-  private readonly EMBEDDING_MODEL = 'text-embedding-3-small';
+  const res = await fetch(`${EMBED_URL}?key=${apiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'models/text-embedding-004',
+      content: { parts: [{ text }] },
+    }),
+  });
 
-  /**
-   * Generates an embedding for a given text.
-   */
-  async generateEmbedding(text: string): Promise<number[]> {
-    try {
-      const response = await openai.embeddings.create({
-        model: this.EMBEDDING_MODEL,
-        input: text.slice(0, 8000), // OpenAI limit
-      });
-      return response.data[0].embedding;
-    } catch (err) {
-      console.error('[VectorStore] ❌ Embedding generation failed:', err);
-      throw err;
-    }
-  }
+  if (!res.ok) throw new Error(`[VectorStore] Embed failed: ${res.status}`);
+  const data = await res.json() as any;
+  return data.embedding.values as number[];
+}
 
-  /**
-   * Updates an artifact with its semantic embedding.
-   */
-  async indexArtifact(artifactId: string, content: string) {
-    const embedding = await this.generateEmbedding(content);
-    const { error } = await (await nexusStateStore.getSupabaseClient())
-      .from('artifacts')
-      .update({ embedding })
-      .eq('id', artifactId);
-
-    if (error) throw new Error(`[VectorStore] Failed to index artifact: ${error.message}`);
-    console.log(`[VectorStore] 🧠 Indexed artifact ${artifactId} for semantic recall.`);
-  }
-
-  /**
-   * Performs semantic similarity search across artifacts.
-   */
-  async searchSimilar(query: string, options: { missionId?: string; threshold?: number; limit?: number } = {}) {
-    const embedding = await this.generateEmbedding(query);
-    const { data, error } = await (await nexusStateStore.getSupabaseClient()).rpc('match_artifacts', {
-      query_embedding: embedding,
-      match_threshold: options.threshold ?? 0.5,
-      match_count: options.limit ?? 5,
-      filter_mission_id: options.missionId,
+export class VectorStore {
+  async store(content: string, metadata: Record<string, any> = {}): Promise<void> {
+    const embedding = await getEmbedding(content);
+    const client = await getSupabase();
+    const { error } = await client.from('embeddings').insert({
+      content,
+      embedding: embedding, // Supabase handles array to vector conversion if the column is type vector
+      metadata,
     });
+    if (error) throw new Error(`[VectorStore] Store failed: ${error.message}`);
+  }
 
+  async search(query: string, limit = 5): Promise<Array<{ content: string; similarity: number }>> {
+    const embedding = await getEmbedding(query);
+    const client = await getSupabase();
+    const { data, error } = await client.rpc('match_embeddings', {
+      query_embedding: embedding,
+      match_count: limit,
+    });
     if (error) throw new Error(`[VectorStore] Search failed: ${error.message}`);
-    return data;
+    return data ?? [];
+  }
+
+  async storeAgentArtifact(taskId: string, agentType: string, content: string): Promise<void> {
+    await this.store(content, { taskId, agentType, type: 'artifact', ts: Date.now() });
   }
 }
 

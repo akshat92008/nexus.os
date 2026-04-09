@@ -149,6 +149,75 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Table: embeddings (Gemini 768-dim)
+CREATE TABLE IF NOT EXISTS "embeddings" (
+    id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id     TEXT        NOT NULL,
+    text        TEXT        NOT NULL,
+    embedding   VECTOR(768),
+    metadata    JSONB,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Function for similarity search
+CREATE OR REPLACE FUNCTION match_embeddings (
+  query_embedding VECTOR(768),
+  match_threshold FLOAT,
+  match_count INT
+)
+RETURNS TABLE (
+  id UUID,
+  text TEXT,
+  metadata JSONB,
+  similarity FLOAT
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
+    e.id,
+    e.text,
+    e.metadata,
+    1 - (e.embedding <=> query_embedding) AS similarity
+  FROM embeddings e
+  WHERE 1 - (e.embedding <=> query_embedding) > match_threshold
+  ORDER BY e.embedding <=> query_embedding
+  LIMIT match_count;
+END;
+$$;
+
+-- TASK 2 — ADD to apps/api/src/db/migrations/001_init.sql
+CREATE EXTENSION IF NOT EXISTS vector;
+
+CREATE TABLE IF NOT EXISTS "embeddings" (
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  content     TEXT        NOT NULL,
+  embedding   vector(768),
+  metadata    JSONB       DEFAULT '{}'::jsonb,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS embeddings_ivfflat_idx
+  ON embeddings USING ivfflat (embedding vector_cosine_ops)
+  WITH (lists = 100);
+
+CREATE OR REPLACE FUNCTION match_embeddings(
+  query_embedding vector(768),
+  match_count     int DEFAULT 5
+)
+RETURNS TABLE(content text, similarity float)
+LANGUAGE sql STABLE AS $$
+  SELECT
+    content,
+    1 - (embedding <=> query_embedding) AS similarity
+  FROM embeddings
+  ORDER BY embedding <=> query_embedding
+  LIMIT match_count;
+$$;
+
+
+
 CREATE OR REPLACE FUNCTION complete_task_atomic(
   p_mission_id UUID,
   p_task_id UUID,

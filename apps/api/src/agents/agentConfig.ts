@@ -1,8 +1,7 @@
 import { AgentType } from '@nexus-os/types';
+import { MODEL_FAST, MODEL_POWER, MODEL_CODE } from '../llm/LLMRouter.js';
 
-export const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-export const GROQ_FAST_MODEL = 'llama-3.1-8b-instant';
-export const GROQ_POWER_MODEL = 'llama-3.3-70b-versatile';
+export { MODEL_FAST, MODEL_POWER, MODEL_CODE };
 
 export const TOKEN_BUDGET: Record<AgentType, number> = {
   researcher: 1400,

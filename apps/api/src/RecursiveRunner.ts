@@ -7,8 +7,10 @@
 
 import type { TaskNode, TaskDAG, MemoryEntry } from '@nexus-os/types';
 
-const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const POWER_MODEL = 'llama-3.3-70b-versatile';
+import { 
+  MODEL_POWER 
+} from './agents/agentConfig.js';
+import { llmRouter } from './llm/LLMRouter.js';
 
 export class RecursiveRunner {
   /**
@@ -62,23 +64,15 @@ export class RecursiveRunner {
     `;
 
     try {
-      const res = await fetch(GROQ_API_URL, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: POWER_MODEL,
-          messages: [{ role: 'user', content: prompt }],
-          response_format: { type: 'json_object' },
-          temperature: 0.1,
-        }),
+      const res = await llmRouter.call({
+        system: 'You are the NexusOS Recursive Planner.',
+        user: prompt,
+        model: MODEL_POWER,
+        temperature: 0.1,
+        jsonMode: true,
       });
 
-      if (!res.ok) throw new Error(`Groq API Error: ${res.status}`);
-      const data = await res.json() as any;
-      const subDag = JSON.parse(data.choices[0].message.content) as TaskDAG;
+      const subDag = JSON.parse(res.content) as TaskDAG;
 
       console.log(`[RecursiveRunner] Decomposed into ${subDag.nodes.length} micro-tasks.`);
       return subDag;

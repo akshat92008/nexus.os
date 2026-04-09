@@ -15,6 +15,7 @@
  */
 
 import type { TaskStatus, TaskRecord } from '@nexus-os/types';
+import { getSupabase } from './storage/supabaseClient.js';
 
 const LOCK_TIMEOUT_MS = 90_000; // Zombie lock threshold: 90s
 
@@ -27,7 +28,7 @@ export class TaskRegistry {
   }
 
   /** Idempotent init — safe to call multiple times for the same taskId */
-  initTask(taskId: string): void {
+  async initTask(taskId: string): Promise<void> {
     if (!this.store.has(taskId)) {
       this.store.set(taskId, {
         taskId,
@@ -35,6 +36,7 @@ export class TaskRegistry {
         status: 'pending',
         attemptCount: 0,
       });
+      await this.persistToSupabase(taskId);
     }
   }
 
@@ -46,7 +48,7 @@ export class TaskRegistry {
    *
    * Also detects and breaks zombie locks (task locked >90s with no transition).
    */
-  tryLock(taskId: string): boolean {
+  async tryLock(taskId: string): Promise<boolean> {
     const record = this.store.get(taskId);
     if (!record) throw new Error(`[TaskRegistry] Unknown task: ${taskId}`);
 
@@ -69,34 +71,69 @@ export class TaskRegistry {
     record.status = 'locked';
     record.lockedAt = Date.now();
     record.attemptCount++;
+    await this.persistToSupabase(taskId);
     return true;
   }
 
-  markRunning(taskId: string): void {
+  async markRunning(taskId: string): Promise<void> {
     const r = this.getOrThrow(taskId);
     if (r.status !== 'locked') {
       throw new Error(`[TaskRegistry] markRunning: "${taskId}" expected locked, got ${r.status}`);
     }
     r.status = 'running';
+    await this.persistToSupabase(taskId);
   }
 
-  markCompleted(taskId: string, outputKey: string): void {
+  async markCompleted(taskId: string, outputKey: string): Promise<void> {
     const r = this.getOrThrow(taskId);
     r.status = 'completed';
     r.completedAt = Date.now();
     r.outputKey = outputKey;
+    await this.persistToSupabase(taskId);
   }
 
-  markFailed(taskId: string, error: string): void {
+  async markFailed(taskId: string, error: string): Promise<void> {
     const r = this.getOrThrow(taskId);
     // Allow failing from locked/running states
     r.status = 'failed';
     r.errorMessage = error.slice(0, 500);
+    await this.persistToSupabase(taskId);
   }
 
-  markSkipped(taskId: string): void {
+  async markSkipped(taskId: string): Promise<void> {
     const r = this.getOrThrow(taskId);
     r.status = 'skipped';
+    await this.persistToSupabase(taskId);
+  }
+
+  /**
+   * Persists the task status to the 'tasks' table in Supabase.
+   */
+  private async persistToSupabase(taskId: string): Promise<void> {
+    const record = this.store.get(taskId);
+    if (!record) return;
+
+    try {
+      const supabase = await getSupabase();
+      const { error } = await supabase
+        .from('tasks')
+        .upsert({
+          id: record.taskId,
+          mission_id: record.missionId,
+          status: record.status,
+          attempt_count: record.attemptCount,
+          error_message: record.errorMessage,
+          completed_at: record.completedAt ? new Date(record.completedAt).toISOString() : null,
+          output_artifact_id: record.outputKey,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'id' });
+
+      if (error) {
+        console.error(`[TaskRegistry] Supabase upsert failed for task ${taskId}:`, error.message);
+      }
+    } catch (err: any) {
+      console.error(`[TaskRegistry] Error persisting task ${taskId} to Supabase:`, err.message);
+    }
   }
 
   isCompleted(taskId: string): boolean {
