@@ -198,21 +198,22 @@ app.use(requireAuth);
 app.get('/api/ready', async (req, res) => {
   try {
     const client = await nexusStateStore.getSupabaseClient();
-    const { error: dbError } = await client.from('nexus_missions').select('count', { count: 'exact', head: true }).limit(1);
-    
-    // We check Redis via the eventBus (which has ioredis connections)
-    // Simple ping check
-    const redisStatus = 'ready'; // Assuming ioredis handled connection
+    const { error: dbError } = await client.from('nexus_missions').select('id', { head: true }).limit(1);
 
     if (dbError) throw dbError;
+
+    const redisReady = await eventBus.ping();
+    if (!redisReady) {
+      throw new Error('Redis ping failed');
+    }
 
     res.json({ 
       status: 'ready', 
       database: 'connected', 
-      redis: redisStatus 
+      redis: 'connected' 
     });
   } catch (err: any) {
-    res.status(503).json({ status: 'unready', error: err.message });
+    res.status(503).json({ status: 'unready', error: err?.message ?? 'dependency unavailable' });
   }
 });
 
@@ -390,15 +391,23 @@ app.get('/api/events/stream', async (req, res) => {
     'X-Accel-Buffering': 'no', // For Nginx
   });
 
-  res.write('\n'); // Flush initial headers
+  res.write('retry: 10000\n\n');
+  res.write(': connected\n\n');
+
+  const keepAlive = setInterval(() => {
+    if (res.writableEnded) return;
+    res.write(': heartbeat\n\n');
+  }, 25_000);
 
   const handler = (event: any) => {
+    if (res.writableEnded) return;
     res.write(`data: ${JSON.stringify(event)}\n\n`);
   };
 
   await eventBus.subscribe(missionId, handler);
 
   req.on('close', () => {
+    clearInterval(keepAlive);
     console.log(`[API] 🔌 Closed SSE stream for mission ${missionId}`);
     eventBus.unsubscribe(missionId, handler);
   });

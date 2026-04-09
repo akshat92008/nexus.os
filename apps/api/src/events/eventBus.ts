@@ -9,6 +9,13 @@ import { Redis } from 'ioredis';
 import type { NexusEvent } from '../db/models.js';
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
+const REDIS_OPTIONS = {
+  maxRetriesPerRequest: 3,
+  connectTimeout: 10000,
+  lazyConnect: true,
+  enableReadyCheck: false,
+  retryStrategy: (times: number) => Math.min(times * 100, 2000),
+};
 
 class EventBus {
   private publisher: Redis;
@@ -16,15 +23,27 @@ class EventBus {
   private listeners: Map<string, Set<(event: NexusEvent) => void>> = new Map();
 
   constructor() {
-    this.publisher = new Redis(REDIS_URL);
-    this.subscriber = new Redis(REDIS_URL);
+    this.publisher = new Redis(REDIS_URL, REDIS_OPTIONS);
+    this.subscriber = new Redis(REDIS_URL, REDIS_OPTIONS);
 
     this.subscriber.on('message', (channel: string, message: string) => {
-      const event = JSON.parse(message) as NexusEvent;
-      const handlers = this.listeners.get(channel);
-      if (handlers) {
-        handlers.forEach(handler => handler(event));
+      try {
+        const event = JSON.parse(message) as NexusEvent;
+        const handlers = this.listeners.get(channel);
+        if (handlers) {
+          handlers.forEach(handler => handler(event));
+        }
+      } catch (err) {
+        console.warn('[EventBus] Failed to parse message from Redis:', err);
       }
+    });
+
+    this.subscriber.on('error', (err) => {
+      console.warn('[EventBus] Subscriber error:', err instanceof Error ? err.message : String(err));
+    });
+
+    this.publisher.on('error', (err) => {
+      console.warn('[EventBus] Publisher error:', err instanceof Error ? err.message : String(err));
     });
   }
 
@@ -35,6 +54,16 @@ class EventBus {
     await this.publisher.publish(`mission:${missionId}`, JSON.stringify(event));
     // Also publish to a global channel for system-wide monitoring
     await this.publisher.publish('nexus_global_events', JSON.stringify(event));
+  }
+
+  async ping(): Promise<boolean> {
+    try {
+      const result = await this.publisher.ping();
+      return result === 'PONG';
+    } catch (err) {
+      console.warn('[EventBus] Redis ping failed:', err instanceof Error ? err.message : String(err));
+      return false;
+    }
   }
 
   /**
