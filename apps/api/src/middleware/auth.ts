@@ -15,7 +15,11 @@ declare global {
  */
 export async function requireAuth(req: Request, res: Response, next: NextFunction) {
   // Allow health check to pass without auth
-  if (req.path === '/api/health') return next();
+  const bypassPaths = ['/api/health', '/health'];
+  if (bypassPaths.includes(req.path)) return next();
+
+  // Allow CORS preflight requests
+  if (req.method === 'OPTIONS') return next();
 
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {

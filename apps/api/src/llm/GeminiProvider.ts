@@ -17,19 +17,22 @@ export class GeminiProvider implements ILLMProvider {
     const model = this.mapToGeminiModel(opts.model);
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
-    const payload = {
-      contents: [
-        {
-          role: 'user',
-          parts: [{ text: `${opts.system}\n\n${opts.user}` }],
-        },
-      ],
-      generationConfig: {
-        temperature: opts.temperature,
-        maxOutputTokens: opts.maxTokens,
-        ...(opts.jsonMode ? { responseMimeType: 'application/json' } : {}),
-      },
-    };
+    const payload = { 
+      systemInstruction: { 
+        parts: [{ text: opts.system }], 
+      }, 
+      contents: [ 
+        { 
+          role: 'user', 
+          parts: [{ text: opts.user }], 
+        }, 
+      ], 
+      generationConfig: { 
+        temperature: opts.temperature, 
+        maxOutputTokens: opts.maxTokens, 
+        ...(opts.jsonMode ? { responseMimeType: 'application/json' } : {}), 
+      }, 
+    }; 
 
     const response = await fetch(url, {
       method: 'POST',

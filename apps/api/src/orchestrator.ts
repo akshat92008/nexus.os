@@ -9,7 +9,7 @@
  */
 
 import type { Response } from 'express';
-import type { TaskDAG, TaskNode, AgentType, SubTask } from '@nexus-os/types';
+import type { TaskDAG, TaskNode, AgentType, SubTask, TaskPriority } from '@nexus-os/types';
 import { TaskRegistry } from './taskRegistry.js';
 import { MissionMemory } from './missionMemory.js';
 import { getGlobalGovernor } from './rateLimitGovernor.js';
@@ -51,23 +51,30 @@ export function computeExecutionWaves(nodes: TaskNode[]): TaskNode[][] {
   const waves: TaskNode[][] = [];
   const completed = new Set<string>();
   let remaining = [...nodes];
-  let safetyLimit = nodes.length + 5; 
+  let safetyLimit = nodes.length + 10; 
 
   while (remaining.length > 0 && safetyLimit-- > 0) {
     const wave = remaining.filter(
       (n) => (n.dependencies || []).every((dep) => completed.has(dep))
     );
 
-    if (wave.length === 0) {
-      // INSTEAD OF FATAL ERROR: Find the tasks with missing dependencies and treat them as wave-last
-      console.warn(`[Orchestrator] DAG resolution bottleneck detected. Treating remaining nodes as terminal wave.`);
+    if (wave.length === 0 && remaining.length > 0) {
+      // INSTEAD OF FATAL ERROR: Detect cycles and break them or fail gracefully
+      console.error(`[Orchestrator] DAG resolution error: Cycle or missing dependency detected. Remaining: ${remaining.map(n => n.id).join(', ')}`);
+      // For MVP: Just append remaining nodes to the last wave to avoid deadlocks, but log it as an error
       waves.push(remaining);
       break;
     }
 
-    waves.push(wave);
-    wave.forEach((n) => completed.add(n.id));
-    remaining = remaining.filter((n) => !completed.has(n.id));
+    if (wave.length > 0) {
+      waves.push(wave);
+      wave.forEach((n) => completed.add(n.id));
+      remaining = remaining.filter((n) => !completed.has(n.id));
+    }
+  }
+
+  if (safetyLimit <= 0) {
+    throw new Error('[Orchestrator] Safety limit reached during DAG wave computation — possible circular reference');
   }
 
   return waves;
@@ -295,8 +302,8 @@ export async function startDurableMission(params: {
 }): Promise<void> {
   const { planMission } = await import('./missionPlanner.js');
   const dag = await planMission(params.goal);
-  const memory = new (await import('./missionMemory.js')).MissionMemory(params.sessionId);
-  const registry = new (await import('./taskRegistry.js')).TaskRegistry();
+  const memory = new (await import('./missionMemory.js')).MissionMemory(params.sessionId, params.goal);
+  const registry = new (await import('./taskRegistry.js')).TaskRegistry(params.sessionId);
 
   await orchestrateDAG({
     dag,
