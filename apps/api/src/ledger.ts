@@ -198,8 +198,43 @@ class TransactionLedger {
       sseRes.write(`data: ${JSON.stringify(event)}\n\n`);
     }
 
+    // Deduct from Supabase user_credits balance
+    if (client) {
+      const { error: deductError } = await (client as any).rpc('deduct_user_credits', {
+        p_user_id: userId,
+        p_amount: PLATFORM_FEE_USD
+      });
+      if (deductError) {
+        console.error('[Ledger] Credit deduction failed:', deductError);
+        // We don't throw here to avoid failing the task after completion,
+        // but in a strict system we might.
+      }
+    }
+
     return row;
   }
+
+  /**
+   * Checks if a user has enough balance to run at least one task.
+   */
+  async hasSufficientBalance(userId: string): Promise<boolean> {
+    const client = await getSupabase();
+    if (!client) return true; // Fail open in dev/offline mode
+
+    const { data, error } = await client
+      .from('user_credits')
+      .select('balance_usd')
+      .eq('user_id', userId)
+      .single();
+
+    if (error || !data) {
+      console.warn(`[Ledger] Could not fetch balance for ${userId}, assuming zero.`);
+      return false;
+    }
+
+    return (data as any).balance_usd >= PLATFORM_FEE_USD;
+  }
+}
 
   getByUser(userId: string): LedgerRow[] {
     return this.memLedger.getByUser(userId);

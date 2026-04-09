@@ -34,6 +34,7 @@ export interface OrchestratorDeps {
   registry: TaskRegistry;
   userId: string;
   sessionId: string;
+  workspaceId?: string;
   res: Response;
   isAborted: () => boolean;
 }
@@ -126,7 +127,7 @@ async function executeTask(
   deps: OrchestratorDeps,
   waveIndex: number
 ): Promise<void> {
-  const { memory, registry, userId, res, isAborted, dag, sessionId } = deps;
+  const { memory, registry, userId, res, isAborted, dag, sessionId, workspaceId } = deps;
   const governor = getGlobalGovernor();
 
   if (registry.isCompleted(task.id)) return;
@@ -173,6 +174,9 @@ async function executeTask(
           context,
           sseRes: res,
           isAborted,
+          missionId: sessionId,
+          userId,
+          workspaceId,
         });
       });
 
@@ -229,6 +233,16 @@ export async function orchestrateDAG(deps: OrchestratorDeps): Promise<void> {
     waveCount: waves.length,
     goal: dag.goal,
   }, isAborted, sessionId);
+
+  // Billing Gate: Check if user has sufficient credits
+  const hasCredits = await ledger.hasSufficientBalance(userId);
+  if (!hasCredits) {
+    safeEmit(res, { 
+      type: 'error', 
+      message: 'Insufficient credits. Please top up your balance at /billing' 
+    }, isAborted, sessionId);
+    throw new Error('Insufficient credits');
+  }
 
   try {
     for (let i = 0; i < waves.length; i++) {
@@ -313,6 +327,16 @@ export async function executeSingleAction(
     throw new Error(`Action ${actionId} not found in workspace ${workspaceId}`);
   }
 
+  // Billing Gate
+  const hasCredits = await ledger.hasSufficientBalance(userId);
+  if (!hasCredits) {
+    safeEmit(res, { 
+      type: 'error', 
+      message: 'Insufficient credits. Please top up your balance.' 
+    }, isAborted, `adhoc_${actionId}`);
+    throw new Error('Insufficient credits');
+  }
+
   // Build a single-node TaskDAG where goal = action.title and node agentType comes from action type
   const taskId = `action_${actionId}`;
   const node: TaskNode = {
@@ -374,6 +398,7 @@ export async function startDurableMission(params: {
   goalType: import('@nexus-os/types').GoalType;
   userId: string;
   sessionId: string;
+  workspaceId?: string;
   res: import('express').Response;
   isAborted: () => boolean;
 }): Promise<void> {
@@ -388,6 +413,7 @@ export async function startDurableMission(params: {
     registry,
     userId: params.userId,
     sessionId: params.sessionId,
+    workspaceId: params.workspaceId,
     res: params.res,
     isAborted: params.isAborted,
   });

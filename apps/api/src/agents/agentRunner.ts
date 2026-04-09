@@ -6,8 +6,8 @@
  */
 
 import type { Response } from 'express';
-import { Sandbox } from '@e2b/code-interpreter';
 import { semanticBridge } from './services/SemanticBridge.js';
+import { toolExecutor } from '../tools/toolExecutor.js';
 import { 
   TaskNode, 
   AgentContext, 
@@ -39,40 +39,15 @@ export interface RunAgentOptions {
   context: AgentContext;
   sseRes?: Response; 
   isAborted: () => boolean;
+  missionId: string;
+  userId: string;
+  workspaceId?: string;
 }
 
 export interface AgentRunResult {
   artifact: TypedArtifact;
   tokensUsed: number;
   rawContent: string;
-}
-
-// ── E2B Code Execution ────────────────────────────────────────────────────
-
-async function executeCodeWithE2B(code: string): Promise<{ stdout: string; stderr: string }> {
-  const apiKey = process.env.E2B_API_KEY;
-  if (!apiKey) {
-    console.warn('[AgentRunner] E2B_API_KEY not set, skipping code execution');
-    return { stdout: 'E2B not configured', stderr: '' };
-  }
-
-  try {
-    const sandbox = await Sandbox.create({ apiKey });
-    console.log('[AgentRunner] 🔌 E2B Sandbox initialized');
-    
-    const execution = await sandbox.runCode(code, 'python');
-    console.log('[AgentRunner] ✅ Code executed successfully');
-    
-    await sandbox.kill();
-    
-    return {
-      stdout: execution.logs.stdout.join('\n'),
-      stderr: execution.logs.stderr.join('\n'),
-    };
-  } catch (err: any) {
-    console.error('[AgentRunner] ❌ E2B code execution failed:', err.message);
-    return { stdout: '', stderr: `E2B execution error: ${err.message}` };
-  }
 }
 
 import { llmRouter } from '../llm/LLMRouter.js';
@@ -205,8 +180,18 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
     
     // For coder agents, execute generated code via E2B
     if (task.agentType === 'coder' && (artifact as any).code) {
-      const { stdout, stderr } = await executeCodeWithE2B((artifact as any).code);
-      (artifact as any).executionOutput = { stdout, stderr };
+      const result = await toolExecutor.execute({
+        toolName: 'code_execution',
+        arguments: {
+          language: 'python',
+          code: (artifact as any).code,
+        },
+        missionId: opts.missionId,
+        taskId: task.id,
+        userId: opts.userId,
+        workspaceId: opts.workspaceId,
+      });
+      (artifact as any).executionOutput = result;
     }
     
     clearTimeout(runtimeTimer);

@@ -15,6 +15,8 @@ export interface ToolCall {
   arguments: any;
   missionId: string;
   taskId: string;
+  userId: string;
+  workspaceId?: string;
 }
 
 class ToolExecutor {
@@ -22,9 +24,9 @@ class ToolExecutor {
    * Executes a tool call and stores the result as an artifact.
    */
   async execute(call: ToolCall): Promise<any> {
-    const { toolName, arguments: args, missionId, taskId } = call;
+    const { toolName, arguments: args, missionId, taskId, userId, workspaceId } = call;
 
-    console.log(`[ToolExecutor] 🛠️ Executing tool: ${toolName} for task: ${taskId}`);
+    console.log(`[ToolExecutor] 🛠️ Executing tool: ${toolName} for task: ${taskId} by user: ${userId}`);
 
     try {
       // 1. Fetch tool from registry
@@ -56,7 +58,7 @@ class ToolExecutor {
       } as any);
 
       // 4. Run the handler
-      const result = await tool.handler(args);
+      const result = await tool.handler(args, { userId, workspaceId });
 
       const MAX_ARTIFACT_BYTES = 500_000; 
       if (JSON.stringify(result).length > MAX_ARTIFACT_BYTES) { 

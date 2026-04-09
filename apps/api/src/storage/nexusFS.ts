@@ -199,6 +199,20 @@ class NexusFS {
       )
     );
   }
+
+  public async readFile(path: string, ownerId: string): Promise<string> {
+    await this.loadUserFiles(ownerId);
+    const file = Array.from(this.files.values()).find(f => f.path === path && f.ownerId === ownerId);
+    if (!file) throw new Error(`File not found: ${path}`);
+
+    if (file.contentUrl) {
+      const res = await fetch(file.contentUrl);
+      if (!res.ok) throw new Error(`Failed to fetch file content: ${res.statusText}`);
+      return await res.text();
+    }
+
+    throw new Error(`File content not available for ${path}`);
+  }
 }
 
 export const nexusFS = new NexusFS();

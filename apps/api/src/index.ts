@@ -17,10 +17,10 @@ import dotenv from 'dotenv';
 import { rateLimit } from 'express-rate-limit';
 import { planMission }      from './missionPlanner.js';
 import { 
-  startDurableMission, 
-  cancelDurableMission,
-  executeSingleAction 
-} from './orchestrator.js';
+  missionsQueue,
+  tasksQueue 
+} from './queue/queue.js';
+import { startDurableMission, cancelDurableMission, executeSingleAction } from './orchestrator.js';
 import { eventBus }         from './events/eventBus.js';
 import { nexusStateStore }  from './storage/nexusStateStore.js';
 import { approvalGuard }   from './ApprovalGuard.js';
@@ -233,10 +233,39 @@ app.post('/api/orchestrate', orchestrateLimiter, async (req: Request<{}, {}, Orc
 
   try {
     const dag = await planMission(goal, archMode);
-    await startDurableMission({
-      dag,
+    const workspace_id = workspaceId ?? `ws_${Math.random().toString(36).slice(2, 10)}`;
+
+    // 1. Persist the mission metadata
+    await nexusStateStore.createMission({
+      id:           dag.missionId,
+      user_id:      userId,
+      goal,
+      goal_type:    dag.goalType,
+      workspace_id,
+      status:       'queued',
+      created_at:   new Date().toISOString()
+    });
+
+    // 2. Persist all tasks in the DAG as 'pending'
+    const tasksToCreate = dag.nodes.map(node => ({
+      id:           node.id,
+      missionId:    dag.missionId,
+      workspaceId:  workspace_id,
+      label:        node.label,
+      agentType:    node.agentType,
+      inputPayload: { goal: dag.goal, contextFields: node.contextFields },
+      dependencies: node.dependencies || [],
+      status:       'pending' as const
+    }));
+    await nexusStateStore.batchCreateTasks(tasksToCreate);
+
+    // 3. Hand off to BullMQ missions queue for background orchestration
+    await missionsQueue.add(`mission_${dag.missionId}`, {
+      missionId:    dag.missionId,
       userId,
-      workspaceId: workspaceId ?? `ws_${Math.random().toString(36).slice(2, 10)}`
+      workspaceId:  workspace_id,
+      goal,
+      type:         'bootstrap'
     });
 
     res.json({ missionId: dag.missionId, status: 'queued' });

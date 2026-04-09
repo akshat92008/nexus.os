@@ -5,6 +5,9 @@
  */
 
 import { z } from 'zod';
+import { sandboxManager } from '../sandbox/sandboxManager.js';
+import { nexusFS } from '../storage/nexusFS.js';
+import { githubDriver } from '../integrations/drivers/githubDriver.js';
 
 export type ToolCategory = 'communication' | 'productivity' | 'coding' | 'system' | 'web';
 
@@ -25,7 +28,7 @@ export interface ToolSchema {
 }
 
 export interface Tool extends ToolSchema {
-  handler: (args: any) => Promise<any>;
+  handler: (args: any, context: { userId: string; workspaceId?: string }) => Promise<any>;
 }
 
 class ToolRegistry {
@@ -63,7 +66,7 @@ class ToolRegistry {
         },
         required: ['url'],
       },
-      handler: async ({ url, method = 'GET', body }) => {
+      handler: async ({ url, method = 'GET', body }, { userId }) => {
         const res = await fetch(url, {
           method,
           headers: body ? { 'Content-Type': 'application/json' } : {},
@@ -74,7 +77,7 @@ class ToolRegistry {
       },
     });
 
-    // 2. File System Tool (Placeholder for local/sandbox access)
+    // 2. File System Tool
     this.register({
       name: 'fs_read',
       description: 'Read a file from the workspace.',
@@ -86,13 +89,13 @@ class ToolRegistry {
         },
         required: ['path'],
       },
-      handler: async ({ path }) => {
-        // Implementation would use nexusFS or similar
-        return { content: `Content of ${path} (mocked)` };
+      handler: async ({ path }, { userId }) => {
+        const content = await nexusFS.readFile(path, userId);
+        return { content };
       },
     });
 
-    // 3. GitHub Tool (Placeholder)
+    // 3. GitHub Tool
     this.register({
       name: 'github_create_repo',
       description: 'Create a new repository on GitHub.',
@@ -106,9 +109,16 @@ class ToolRegistry {
         },
         required: ['name'],
       },
-      handler: async ({ name, description, private: isPrivate }) => {
-        // Mock GitHub API call
-        return { url: `https://github.com/nexus-os/${name}`, id: Math.random().toString(36).slice(2) };
+      handler: async ({ name, description, private: isPrivate }, { workspaceId }) => {
+        if (!workspaceId) throw new Error('Workspace context missing for GitHub tool.');
+        const result = await githubDriver.execute({
+          repo: name, // Simplified for creation
+          action: 'create_repo',
+          title: name,
+          body: description,
+          private: isPrivate
+        }, workspaceId);
+        return result;
       },
     });
     this.register({
@@ -128,8 +138,8 @@ class ToolRegistry {
         required: ['language', 'code'],
       },
       handler: async ({ language, code }) => {
-        // Implementation would use sandboxManager
-        return { stdout: `Output from ${language} execution (mocked)`, stderr: '' };
+        const result = await sandboxManager.runCode(language, code);
+        return result;
       },
     });
   }

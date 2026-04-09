@@ -12,6 +12,7 @@ import { eventBus } from '../events/eventBus.js';
 import { eventBuffer } from '../events/eventBuffer.js';
 import { tasksQueue, missionsQueue, MissionJobData } from '../queue/queue.js';
 import { nexusStateStore } from '../storage/nexusStateStore.js';
+import { ledger } from '../ledger.js';
 import type { NexusEvent } from '../db/models.js';
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
@@ -244,6 +245,22 @@ export const missionWorker = new Worker<MissionJobData>(
   'missions',
   async (job: Job<MissionJobData>) => {
     const { missionId, userId, type, taskId } = job.data;
+
+    // Billing Gate
+    if (userId) {
+      const hasCredits = await ledger.hasSufficientBalance(userId);
+      if (!hasCredits) {
+        console.warn(`[MissionWorker] ❌ Insufficient credits for user ${userId}. Skipping mission ${missionId}`);
+        await nexusStateStore.updateMissionStatus(missionId, 'failed');
+        await eventBuffer.publish(missionId, {
+          type: 'mission_failed',
+          missionId,
+          userId,
+          error: 'Insufficient credits to start or resume mission.'
+        });
+        return;
+      }
+    }
 
     if (type === 'mission_check') {
       console.log(`[MissionWorker] 🕵️ Reliable Check: mission ${missionId} (due to task ${taskId})`);

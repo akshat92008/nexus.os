@@ -3,6 +3,10 @@ import {
 } from './agents/agentConfig.js';
 import { llmRouter } from './llm/LLMRouter.js';
 import type { TaskDAG, OngoingMission } from '@nexus-os/types';
+import { systemQueue } from './queue/queue.js';
+import { getSupabase } from './storage/supabaseClient.js';
+import { nexusStateStore } from './storage/nexusStateStore.js';
+import { eventBus } from './events/eventBus.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

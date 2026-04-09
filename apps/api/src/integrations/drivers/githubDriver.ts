@@ -14,17 +14,17 @@ export const githubDriver: Tool = {
   }),
   paramSchema: {
     repo:   { type: 'string', required: true,  description: 'GitHub repo (owner/repo)' },
-    action: { type: 'string', required: true,  description: 'Action: create_issue, list_issues, create_pr' },
+    action: { type: 'string', required: true,  description: 'Action: create_issue, list_issues, create_pr, create_repo' },
     title:  { type: 'string', required: false, description: 'Title for issue or PR' },
     body:   { type: 'string', required: false, description: 'Body for issue or PR' },
     head:   { type: 'string', required: false, description: 'Head branch for PR' },
     base:   { type: 'string', required: false, description: 'Base branch for PR (default: main)' },
   },
   validate: (p) => {
-    if (!p.repo) return 'Missing required param: repo';
-    if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(p.repo as string)) return 'Repo must match owner/repo format.';
-    if (!['create_issue', 'list_issues', 'create_pr'].includes(p.action as string)) return 'Invalid action.';
-    if ((p.action === 'create_issue' || p.action === 'create_pr') && !p.title) return 'Title is required for this action.';
+    if (!p.repo && p.action !== 'create_repo') return 'Missing required param: repo';
+    if (p.repo && !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(p.repo as string)) return 'Repo must match owner/repo format.';
+    if (!['create_issue', 'list_issues', 'create_pr', 'create_repo'].includes(p.action as string)) return 'Invalid action.';
+    if ((p.action === 'create_issue' || p.action === 'create_pr' || p.action === 'create_repo') && !p.title) return 'Title is required for this action.';
     if (p.action === 'create_pr' && !p.head) return 'Head branch is required for creating a PR.';
     return null;
   },
@@ -50,6 +50,10 @@ export const githubDriver: Tool = {
       url += '/pulls';
       method = 'POST';
       payload = { title, body, head, base };
+    } else if (action === 'create_repo') {
+      url = 'https://api.github.com/user/repos';
+      method = 'POST';
+      payload = { name: title, description: body, private: params.private ?? false };
     }
 
     try {
