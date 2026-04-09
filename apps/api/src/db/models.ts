@@ -1,0 +1,60 @@
+/**
+ * Nexus OS — Durable Execution Models
+ */
+
+import type { 
+  AgentType, 
+  TaskNode, 
+} from '@nexus-os/types';
+
+export type MissionLifecycleStatus =
+  | 'queued'
+  | 'planning'
+  | 'running'
+  | 'paused'
+  | 'complete'
+  | 'failed'
+  | 'scheduled';
+
+export interface DB_Mission {
+  id:           string;
+  user_id:      string;
+  workspace_id: string;
+  goal:         string;
+  goal_type:    string;
+  status:       MissionLifecycleStatus;
+  created_at:   string;
+  updated_at:   string;
+  completed_at?: string;
+  dag_data:     any; // TaskDAG snapshot
+}
+
+export interface DB_Task {
+  id:             string;
+  mission_id:     string;
+  workspace_id:   string;
+  label:          string;
+  agent_type:     AgentType;
+  status:         'pending' | 'queued' | 'running' | 'completed' | 'failed' | 'skipped';
+  input_data:     any; // TaskNode configuration
+  output_data?:   any; // TypedArtifact
+  tokens_used:    number;
+  started_at?:    string;
+  completed_at?:  string;
+  error?:         string;
+}
+
+export interface DB_TaskDependency {
+  task_id:        string;
+  depends_on_id:  string;
+}
+
+export type NexusEvent = 
+  | { type: 'mission_started'; missionId: string; userId: string; goal: string }
+  | { type: 'mission_completed'; missionId: string; userId: string }
+  | { type: 'mission_failed'; missionId: string; userId: string; error: string }
+  | { type: 'task_started'; taskId: string; missionId: string; label: string; agentType: AgentType }
+  | { type: 'task_completed'; taskId: string; missionId: string; artifact: any }
+  | { type: 'task_failed'; taskId: string; missionId: string; error: string }
+  | { type: 'artifact_created'; taskId: string; missionId: string; artifact: any }
+  | { type: 'neural_interrupt'; title: string; content: string; priority: string };

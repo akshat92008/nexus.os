@@ -1,0 +1,62 @@
+services:
+  - type: web
+    name: nexus-api
+    env: node
+    region: oregon
+    plan: starter
+    buildCommand: pnpm install --frozen-lockfile && pnpm --filter @nexus-os/types build && pnpm --filter @nexus-os/api build
+    startCommand: node apps/api/dist/index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      - key: SUPABASE_URL
+        sync: true
+      - key: SUPABASE_SERVICE_KEY
+        sync: true
+      - key: SUPABASE_ANON_KEY
+        sync: true
+      - key: OPENROUTER_API_KEY
+        sync: true
+      - key: APP_URL
+        sync: true
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: nexus-redis
+          property: connectionString
+
+  - type: worker
+    name: nexus-task-worker
+    env: node
+    region: oregon
+    plan: starter
+    buildCommand: pnpm install --frozen-lockfile && pnpm --filter @nexus-os/types build && pnpm --filter @nexus-os/api build
+    startCommand: node apps/api/dist/workers/taskWorker.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SUPABASE_URL
+        sync: true
+      - key: SUPABASE_SERVICE_KEY
+        sync: true
+      - key: SUPABASE_ANON_KEY
+        sync: true
+      - key: OPENROUTER_API_KEY
+        sync: true
+      - key: APP_URL
+        sync: true
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: nexus-redis
+          property: connectionString
+
+databases:
+  - name: nexus-redis
+    type: redis
+    # Render Redis is paid. For a free ioredis-compatible alternative, 
+    # users should set REDIS_URL to an Upstash connection string in envVars.
+    plan: starter
+    ipAllowList: [] # Standard internal access only

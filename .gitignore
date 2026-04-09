@@ -7,12 +7,13 @@
 /coverage
 
 # Next.js
-/.next/
-/out/
+.next/
+out/
 
 # Production
-/build
-/dist
+build/
+dist/
+*.log
 
 # Environment Variables
 .env
