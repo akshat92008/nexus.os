@@ -6,12 +6,12 @@
  */
 
 import type { MissionMemory } from './missionMemory.js';
-
-const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const POWER_MODEL = 'llama-3.3-70b-versatile';
+import { llmRouter } from './llm/LLMRouter.js';
+import { MODEL_POWER } from './agents/agentConfig.js';
 
 export class WatchdogAgent {
   private intervals: Map<string, NodeJS.Timeout> = new Map();
+  private failStreaks: Map<string, number> = new Map();
 
   /**
    * Starts monitoring a specific mission.
@@ -24,7 +24,9 @@ export class WatchdogAgent {
   ): void {
     console.log(`[Watchdog] 🛡️ Monitoring Mission: ${missionId}...`);
 
-    const interval = setInterval(async () => {
+    this.failStreaks.set(missionId, 0);
+
+    const monitor = async () => {
       const artifacts = memory.readAll();
       if (artifacts.length === 0) return;
 
@@ -53,33 +55,37 @@ export class WatchdogAgent {
       `;
 
       try {
-        const res = await fetch(GROQ_API_URL, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: POWER_MODEL,
-            messages: [{ role: 'user', content: prompt }],
-            response_format: { type: 'json_object' },
-            temperature: 0.1,
-          }),
+        const res = await llmRouter.call({
+          system: 'You are the NexusOS Watchdog Auditor.',
+          user: prompt,
+          model: MODEL_POWER,
+          temperature: 0.1,
+          jsonMode: true,
         });
-
-        if (!res.ok) return;
-        const data = await res.json() as any;
-        const audit = JSON.parse(data.choices[0].message.content);
-
+        const audit = JSON.parse(res.content);
         if (audit.status !== 'safe') {
-          console.warn(`[Watchdog] ⚠️  ALARM: ${audit.status.toUpperCase()} - ${audit.reason}`);
+          console.warn(`[Watchdog] ALARM: ${audit.status} — ${audit.reason}`);
           onDriftDetected(audit.reason);
         }
+        this.failStreaks.set(missionId, 0);
       } catch (err) {
-        // Silently fail
+        let failStreak = this.failStreaks.get(missionId) || 0;
+        failStreak++;
+        this.failStreaks.set(missionId, failStreak);
+        console.warn('[Watchdog] Audit skipped for mission', missionId, ':', err);
       }
-    }, 30000);
 
+      const currentInterval = this.intervals.get(missionId);
+      if (currentInterval) {
+        clearInterval(currentInterval);
+      }
+      const failStreak = this.failStreaks.get(missionId) || 0;
+      const newDelay = Math.min(30000 * Math.pow(2, failStreak), 300000);
+      const newInterval = setInterval(monitor, newDelay);
+      this.intervals.set(missionId, newInterval);
+    };
+
+    const interval = setInterval(monitor, 30000);
     this.intervals.set(missionId, interval);
   }
 
@@ -91,6 +97,7 @@ export class WatchdogAgent {
     if (interval) {
       clearInterval(interval);
       this.intervals.delete(missionId);
+      this.failStreaks.delete(missionId);
       console.log(`[Watchdog] 🛑 Stopped monitoring: ${missionId}`);
     }
   }

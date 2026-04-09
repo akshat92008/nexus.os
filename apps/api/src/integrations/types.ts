@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 export type ToolCategory =
   | 'communication'
   | 'document'
@@ -27,6 +29,7 @@ export interface Tool {
   category:         ToolCategory;
   riskLevel:        RiskLevel;
   requiresApproval: boolean;
+  schema?:          z.ZodSchema;
   paramSchema:      Record<string, { type: string; required: boolean; description: string }>;
   validate:         (params: ToolParams) => string | null;
   execute:          (params: ToolParams, workspaceId: string) => Promise<ToolResult>;

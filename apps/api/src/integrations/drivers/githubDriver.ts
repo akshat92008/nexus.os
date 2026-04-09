@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { Tool } from '../types.js';
 
 export const githubDriver: Tool = {
@@ -7,6 +8,10 @@ export const githubDriver: Tool = {
   category:         'code',
   riskLevel:        'high',
   requiresApproval: true,
+  schema: z.object({ 
+    repo: z.string().regex(/^[\w.-]+\/[\w.-]+$/, 'Must be owner/repo format'), 
+    action: z.enum(['read_file', 'create_pr', 'push_commit', 'list_issues', 'create_issue']), 
+  }),
   paramSchema: {
     repo:   { type: 'string', required: true,  description: 'GitHub repo (owner/repo)' },
     action: { type: 'string', required: true,  description: 'Action: create_issue, list_issues, create_pr' },

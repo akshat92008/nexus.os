@@ -39,6 +39,14 @@ class ToolExecutor {
         }
       }
 
+      if (tool.schema) { 
+        const result = tool.schema.safeParse(args); 
+        if (!result.success) { 
+          throw new Error(`[ToolExecutor] Invalid arguments for "${toolName}": ${result.error.message}`); 
+        } 
+        args = result.data; 
+      } 
+
       // 3. Emit "tool_started" event
       await eventBus.publish(missionId, {
         type: 'agent_working',
@@ -49,6 +57,11 @@ class ToolExecutor {
 
       // 4. Run the handler
       const result = await tool.handler(args);
+
+      const MAX_ARTIFACT_BYTES = 500_000; 
+      if (JSON.stringify(result).length > MAX_ARTIFACT_BYTES) { 
+        throw new Error(`[ToolExecutor] Tool "${toolName}" returned an oversized artifact. Truncate output.`); 
+      } 
 
       // 5. Store result as a generic Artifact in DB
       const artifact: TypedArtifact = {

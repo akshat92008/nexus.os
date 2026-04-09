@@ -29,6 +29,7 @@ import './workers/taskWorker.js'; // Ensure task worker is initialized
 import { AGENT_REGISTRY } from './agents/agentRegistry.js';
 import type { OrchestrateRequest } from '@nexus-os/types';
 import { requireAuth } from './middleware/auth.js';
+import { getSupabase } from './storage/supabaseClient.js';
 
 dotenv.config();
 
@@ -77,6 +78,9 @@ if (!process.env.VERCEL) {
     try {
       // Start global mission event listener (reliable DAG orchestration)
       startMissionEventListener();
+      
+      // Marks 'pending' approvals older than 10 mins as 'rejected'
+      await approvalGuard.cleanupStaleApprovals();
       
       console.log('[API] ✅ Durable Services Initialized.');
     } catch (err) {
@@ -292,6 +296,27 @@ app.get('/api/artifacts/:id', async (req, res) => {
       return res.status(403).json({ error: 'Forbidden' });
     }
     res.json(task);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Pending Approvals API
+ * Returns all open approvals for the authenticated user.
+ */
+app.get('/api/approvals/pending', async (req, res) => {
+  const userId = req.user!.id;
+  try {
+    const supabase = await getSupabase();
+    const { data, error } = await supabase
+      .from('pending_approvals')
+      .select('*, nexus_missions!inner(user_id, goal)')
+      .eq('status', 'pending')
+      .eq('nexus_missions.user_id', userId);
+
+    if (error) throw error;
+    res.json(data);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

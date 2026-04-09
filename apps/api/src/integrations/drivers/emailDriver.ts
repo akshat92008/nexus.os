@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { Tool } from '../types.js';
 
 export const emailDriver: Tool = {
@@ -7,6 +8,11 @@ export const emailDriver: Tool = {
   category:         'communication',
   riskLevel:        'high',
   requiresApproval: true,
+  schema: z.object({ 
+    to: z.string().email(), 
+    subject: z.string().max(200), 
+    body: z.string().max(50_000), 
+  }),
   paramSchema: {
     to:      { type: 'string', required: true,  description: 'Recipient email' },
     subject: { type: 'string', required: true,  description: 'Subject line' },

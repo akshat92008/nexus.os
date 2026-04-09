@@ -17,6 +17,8 @@
 
 const sleep = (ms: number) => new Promise<void>((res) => setTimeout(res, ms));
 
+import { getRedis } from './storage/redisClient.js'; 
+
 interface QueueItem<T> {
   fn: () => Promise<T>;
   resolve: (value: T) => void;
@@ -63,6 +65,9 @@ export class RateLimitGovernor {
     this.tokens = 10;
     this.refillRatePerMs = 1 / 2000; 
     this.lastRefill = Date.now();
+
+    const redis = getRedis(); 
+    console.log(`[Governor] Running in ${redis ? 'distributed (Redis)' : 'local (in-memory)'} mode`); 
 
     this.recoveryTimer = setInterval(() => {
       void this.drainRecoveryQueue();
@@ -138,6 +143,7 @@ export class RateLimitGovernor {
         if (!this.paused || Date.now() + pauseMs > this.pauseUntil) {
           this.paused = true;
           this.pauseUntil = Date.now() + pauseMs;
+          void this.syncPause(pauseMs); 
           console.warn(
             `[Governor] 🔴 Global pause ${Math.round(pauseMs / 1000)}s ` +
             `(attempt ${attempt + 1}/${MAX_ATTEMPTS})`
@@ -168,6 +174,19 @@ export class RateLimitGovernor {
   }
 
   private async waitIfPaused(): Promise<void> {
+    const redis = getRedis(); 
+    if (redis) { 
+      const val = await redis.get('nexus:governor:pauseUntil'); 
+      if (val) { 
+        const remoteUntil = parseInt(val); 
+        if (remoteUntil > Date.now()) { 
+          const wait = remoteUntil - Date.now(); 
+          console.warn(`[Governor] Distributed pause active — waiting ${Math.round(wait/1000)}s`); 
+          await sleep(wait); 
+        } 
+      } 
+    } 
+
     if (!this.paused) return;
     const waitMs = this.pauseUntil - Date.now();
     if (waitMs > 0) {
@@ -175,6 +194,14 @@ export class RateLimitGovernor {
     }
     this.paused = false;
   }
+
+  private async syncPause(pauseMs: number): Promise<void> { 
+    const redis = getRedis(); 
+    if (!redis) return; 
+    const expiresAt = Date.now() + pauseMs; 
+    const ttlSeconds = Math.ceil(pauseMs / 1000) + 5; 
+    await redis.set('nexus:governor:pauseUntil', expiresAt, 'EX', ttlSeconds); 
+  } 
 
   private drainQueue(): void {
     if (this.queue.length === 0 || this.running >= this.concurrency) return;

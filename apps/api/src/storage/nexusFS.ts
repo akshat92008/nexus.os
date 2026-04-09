@@ -6,23 +6,25 @@
  */
 
 import type { NexusFile, NexusFolder, FileCategory } from '@nexus-os/types';
+import { getSupabase } from './supabaseClient.js';
 
 class NexusFS {
   private files: Map<string, NexusFile> = new Map();
   private folders: Map<string, NexusFolder> = new Map();
+  private loadedUsers: Set<string> = new Set();
 
   constructor() {
     // Initialize root folder
-    this.createFolder('root', 'Root', null, 'system');
+    void this.createFolder('root', 'Root', null, 'system');
     
     // Seed with some initial folders
-    this.createFolder('f_docs', 'Documents', 'root', 'system');
-    this.createFolder('f_media', 'Media', 'root', 'system');
-    this.createFolder('f_code', 'Projects', 'root', 'system');
-    this.createFolder('f_arch', 'Archives', 'root', 'system');
+    void this.createFolder('f_docs', 'Documents', 'root', 'system');
+    void this.createFolder('f_media', 'Media', 'root', 'system');
+    void this.createFolder('f_code', 'Projects', 'root', 'system');
+    void this.createFolder('f_arch', 'Archives', 'root', 'system');
   }
 
-  public createFolder(id: string, name: string, parentId: string | null, ownerId: string): NexusFolder {
+  public async createFolder(id: string, name: string, parentId: string | null, ownerId: string): Promise<NexusFolder> {
     const path = parentId ? `${this.folders.get(parentId)?.path || ''}/${name}` : `/${name}`;
     const folder: NexusFolder = {
       id,
@@ -34,6 +36,17 @@ class NexusFS {
       updatedAt: Date.now(),
     };
     this.folders.set(id, folder);
+
+    try {
+      const supabase = await getSupabase(); 
+      await supabase.from('nexus_folders').upsert({ 
+        id: folder.id, name: folder.name, path: folder.path, 
+        parent_id: folder.parentId, owner_id: folder.ownerId, 
+      }); 
+    } catch (err) {
+      console.warn('[NexusFS] createFolder persistence failed:', err);
+    }
+
     return folder;
   }
 
@@ -73,7 +86,71 @@ class NexusFS {
     file.metadata.aiSummary = await this.generateAISummary(name, content);
 
     this.files.set(id, file);
+
+    try {
+      const supabase = await getSupabase(); 
+      const storagePath = `${ownerId}/${id}/${name}`; 
+      const { error: uploadError } = await supabase.storage.from('nexus-files').upload(storagePath, content, { contentType: mimeType }); 
+      if (uploadError) throw uploadError;
+
+      await supabase.from('nexus_files').insert({ 
+        id, name, extension, size: content.length, mime_type: mimeType, 
+        path: file.path, parent_id: parentId, owner_id: ownerId, 
+        storage_path: storagePath, metadata: file.metadata, 
+      }); 
+    } catch (err) {
+      console.warn('[NexusFS] uploadFile persistence failed:', err);
+    }
+
     return file;
+  }
+
+  public async loadUserFiles(ownerId: string): Promise<void> {
+    if (this.loadedUsers.has(ownerId)) return;
+
+    try {
+      const supabase = await getSupabase();
+      const { data: folders, error: foldersError } = await supabase.from('nexus_folders').select('*').eq('owner_id', ownerId);
+      if (foldersError) throw foldersError;
+      
+      const { data: files, error: filesError } = await supabase.from('nexus_files').select('*').eq('owner_id', ownerId);
+      if (filesError) throw filesError;
+
+      if (folders) {
+        folders.forEach((f: any) => {
+          this.folders.set(f.id, {
+            id: f.id,
+            name: f.name,
+            path: f.path,
+            parentId: f.parent_id,
+            ownerId: f.owner_id,
+            createdAt: new Date(f.created_at).getTime(),
+            updatedAt: new Date(f.updated_at).getTime(),
+          });
+        });
+      }
+      if (files) {
+        files.forEach((f: any) => {
+          this.files.set(f.id, {
+            id: f.id,
+            name: f.name,
+            extension: f.extension,
+            size: Number(f.size),
+            mimeType: f.mime_type,
+            path: f.path,
+            parentId: f.parent_id,
+            ownerId: f.owner_id,
+            createdAt: new Date(f.created_at).getTime(),
+            updatedAt: new Date(f.updated_at).getTime(),
+            metadata: f.metadata,
+            contentUrl: f.storage_path ? `${process.env.SUPABASE_URL}/storage/v1/object/public/nexus-files/${f.storage_path}` : undefined,
+          });
+        });
+      }
+      this.loadedUsers.add(ownerId);
+    } catch (err) {
+      console.warn('[NexusFS] loadUserFiles failed:', err);
+    }
   }
 
   private detectCategory(ext: string, mime: string): FileCategory {
@@ -101,20 +178,25 @@ class NexusFS {
     return `This is an automatically generated summary for "${name}". Content appears to be related to ${name.split('.')[0]}.`;
   }
 
-  public getFiles(parentId: string | null): NexusFile[] {
-    return Array.from(this.files.values()).filter(f => f.parentId === parentId);
+  public async getFiles(parentId: string | null, ownerId: string): Promise<NexusFile[]> {
+    await this.loadUserFiles(ownerId);
+    return Array.from(this.files.values()).filter(f => f.parentId === parentId && f.ownerId === ownerId);
   }
 
-  public getFolders(parentId: string | null): NexusFolder[] {
-    return Array.from(this.folders.values()).filter(f => f.parentId === parentId);
+  public async getFolders(parentId: string | null, ownerId: string): Promise<NexusFolder[]> {
+    await this.loadUserFiles(ownerId);
+    return Array.from(this.folders.values()).filter(f => f.parentId === parentId && f.ownerId === ownerId);
   }
 
-  public searchFiles(query: string): NexusFile[] {
+  public async searchFiles(query: string, ownerId: string): Promise<NexusFile[]> {
+    await this.loadUserFiles(ownerId);
     const q = query.toLowerCase();
     return Array.from(this.files.values()).filter(f => 
-      f.name.toLowerCase().includes(q) || 
-      f.metadata.tags.some(t => t.toLowerCase().includes(q)) ||
-      f.metadata.aiSummary?.toLowerCase().includes(q)
+      f.ownerId === ownerId && (
+        f.name.toLowerCase().includes(q) || 
+        f.metadata.tags.some(t => t.toLowerCase().includes(q)) ||
+        f.metadata.aiSummary?.toLowerCase().includes(q)
+      )
     );
   }
 }

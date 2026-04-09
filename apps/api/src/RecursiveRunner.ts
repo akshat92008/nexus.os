@@ -17,6 +17,7 @@ export class RecursiveRunner {
    * Identifies if a task needs fractal decomposition.
    */
   isComplex(task: TaskNode): boolean {
+    if (task.id.startsWith('micro_')) return false;
     return task.priority === 'critical' || task.label.toLowerCase().includes('build a full') || task.label.toLowerCase().includes('comprehensive');
   }
 
@@ -26,8 +27,19 @@ export class RecursiveRunner {
   async decompose(
     parentTask: TaskNode,
     parentGoal: string,
-    contextBriefing: string
+    contextBriefing: string,
+    depth = 0
   ): Promise<TaskDAG> {
+    if (depth >= 2) {
+      console.warn(`[RecursiveRunner] Max depth reached for task "${parentTask.id}". Executing as-is.`);
+      return {
+        missionId: `sub_${parentTask.id}`,
+        goal: parentTask.label,
+        goalType: 'analysis',
+        nodes: [{ ...parentTask, id: 'micro_1', dependencies: [] }],
+      };
+    }
+
     console.log(`[RecursiveRunner] 🧩 Decomposing Complex Task: ${parentTask.id}...`);
 
     const prompt = `
