@@ -17,29 +17,29 @@ export const MODEL_CODE = 'MODEL_CODE';
 export const MODEL_VISION = 'MODEL_VISION';
 
 // Rotation lists for free models (OpenRouter)
-const FREE_MODELS = {
-  [MODEL_FAST]: [
-    'stepfun-ai/step-3.5-flash:free',
-    'nvidia/nemotron-3-8b-instruct:free',
-    'openai/gpt-oss-20b:free',
-    'google/gemini-2.0-flash-exp:free',
-  ],
-  [MODEL_POWER]: [
-    'meta-llama/llama-3.3-70b-instruct:free',
-    'nousresearch/hermes-3-llama-3.1-405b:free',
-    'xiaomi/mimo-v2-flash:free',
-    'liquid/lfm-2.5-1.2b-thinking:free',
-  ],
-  [MODEL_CODE]: [
-    'qwen/qwen-2.5-coder-32b-instruct:free',
-    'mistralai/devstral-2512:free',
-    'deepseek/deepseek-r1:free',
-  ],
-  [MODEL_VISION]: [
-    'google/gemma-2-27b-it:free',
-    'nvidia/nemotron-nano-12b-v2-vl:free',
-    'google/lyria-3-pro:free',
-  ],
+export const FREE_MODELS = { 
+  [MODEL_FAST]: [ 
+    'meta-llama/llama-3.1-8b-instruct:free', 
+    'mistralai/mistral-7b-instruct:free', 
+    'google/gemini-2.0-flash-exp:free', 
+    'microsoft/phi-3-mini-128k-instruct:free', 
+  ], 
+  [MODEL_POWER]: [ 
+    'deepseek/deepseek-r1:free', 
+    'meta-llama/llama-3.3-70b-instruct:free', 
+    'qwen/qwen-2.5-72b-instruct:free', 
+    'google/gemini-2.0-flash-exp:free', 
+  ], 
+  [MODEL_CODE]: [ 
+    'qwen/qwen-2.5-coder-32b-instruct:free', 
+    'deepseek/deepseek-r1:free', 
+    'meta-llama/llama-3.3-70b-instruct:free', 
+  ], 
+  [MODEL_VISION]: [ 
+    'google/gemini-2.0-flash-exp:free', 
+    'meta-llama/llama-3.2-11b-vision-instruct:free', 
+    'meta-llama/llama-3.1-8b-instruct:free', 
+  ], 
 };
 
 export class LLMRouter {
@@ -63,7 +63,7 @@ export class LLMRouter {
    */
   async call(opts: LLMCallOpts): Promise<LLMResponse> {
     const tier = this.resolveTier(opts.model);
-    const models = FREE_MODELS[tier] || [opts.model];
+    const models = (FREE_MODELS as any)[tier] || [opts.model];
     
     let lastError: any;
     const startIndex = this.rotationIndices[tier] || 0;
@@ -93,7 +93,6 @@ export class LLMRouter {
         }
 
         console.error(`[LLMRouter] OpenRouter error with ${model}: ${err.message}`);
-        // For non-rate-limit errors, we still try the next model in the rotation
       }
     }
 

@@ -7,7 +7,7 @@ import { ILLMProvider, LLMCallOpts, LLMResponse } from './ILLMProvider.js';
  */
 export class GeminiProvider implements ILLMProvider {
   private readonly GEMINI_FAST_MODEL = 'gemini-2.0-flash-exp';
-  private readonly GEMINI_POWER_MODEL = 'gemini-1.5-pro';
+  private readonly GEMINI_POWER_MODEL = 'gemini-2.0-flash-exp';
 
   async call(opts: LLMCallOpts): Promise<LLMResponse> {
     const apiKey = process.env.GEMINI_API_KEY;

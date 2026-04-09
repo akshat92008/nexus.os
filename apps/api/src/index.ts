@@ -87,6 +87,59 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+/**
+ * Model Health Check
+ * Verifies that free models on OpenRouter are responsive.
+ * Results are cached for 5 minutes.
+ */
+let cachedHealth: any = null;
+let lastHealthCheck = 0;
+const CACHE_DURATION = 5 * 60 * 1000;
+
+app.get('/api/models/health', async (req, res) => {
+  const now = Date.now();
+  if (cachedHealth && now - lastHealthCheck < CACHE_DURATION) {
+    return res.json(cachedHealth);
+  }
+
+  const { FREE_MODELS, MODEL_FAST } = await import('./llm/LLMRouter.js');
+  const models = FREE_MODELS[MODEL_FAST];
+  const results: Record<string, string> = {};
+
+  await Promise.all(models.map(async (model) => {
+    try {
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: 'user', content: 'Say OK' }],
+          max_tokens: 5
+        })
+      });
+
+      if (response.ok) {
+        results[model] = 'ok';
+      } else {
+        results[model] = `error: ${response.status}`;
+      }
+    } catch (err: any) {
+      results[model] = `error: ${err.message}`;
+    }
+  }));
+
+  cachedHealth = {
+    timestamp: new Date().toISOString(),
+    results
+  };
+  lastHealthCheck = now;
+
+  res.json(cachedHealth);
+});
+
 // Apply requireAuth to all subsequent routes
 app.use(requireAuth);
 
