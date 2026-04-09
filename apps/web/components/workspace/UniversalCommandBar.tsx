@@ -29,7 +29,7 @@ const QUICK_ACTIONS = {
   ]
 };
 
-export function UniversalCommandBar() {
+export function UniversalCommandBar({ isEmbedded = false }: { isEmbedded?: boolean }) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [draft, setDraft] = useState('');
   const [isDragging, setIsDragging] = useState(false);
@@ -72,7 +72,7 @@ export function UniversalCommandBar() {
   }
 
   return (
-    <div className="flex flex-col items-center justify-center w-full max-w-4xl mx-auto space-y-10 z-[200] pointer-events-auto">
+    <div className={`flex flex-col items-center justify-center w-full ${isEmbedded ? '' : 'max-w-4xl mx-auto space-y-10 z-[200] pointer-events-auto'}`}>
       <CommandInput
         draft={draft} setDraft={setDraft}
         isFocused={ui.commandBarFocused} setFocused={setFocused}
@@ -85,13 +85,15 @@ export function UniversalCommandBar() {
         toggleAppLauncher={toggleAppLauncher} toggleDashboard={toggleDashboard}
         toggleSearchView={toggleSearchView} toggleLibraryView={() => { fetchFsItems('root'); toggleLibraryView(); }}
       />
-      <div className="flex flex-wrap justify-center gap-3">
-        {(QUICK_ACTIONS[currentMode as keyof typeof QUICK_ACTIONS] || []).map((eg, idx) => (
-          <button key={idx} onClick={() => setDraft(eg.text)} className="flex items-center gap-2 px-4 py-2 rounded-full border border-zinc-800 bg-zinc-900/20 hover:bg-zinc-800/60 text-sm text-zinc-400 transition-all">
-            <eg.icon size={14} /> {eg.text}
-          </button>
-        ))}
-      </div>
+      {!isEmbedded && (
+        <div className="flex flex-wrap justify-center gap-3">
+          {(QUICK_ACTIONS[currentMode as keyof typeof QUICK_ACTIONS] || []).map((eg, idx) => (
+            <button key={idx} onClick={() => setDraft(eg.text)} className="flex items-center gap-2 px-4 py-2 rounded-full border border-zinc-800 bg-zinc-900/20 hover:bg-zinc-800/60 text-sm text-zinc-400 transition-all">
+              <eg.icon size={14} /> {eg.text}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

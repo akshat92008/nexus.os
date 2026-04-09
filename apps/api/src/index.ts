@@ -30,6 +30,7 @@ import { AGENT_REGISTRY } from './agents/agentRegistry.js';
 import type { OrchestrateRequest } from '@nexus-os/types';
 import { requireAuth } from './middleware/auth.js';
 import { getSupabase } from './storage/supabaseClient.js';
+import { rateLimitMonitor } from './llm/RateLimitMonitor.js';
 
 dotenv.config();
 
@@ -100,6 +101,16 @@ app.get('/api/health', (req, res) => {
     uptime: Math.floor(process.uptime()), 
     version: '2.7.0',
     timestamp: new Date().toISOString()
+  });
+});
+
+app.get('/api/llm/status', (req, res) => {
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    health: rateLimitMonitor.getHealthSummary(),
+    providers: rateLimitMonitor.getAllStatuses(),
+    recentEvents: rateLimitMonitor.getRecentEvents(25),
   });
 });
 
@@ -224,7 +235,7 @@ const orchestrateLimiter = rateLimit({
 });
 
 app.post('/api/orchestrate', orchestrateLimiter, async (req: Request<{}, {}, OrchestrateRequest>, res: Response) => {
-  const { goal, workspaceId, archMode = 'agentic' } = req.body;
+  const { goal, workspaceId, archMode = 'legacy' } = req.body;
   const userId = req.user!.id;
 
   if (!goal) {

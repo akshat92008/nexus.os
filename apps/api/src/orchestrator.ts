@@ -222,6 +222,13 @@ export async function orchestrateDAG(deps: OrchestratorDeps): Promise<void> {
   const { dag, memory, registry, res, isAborted, sessionId } = deps;
   const startMs = Date.now();
   const governor = getGlobalGovernor();
+  let missionCompleted = false;
+
+  try {
+    await nexusStateStore.updateMissionStatus(dag.missionId, 'running');
+  } catch (err) {
+    console.warn(`[Orchestrator] Unable to mark mission ${dag.missionId} as running:`, err);
+  }
 
   dag.nodes.forEach((n) => registry.initTask?.(n.id));
 
@@ -296,8 +303,32 @@ export async function orchestrateDAG(deps: OrchestratorDeps): Promise<void> {
       }, isAborted, sessionId);
     }
 
+    if (!isAborted()) {
+      missionCompleted = true;
+    }
+
   } catch (err: any) {
+    const status = isAborted() ? 'aborted' : 'failed';
+    try {
+      await nexusStateStore.updateMissionStatus(dag.missionId, status);
+    } catch (updateErr) {
+      console.warn(`[Orchestrator] Failed to persist mission ${status} status for ${dag.missionId}:`, updateErr);
+    }
     safeEmit(res, { type: 'error', message: `Mission failed: ${err.message}` }, isAborted, sessionId);
+  }
+
+  if (missionCompleted) {
+    try {
+      await nexusStateStore.updateMissionStatus(dag.missionId, 'complete', new Date().toISOString());
+    } catch (err) {
+      console.warn(`[Orchestrator] Failed to persist mission complete status for ${dag.missionId}:`, err);
+    }
+  } else if (isAborted()) {
+    try {
+      await nexusStateStore.updateMissionStatus(dag.missionId, 'aborted');
+    } catch (err) {
+      console.warn(`[Orchestrator] Failed to persist mission aborted status for ${dag.missionId}:`, err);
+    }
   }
 }
 

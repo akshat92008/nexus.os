@@ -3,6 +3,8 @@ import { MODEL_FAST, MODEL_POWER, MODEL_CODE } from '../llm/LLMRouter.js';
 
 export { MODEL_FAST, MODEL_POWER, MODEL_CODE };
 
+export const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
+
 export const TOKEN_BUDGET: Record<AgentType, number> = {
   researcher: 1400,
   analyst: 1400,

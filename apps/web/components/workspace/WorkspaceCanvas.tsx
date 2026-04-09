@@ -179,7 +179,7 @@ export function WorkspaceCanvas() {
 
   return (
     <CanvasErrorBoundary>
-      <div className="flex-1 w-full max-w-5xl mx-auto space-y-6 pb-20 fade-in">
+      <div className="flex-1 w-full h-full space-y-6 pb-12 fade-in overflow-y-auto custom-scrollbar px-2">
       {isSimulated && showSimulatedBanner && (
         <motion.div 
           initial={{ opacity: 0, y: -10 }}

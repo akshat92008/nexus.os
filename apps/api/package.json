@@ -11,7 +11,9 @@
     "worker": "node dist/workers/taskWorker.js",
     "mission-worker": "node dist/workers/missionWorker.js",
     "test": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "test:watch": "vitest watch"
   },
   "dependencies": {
     "@e2b/code-interpreter": "^2.4.0",

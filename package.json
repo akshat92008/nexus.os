@@ -10,7 +10,11 @@
     "dev:web":   "pnpm --filter @nexus-os/web dev",
     "build":     "pnpm --filter @nexus-os/api build && pnpm --filter @nexus-os/web build",
     "lint":      "pnpm -r lint",
-    "typecheck": "pnpm -r exec tsc --noEmit"
+    "typecheck": "pnpm -r exec tsc --noEmit",
+    "test":      "pnpm -r test",
+    "test:e2e":  "pnpm --filter @nexus-os/api test:e2e",
+    "test:e2e:record": "MISSION_REPLAY_MODE=record pnpm --filter @nexus-os/api test:e2e",
+    "test:e2e:replay": "MISSION_REPLAY_MODE=replay pnpm --filter @nexus-os/api test:e2e"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",

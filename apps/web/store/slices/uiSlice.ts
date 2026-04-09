@@ -19,6 +19,7 @@ export interface UISlice {
     calendarViewOpen: boolean;
     graphViewOpen: boolean;
     isOnboardingComplete: boolean;
+    layoutMode: 'command-center' | 'focus-graph' | 'focus-workspace' | 'focus-telemetry';
   };
   toasts: Array<{ id: string; message: string; count: number; timestamp: number }>;
   pendingApproval: { taskId: string; taskLabel: string; reason: string } | null;
@@ -44,6 +45,7 @@ export interface UISlice {
   closeAllModals: () => void;
   setAppLauncherOpen: (v: boolean) => void;
   setOnboardingComplete: () => void;
+  setLayoutMode: (mode: 'command-center' | 'focus-graph' | 'focus-workspace' | 'focus-telemetry') => void;
 }
 
 export const createUISlice: StateCreator<
@@ -69,6 +71,7 @@ export const createUISlice: StateCreator<
     calendarViewOpen: false,
     graphViewOpen: false,
     isOnboardingComplete: false,
+    layoutMode: 'command-center',
   },
   toasts: [],
   pendingApproval: null,
@@ -227,4 +230,5 @@ export const createUISlice: StateCreator<
     set((s) => ({ ui: { ...s.ui, isOnboardingComplete: true } }));
     void get().persistServerState();
   },
+  setLayoutMode: (mode) => set((s) => ({ ui: { ...s.ui, layoutMode: mode } })),
 });

@@ -21,8 +21,7 @@ import {
   TOKEN_BUDGET 
 } from './agentConfig.js';
 
-import { buildAgentPrompt } from './promptBuilder.js';
-import { parseTypedArtifact } from './outputParser.js';
+import { missionReplayer, missionRecorder, isRecordMode, isReplayMode } from '../missionReplay.js';
 
 // ── AI INFRASTRUCTURE ───────────────────────────────────────────────────────
 
@@ -61,6 +60,28 @@ import { llmRouter } from '../llm/LLMRouter.js';
 export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
   const { task, goal, goalType, context, sseRes, isAborted } = opts;
   const startMs = Date.now();
+
+  // MISSION REPLAY: Check if we have a recorded response for this task
+  if (isReplayMode) {
+    const replayResponse = missionReplayer.getReplayResponse(task.id, task.agentType, {
+      prompt: goal,
+      context: context.entries.reduce((acc, entry) => {
+        acc[entry.taskId] = entry.artifact;
+        return acc;
+      }, {} as Record<string, TypedArtifact>),
+      taskNode: task
+    });
+
+    if (replayResponse) {
+      console.log(`[AgentRunner] 🎬 REPLAYING ${task.agentType.toUpperCase()} task: ${task.id}`);
+      return {
+        artifact: replayResponse,
+        tokensUsed: 0, // No tokens used in replay
+        rawContent: JSON.stringify(replayResponse)
+      };
+    }
+  }
+
   const controller = new AbortController();
   const runtimeTimer = setTimeout(() => controller.abort(new Error(`[Limits] Max runtime ${MAX_AGENT_RUNTIME_MS}ms exceeded`)), MAX_AGENT_RUNTIME_MS);
   let steps = 0;
@@ -193,6 +214,30 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
       });
       (artifact as any).executionOutput = result;
     }
+
+    // MISSION RECORDING: Record the interaction for future replay
+    if (isRecordMode) {
+      missionRecorder.recordInteraction({
+        taskId: task.id,
+        agentType: task.agentType,
+        input: {
+          prompt: goal,
+          context: synthesizedContext.entries.reduce((acc, entry) => {
+            acc[entry.taskId] = entry.artifact;
+            return acc;
+          }, {} as Record<string, TypedArtifact>),
+          taskNode: task
+        },
+        output: artifact,
+        metadata: {
+          tokensUsed: specialist1.tokens + specialist2.tokens + judgeTokens,
+          duration: Date.now() - startMs,
+          missionId: opts.missionId,
+          userId: opts.userId,
+          councilOfThree: true
+        }
+      });
+    }
     
     clearTimeout(runtimeTimer);
     return { artifact, tokensUsed: specialist1.tokens + specialist2.tokens + judgeTokens, rawContent: verifiedContent };
@@ -231,16 +276,49 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
 
   const artifact = parseTypedArtifact(content, task);
   
-  // For coder agents, attempt code execution via E2B and append results to artifact
+  // For coder agents, attempt code execution via toolExecutor and append results to artifact
   if (task.agentType === 'coder' && (artifact as any).code) {
-    const { stdout, stderr } = await executeCodeWithE2B((artifact as any).code);
-    (artifact as any).executionOutput = { stdout, stderr };
-    if (stderr) {
-      console.warn(`[AgentRunner] Code execution returned stderr: ${stderr}`);
+    const result = await toolExecutor.execute({
+      toolName: 'code_execution',
+      arguments: {
+        language: 'python',
+        code: (artifact as any).code,
+      },
+      missionId: opts.missionId,
+      taskId: task.id,
+      userId: opts.userId,
+      workspaceId: opts.workspaceId,
+    });
+    (artifact as any).executionOutput = result;
+    if ((result as any).stderr) {
+      console.warn(`[AgentRunner] Code execution returned stderr: ${(result as any).stderr}`);
     }
   }
   
   console.log(`[AgentRunner] ✅ ${task.agentType.toUpperCase()} finished task: ${task.id} (${Date.now() - startMs}ms)`);
+
+  // MISSION RECORDING: Record the interaction for future replay
+  if (isRecordMode) {
+    missionRecorder.recordInteraction({
+      taskId: task.id,
+      agentType: task.agentType,
+      input: {
+        prompt: goal,
+        context: context.entries.reduce((acc, entry) => {
+          acc[entry.taskId] = entry.artifact;
+          return acc;
+        }, {} as Record<string, TypedArtifact>),
+        taskNode: task
+      },
+      output: artifact,
+      metadata: {
+        tokensUsed: tokens,
+        duration: Date.now() - startMs,
+        missionId: opts.missionId,
+        userId: opts.userId
+      }
+    });
+  }
 
   clearTimeout(runtimeTimer);
   return { artifact, tokensUsed: tokens, rawContent: content };

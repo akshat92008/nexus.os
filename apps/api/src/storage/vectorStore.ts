@@ -1,46 +1,62 @@
 import { getSupabase } from './supabaseClient.js';
 
-const EMBED_URL = 'https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent';
+const OPENROUTER_EMBED_URL = 'https://openrouter.ai/api/v1/embeddings';
 
 async function getEmbedding(text: string): Promise<number[]> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error('GEMINI_API_KEY not set — free at aistudio.google.com');
+  if (!process.env.OPENROUTER_API_KEY) {
+    throw new Error('OpenRouter embedding requires OPENROUTER_API_KEY');
+  }
 
-  const res = await fetch(`${EMBED_URL}?key=${apiKey}`, {
+  const res = await fetch(OPENROUTER_EMBED_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+    },
     body: JSON.stringify({
-      model: 'models/text-embedding-004',
-      content: { parts: [{ text }] },
+      model: 'text-embedding-3-small',
+      input: text,
     }),
   });
 
-  if (!res.ok) throw new Error(`[VectorStore] Embed failed: ${res.status}`);
+  if (!res.ok) {
+    throw new Error(`[VectorStore] OpenRouter embed failed: ${res.status}`);
+  }
+
   const data = await res.json() as any;
-  return data.embedding.values as number[];
+  return data.data?.[0]?.embedding ?? data.embedding ?? [];
 }
 
 export class VectorStore {
   async store(content: string, metadata: Record<string, any> = {}): Promise<void> {
-    const embedding = await getEmbedding(content);
-    const client = await getSupabase();
-    const { error } = await client.from('embeddings').insert({
-      content,
-      embedding: embedding, // Supabase handles array to vector conversion if the column is type vector
-      metadata,
-    });
-    if (error) throw new Error(`[VectorStore] Store failed: ${error.message}`);
+    try {
+      const embedding = await getEmbedding(content);
+      const client = await getSupabase();
+      const { error } = await client.from('embeddings').insert({
+        content,
+        embedding,
+        metadata,
+      });
+      if (error) throw new Error(`[VectorStore] Store failed: ${error.message}`);
+    } catch (err: any) {
+      console.warn('[VectorStore] Embedding disabled or failed:', err.message || err);
+    }
   }
 
   async search(query: string, limit = 5): Promise<Array<{ content: string; similarity: number }>> {
-    const embedding = await getEmbedding(query);
-    const client = await getSupabase();
-    const { data, error } = await client.rpc('match_embeddings', {
-      query_embedding: embedding,
-      match_count: limit,
-    });
-    if (error) throw new Error(`[VectorStore] Search failed: ${error.message}`);
-    return data ?? [];
+    try {
+      const embedding = await getEmbedding(query);
+      const client = await getSupabase();
+      const { data, error } = await client.rpc('match_embeddings', {
+        query_embedding: embedding,
+        match_count: limit,
+      });
+      if (error) throw new Error(`[VectorStore] Search failed: ${error.message}`);
+      return data ?? [];
+    } catch (err: any) {
+      console.warn('[VectorStore] Search skipped because embedding failed or no provider configured:', err.message || err);
+      return [];
+    }
   }
 
   async storeAgentArtifact(taskId: string, agentType: string, content: string): Promise<void> {

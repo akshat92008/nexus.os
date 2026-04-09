@@ -19,6 +19,7 @@ const ActivityTimeline = dynamic(() => import('./ActivityTimeline').then(mod => 
 const ApprovalModal = dynamic(() => import('./ApprovalModal').then(mod => mod.ApprovalModal), { ssr: false });
 const AppLauncher = dynamic(() => import('./AppLauncher').then(mod => mod.AppLauncher), { ssr: false });
 const OnboardingWizard = dynamic(() => import('./OnboardingWizard').then(mod => mod.OnboardingWizard), { ssr: false });
+const CommandCenter = dynamic(() => import('./CommandCenter').then(mod => mod.CommandCenter), { ssr: false });
 
 import { useNexusStore, selectIsRunning } from '../../store/nexusStore';
 
@@ -66,64 +67,11 @@ export function Workspace() {
       </div>
 
       <div className="fixed top-8 left-1/2 -translate-x-1/2 z-[200] w-full max-w-2xl px-6 pointer-events-none">
-        <UniversalCommandBar />
+        {!activeWorkspaceId && <UniversalCommandBar />}
       </div>
 
-      <div className="flex-1 flex overflow-hidden relative z-10 w-full">
-        <aside className="w-[30%] min-w-[340px] border-r border-white/5 bg-black/20 backdrop-blur-3xl flex flex-col pt-24">
-          <div className="px-6 pb-4 border-b border-white/5 flex items-center justify-between">
-             <div className="flex items-center gap-2">
-                <Zap size={14} className="text-violet-400" />
-                <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Execution Canvas</h3>
-             </div>
-          </div>
-          <div className="flex-1 relative overflow-hidden">
-             <GraphCanvas sessionId={session.id || 'initial'} />
-          </div>
-        </aside>
-
-        <main className="flex-1 h-full pt-24 relative overflow-hidden flex flex-col bg-white/[0.01]">
-            <div className="h-10 px-8 flex items-center justify-between gap-4 bg-black/10 border-b border-white/5 shrink-0">
-               <div className="flex items-center gap-2 px-3 py-1 rounded-lg hover:bg-white/5 cursor-pointer group transition-all">
-                  <Hexagon size={12} className="text-zinc-600 group-hover:text-violet-400" />
-                  <span className="text-[10px] font-bold text-zinc-500 group-hover:text-zinc-300 transition-colors uppercase tracking-widest">
-                    {activeWorkspaceId ? workspaces[activeWorkspaceId]?.goal : 'System Boot'}
-                  </span>
-               </div>
-               <div className="flex items-center gap-3 text-[10px] uppercase tracking-[0.3em] text-zinc-500">
-                 <span>{session.status === 'idle' ? 'Ready' : session.status}</span>
-                 {waves.totalWaves > 0 && (
-                   <span>{`Wave ${waves.currentWave}/${waves.totalWaves}`}</span>
-                 )}
-                 <span>{`${events.length} events`}</span>
-               </div>
-            </div>
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-10">
-              {pendingApproval && (
-                <div className="mb-6 rounded-3xl border border-amber-400/30 bg-amber-400/5 p-4 text-sm text-amber-200">
-                  <strong>Approval Needed:</strong> {pendingApproval.reason}
-                </div>
-              )}
-              <SandboxRouter />
-            </div>
-        </main>
-
-        <aside className="w-[20%] min-w-[280px] border-l border-white/5 bg-black/20 backdrop-blur-3xl flex flex-col pt-24">
-           <div className="h-[45%] flex flex-col border-b border-white/5 overflow-hidden">
-              <div className="px-6 py-3 bg-white/5 border-b border-white/5 flex items-center gap-2">
-                 <Activity size={14} className="text-cyan-400" />
-                 <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400">Agent Roster</h3>
-              </div>
-              <div className="flex-1 overflow-y-auto"><AgentsView /></div>
-           </div>
-           <div className="flex-1 flex flex-col overflow-hidden">
-              <div className="px-6 py-3 bg-white/5 border-b border-white/5 flex items-center gap-2">
-                 <Clock size={14} className="text-zinc-500" />
-                 <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400">Semantic Vault</h3>
-              </div>
-              <div className="flex-1 overflow-y-auto"><ActivityTimeline /></div>
-           </div>
-        </aside>
+      <div className="flex-1 flex overflow-hidden relative z-10 w-full pt-20">
+        <CommandCenter />
       </div>
 
       <div className="fixed bottom-8 left-8 z-[300] flex flex-col gap-3 pointer-events-none w-full max-w-md">
