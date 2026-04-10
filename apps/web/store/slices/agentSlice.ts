@@ -25,8 +25,18 @@ export const createAgentSlice: StateCreator<
   availableAgents: [],
 
   spawnAgent: async (agentType) => {
-    // Logic for spawning agents manually (simulated or real call)
-    get().addToast(`Spawning ${agentType} agent...`);
+    try {
+      get().addToast(`Spawning ${agentType} agent...`, 'info' as any);
+      const res = await fetch('/api/agents/spawn', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agentType, workspaceId: get().activeWorkspaceId })
+      });
+      if (!res.ok) throw new Error('Spawn failed');
+      get().addToast(`Successfully spawned ${agentType} agent.`, 'success' as any);
+    } catch (err: any) {
+      get().addToast(`Failed to spawn agent: ${err.message}`, 'error' as any);
+    }
   },
 
   installAgent: (id) => {
@@ -36,6 +46,13 @@ export const createAgentSlice: StateCreator<
   },
 
   fetchAvailableAgents: async () => {
-    // API call placeholder
+    try {
+      const res = await fetch('/api/marketplace/agents');
+      if (!res.ok) throw new Error('Failed to fetch agents');
+      const data = await res.json();
+      set({ availableAgents: data });
+    } catch (err: any) {
+      console.error('[AgentSlice] Load failure:', err);
+    }
   },
 });

@@ -8,6 +8,7 @@
 import type { AgentType, TypedArtifact, ScheduleSnapshot } from '@nexus-os/types';
 import { getSupabase } from './supabaseClient.js';
 import { userStateStore } from './userStateStore.js';
+import { withRetry } from '../resilience.js';
 
 export class MissionStore {
   async createMission(params: {
@@ -273,38 +274,44 @@ export class MissionStore {
 
   async fetchArtifactsByContext(missionId: string, taskIds: string[]) {
     const client = await getSupabase();
-    const { data, error } = await client
-      .from('artifacts')
-      .select('*')
-      .eq('mission_id', missionId)
-      .in('task_id', taskIds);
+    return withRetry(async () => {
+      const { data, error } = await client
+        .from('artifacts')
+        .select('*')
+        .eq('mission_id', missionId)
+        .in('task_id', taskIds);
 
-    if (error) throw new Error(`[MissionStore] fetchArtifactsByContext failed: ${error.message}`);
-    return data;
+      if (error) throw new Error(`[MissionStore] fetchArtifactsByContext failed: ${error.message}`);
+      return data;
+    }, `DB:fetchArtifactsByContext:${missionId}`, { retries: 2, timeout: 5000 });
   }
 
   async getTask(taskId: string) {
     const client = await getSupabase();
-    const { data, error } = await client
-      .from('tasks')
-      .select('*, task_dependencies(depends_on_task_id)')
-      .eq('id', taskId)
-      .single();
+    return withRetry(async () => {
+      const { data, error } = await client
+        .from('tasks')
+        .select('*, task_dependencies(depends_on_task_id)')
+        .eq('id', taskId)
+        .single();
 
-    if (error) throw new Error(`[MissionStore] getTask failed: ${error.message}`);
-    return data;
+      if (error) throw new Error(`[MissionStore] getTask failed: ${error.message}`);
+      return data;
+    }, `DB:getTask:${taskId}`, { retries: 2, timeout: 5000 });
   }
 
   async getMissionById(missionId: string) {
     const client = await getSupabase();
-    const { data, error } = await client
-      .from('nexus_missions')
-      .select('*')
-      .eq('id', missionId)
-      .single();
+    return withRetry(async () => {
+      const { data, error } = await client
+        .from('nexus_missions')
+        .select('*')
+        .eq('id', missionId)
+        .single();
 
-    if (error) throw new Error(`[MissionStore] getMissionById failed: ${error.message}`);
-    return data;
+      if (error) throw new Error(`[MissionStore] getMissionById failed: ${error.message}`);
+      return data;
+    }, `DB:getMission:${missionId}`, { retries: 2, timeout: 5000 });
   }
 
   async getMissionTasks(missionId: string) {

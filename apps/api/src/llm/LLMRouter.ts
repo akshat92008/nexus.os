@@ -3,6 +3,7 @@ import { OpenRouterProvider } from './OpenRouterProvider.js';
 import { GroqProvider } from './GroqProvider.js';
 import { rateLimitMonitor } from './RateLimitMonitor.js';
 import { createBreaker } from '../circuitBreaker.js';
+import { withRetry } from '../resilience.js';
 // --- Gemini/Claude/Local Fallback Providers (stubs) ---
 class GeminiProvider {
   async call(opts: LLMCallOpts): Promise<LLMResponse> {
@@ -139,7 +140,11 @@ export class LLMRouter {
           continue;
         }
         try {
-          const response = await this.openRouterBreaker.fire({ ...opts, model });
+          const response = await withRetry(
+            () => this.openRouterBreaker.fire({ ...opts, model }),
+            `LLM: OpenRouter:${model}`,
+            { retries: 2, timeout: 15000 }
+          );
           this.rotationIndices[tier] = (modelIndex + 1) % models.length;
           rateLimitMonitor.recordSuccess('openrouter', model);
           return response;
@@ -161,7 +166,11 @@ export class LLMRouter {
     // 2. Try Gemini (if available)
     if (this.shouldUseProvider('gemini')) {
       try {
-        const response = await this.geminiBreaker.fire(opts);
+        const response = await withRetry(
+          () => this.geminiBreaker.fire(opts),
+          'LLM: Gemini',
+          { retries: 2, timeout: 20000 }
+        );
         rateLimitMonitor.recordSuccess('gemini', opts.model);
         return response;
       } catch (err: any) {
@@ -175,7 +184,11 @@ export class LLMRouter {
     if (this.shouldUseProvider('groq')) {
       try {
         const groqModel = this.mapToGroqModel(tier);
-        const response = await this.groqBreaker.fire({ ...opts, model: groqModel });
+        const response = await withRetry(
+          () => this.groqBreaker.fire({ ...opts, model: groqModel }),
+          `LLM: Groq:${groqModel}`,
+          { retries: 2, timeout: 10000 }
+        );
         rateLimitMonitor.recordSuccess('groq', groqModel);
         return response;
       } catch (err: any) {

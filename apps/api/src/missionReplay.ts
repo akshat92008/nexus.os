@@ -5,8 +5,7 @@
  * Enables reliable end-to-end testing of mission orchestration.
  */
 
-import * as fs from 'fs/promises';
-import * as path from 'path';
+import { getSupabase } from './storage/supabaseClient.js';
 import type { AgentType, TypedArtifact, TaskNode } from '@nexus-os/types';
 
 export interface AgentInteraction {
@@ -44,7 +43,7 @@ export class MissionRecorder {
     private missionId: string,
     private sessionId: string,
     private userId: string,
-    private storagePath: string = './test-recordings'
+    private bucket: string = 'mission-replays'
   ) {
     this.startTime = Date.now();
     this.recording = {
@@ -81,16 +80,24 @@ export class MissionRecorder {
     this.recording.endTime = Date.now();
     this.recording.finalResult = finalResult;
 
-    // Ensure storage directory exists
-    await fs.mkdir(this.storagePath, { recursive: true });
-
+    const client = await getSupabase();
     const filename = `${this.missionId}-${this.startTime}.json`;
-    const filepath = path.join(this.storagePath, filename);
+    const content = JSON.stringify(this.recording, null, 2);
 
-    await fs.writeFile(filepath, JSON.stringify(this.recording, null, 2));
+    const { error } = await client.storage
+      .from(this.bucket)
+      .upload(filename, content, {
+        contentType: 'application/json',
+        upsert: true
+      });
+
+    if (error) {
+      console.error('[MissionRecorder] Storage upload failed:', error);
+      throw new Error(`Failed to save recording to Supabase: ${error.message}`);
+    }
 
     this.isRecording = false;
-    return filepath;
+    return filename;
   }
 
   getCurrentRecording(): MissionRecording {
@@ -103,22 +110,36 @@ export class MissionReplayer {
   private replayMode: boolean = false;
   private currentReplayIndex: Map<string, number> = new Map();
 
-  constructor(private storagePath: string = './test-recordings') {}
+  constructor(private bucket: string = 'mission-replays') {}
 
   async loadRecordings(): Promise<void> {
     try {
-      const files = await fs.readdir(this.storagePath);
-      const recordingFiles = files.filter(f => f.endsWith('.json'));
+      const client = await getSupabase();
+      const { data: files, error: listError } = await client.storage
+        .from(this.bucket)
+        .list();
 
-      for (const file of recordingFiles) {
-        const filepath = path.join(this.storagePath, file);
-        const content = await fs.readFile(filepath, 'utf-8');
+      if (listError) throw listError;
+      if (!files) return;
+
+      for (const file of files) {
+        if (!file.name.endsWith('.json')) continue;
+        
+        const { data, error: downloadError } = await client.storage
+          .from(this.bucket)
+          .download(file.name);
+
+        if (downloadError) {
+          console.warn(`[MissionReplayer] Failed to download ${file.name}:`, downloadError);
+          continue;
+        }
+
+        const content = await data.text();
         const recording: MissionRecording = JSON.parse(content);
         this.recordings.set(recording.missionId, recording);
       }
     } catch (error) {
-      // Directory doesn't exist or no recordings yet
-      console.warn('No existing recordings found:', error);
+      console.warn('No existing recordings found or storage access failed:', error);
     }
   }
 
@@ -138,7 +159,6 @@ export class MissionReplayer {
   ): TypedArtifact | null {
     if (!this.replayMode) return null;
 
-    // Find matching recording and interaction
     for (const recording of this.recordings.values()) {
       const interaction = recording.interactions.find(interaction =>
         interaction.taskId === taskId &&
@@ -158,11 +178,19 @@ export class MissionReplayer {
     recorded: { prompt: string; context: Record<string, TypedArtifact>; taskNode: TaskNode },
     current: { prompt: string; context: Record<string, TypedArtifact>; taskNode: TaskNode }
   ): boolean {
-    // Simple matching - in production, you might want more sophisticated matching
     return recorded.prompt === current.prompt &&
            recorded.taskNode.id === current.taskNode.id &&
            recorded.agentType === current.taskNode.agentType;
   }
+
+  getAvailableRecordings(): string[] {
+    return Array.from(this.recordings.keys());
+  }
+
+  getRecording(missionId: string): MissionRecording | undefined {
+    return this.recordings.get(missionId);
+  }
+}
 
   getAvailableRecordings(): string[] {
     return Array.from(this.recordings.keys());

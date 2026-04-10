@@ -98,22 +98,15 @@ import { llmHealthRouter } from './llm/LLMRouter.js';
 // --- P2: Input Validation (zod) ---
 // Make sure to install zod: pnpm add zod
 import { z } from 'zod';
+import { withRetry, fetchWithResilience } from './resilience.js';
 
 // --- P0: Upstream Fetch Timeout & Retry Utility ---
 // Use this for all fetch/HTTP calls to external APIs
-export async function fetchWithTimeout(url, options = {}, timeoutMs = 10000, retries = 2) {
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      const controller = new AbortController();
-      const id = setTimeout(() => controller.abort(), timeoutMs);
-      const res = await fetch(url, { ...options, signal: controller.signal });
-      clearTimeout(id);
-      return res;
-    } catch (err) {
-      if (attempt === retries) throw new Error(`[fetchWithTimeout] ${err.message}`);
-      await new Promise(r => setTimeout(r, 500 * (attempt + 1))); // Exponential backoff
-    }
-  }
+/**
+ * 🚨 REFACTORED: Now uses centralized resilience logic
+ */
+export async function fetchWithTimeout(url: string, options: any = {}, timeoutMs = 10000, retries = 2) {
+  return fetchWithResilience(url, options, { timeout: timeoutMs, retries });
 }
 
 
@@ -126,7 +119,7 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'", 'https:'],
-      scriptSrc: ["'self'", "'unsafe-eval'"],
+      scriptSrc: ["'self'", ...(process.env.NODE_ENV === 'development' ? ["'unsafe-eval'"] : [])],
       imgSrc: ["'self'", 'data:', 'https:'],
       connectSrc: ["'self'", 'https://*', 'wss://*'],
       fontSrc: ["'self'", 'https:'],
@@ -405,7 +398,7 @@ app.post('/api/orchestrate', orchestrateLimiter, async (req: Request<{}, {}, Orc
   // Input validation using zod
   const OrchestrateSchema = z.object({
     goal: z.string().min(10).max(2000),
-    workspaceId: z.string().regex(/^[a-zA-Z0-9_]+$/).optional(),
+    workspaceId: z.string().regex(/^[a-zA-Z0-9_-]+$/).optional(),
     archMode: z.enum(['legacy', 'os']).optional(),
   });
   const parseResult = OrchestrateSchema.safeParse(req.body);

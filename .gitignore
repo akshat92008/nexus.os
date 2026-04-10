@@ -44,4 +44,4 @@ node_modules/
 .DS_Store
 nexus-state.json
 
-.aider*
+.aider*nexus-state.json

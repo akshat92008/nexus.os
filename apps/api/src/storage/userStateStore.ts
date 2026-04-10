@@ -6,6 +6,7 @@
 
 import type { UserStateSnapshot, Workspace } from '@nexus-os/types';
 import { getSupabase } from './supabaseClient.js';
+import { withRetry } from '../resilience.js';
 
 export function createDefaultUserState(userId: string): UserStateSnapshot {
   return {
@@ -62,11 +63,15 @@ export function ensureWorkspaceDefaults(workspace: Workspace): Workspace {
 export class UserStateStore {
   async getUserState(userId: string): Promise<UserStateSnapshot> {
     const client = await getSupabase();
-    const { data, error } = await client
-      .from('nexus_state')
-      .select('state')
-      .eq('id', userId)
-      .single();
+    const { data, error } = await withRetry(async () => {
+      const result = await client
+        .from('nexus_state')
+        .select('state')
+        .eq('id', userId)
+        .single();
+      if (result.error && result.error.code !== 'PGRST116') throw result.error;
+      return result;
+    }, `DB:getUserState:${userId}`, { retries: 2, timeout: 5000 });
 
     if (error || !data?.state) {
       return createDefaultUserState(userId);
@@ -91,9 +96,13 @@ export class UserStateStore {
       updatedAt: Date.now(),
     };
 
-    const { error } = await client
-      .from('nexus_state')
-      .upsert({ id: userId, state: nextState, updated_at: new Date().toISOString() });
+    const { error } = await withRetry(async () => {
+      const result = await client
+        .from('nexus_state')
+        .upsert({ id: userId, state: nextState, updated_at: new Date().toISOString() });
+      if (result.error) throw result.error;
+      return result;
+    }, `DB:syncUserState:${userId}`, { retries: 2, timeout: 5000 });
 
     if (error) throw new Error(`[UserStateStore] syncUserState failed: ${error.message}`);
     return nextState;
