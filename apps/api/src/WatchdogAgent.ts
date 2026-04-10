@@ -60,6 +60,7 @@ export class WatchdogAgent {
           user: prompt,
           model: MODEL_POWER,
           temperature: 0.1,
+          maxTokens: 1000,
           jsonMode: true,
         });
         const audit = JSON.parse(res.content);

@@ -33,17 +33,17 @@ export class E2BService {
         error: execution.error || null
       };
 
-      logger.info('Python code execution completed successfully', {
+      logger.info({
         hasResults: result.results.length > 0,
         hasStderr: result.stderr.length > 0
-      });
+      }, 'Python code execution completed successfully');
 
       return result;
     } catch (error) {
-      logger.error('E2B sandbox execution failed', {
+      logger.error({
         error: error instanceof Error ? error.message : 'Unknown error',
         stack: error instanceof Error ? error.stack : undefined
-      });
+      }, 'E2B sandbox execution failed');
 
       return {
         stdout: '',
@@ -58,9 +58,9 @@ export class E2BService {
           await sandbox.kill();
           logger.debug('E2B sandbox terminated successfully');
         } catch (cleanupError) {
-          logger.error('Failed to terminate E2B sandbox', {
+          logger.error({
             error: cleanupError instanceof Error ? cleanupError.message : 'Cleanup error'
-          });
+          }, 'Failed to terminate E2B sandbox');
         }
       }
     }

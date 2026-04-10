@@ -36,7 +36,12 @@ export class RecursiveRunner {
         missionId: `sub_${parentTask.id}`,
         goal: parentTask.label,
         goalType: 'analysis',
+        status: 'pending',
         nodes: [{ ...parentTask, id: 'micro_1', dependencies: [] }],
+        successCriteria: ['Completed sub-tasks.'],
+        estimatedWaves: 1,
+        requiresApproval: false,
+        config: {},
       };
     }
 
@@ -81,6 +86,7 @@ export class RecursiveRunner {
         user: prompt,
         model: MODEL_POWER,
         temperature: 0.1,
+        maxTokens: 1000,
         jsonMode: true,
       });
 

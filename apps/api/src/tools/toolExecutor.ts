@@ -24,7 +24,7 @@ class ToolExecutor {
    * Executes a tool call and stores the result as an artifact.
    */
   async execute(call: ToolCall): Promise<any> {
-    const { toolName, arguments: args, missionId, taskId, userId, workspaceId } = call;
+    let { toolName, arguments: args, missionId, taskId, userId, workspaceId } = call;
 
     console.log(`[ToolExecutor] 🛠️ Executing tool: ${toolName} for task: ${taskId} by user: ${userId}`);
 

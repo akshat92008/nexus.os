@@ -92,6 +92,7 @@ export class SemanticBridge {
         user: prompt,
         model: MODEL_POWER,
         temperature: 0.1,
+        maxTokens: 1000,
       });
 
       return res.content;
@@ -120,6 +121,7 @@ export class SemanticBridge {
         user: prompt,
         model: MODEL_POWER,
         temperature: 0.0,
+        maxTokens: 800,
       });
 
       return res.content;
