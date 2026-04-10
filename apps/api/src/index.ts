@@ -132,7 +132,7 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'", 'https:'],
-      scriptSrc: ["'self'", ...(process.env.NODE_ENV === 'development' ? ["'unsafe-eval'"] : [])],
+      scriptSrc: ["'self'"],
       imgSrc: ["'self'", 'data:', 'https:'],
       connectSrc: ["'self'", 'https://*', 'wss://*'],
       fontSrc: ["'self'", 'https:'],
@@ -141,6 +141,7 @@ app.use(helmet({
       frameSrc: ["'none'"],
       baseUri: ["'self'"],
       formAction: ["'self'"],
+      upgradeInsecureRequests: {},
     },
   },
   crossOriginEmbedderPolicy: false,
@@ -483,10 +484,26 @@ app.get('/api/ready', async (req, res) => {
 });
 
 /**
- * Agent Registry
+ * Agent Registry (Ticket 5: Real Backend)
  */
 app.get('/api/agents', async (req, res) => {
-  res.json(Object.values(AGENT_REGISTRY));
+  try {
+    const supabase = await getSupabase();
+    const { data: agents, error } = await supabase
+      .from('agents')
+      .select('*')
+      .eq('is_active', true);
+
+    if (error) {
+      logger.error({ error: error.message }, '[API] Failed to fetch agents from database');
+      return res.status(500).json({ error: 'Failed to fetch agent marketplace' });
+    }
+
+    res.json(agents || []);
+  } catch (err: any) {
+    logger.error({ err: err.message }, '[API] Marketplace error');
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 /**

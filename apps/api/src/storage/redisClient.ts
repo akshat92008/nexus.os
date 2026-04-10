@@ -1,58 +1,94 @@
 /**
- * Nexus OS — Redis Client
+ * Nexus OS — Redis Client (with Resilient Fallback)
  *
- * Fixes applied:
- *  - Throws a clear error if REDIS_URL is missing (no silent null return)
- *  - Retry logic: 3 retries with 1-second delay between each
- *  - Exposes getRedis() for optional use (returns null only if REDIS_URL absent)
- *  - Exposes getRedisOrThrow() for callers that require Redis
+ * Implements a Graceful Degradation pattern (Ticket 4).
+ * If Redis is unavailable or fails during a call, it transparently 
+ * falls back to a local in-memory Map.
  */
 
 import Redis from 'ioredis';
+import { logger } from '../logger.js';
 
-let client: Redis | null = null;
+const localCache = new Map<string, string>();
 
-const MAX_RETRIES  = 3;
-const RETRY_DELAY  = 1000; // ms
+/**
+ * Resilient wrapper for Redis operations.
+ * Transparently falls back to in-memory Map on connection errors.
+ */
+class ResilientRedis {
+  constructor(private client: Redis | null) {}
+
+  async get(key: string): Promise<string | null> {
+    if (!this.client) return localCache.get(key) ?? null;
+    try {
+      return await this.client.get(key);
+    } catch (err: any) {
+      logger.warn({ key, err: err.message }, '[Redis] Get failed, falling back to local memory');
+      return localCache.get(key) ?? null;
+    }
+  }
+
+  async set(key: string, value: string, mode?: 'EX', duration?: number): Promise<'OK' | null> {
+    // Basic Map implementation ignores TTL for fallback
+    localCache.set(key, value);
+    
+    if (!this.client) return 'OK';
+    try {
+      if (mode === 'EX' && duration) {
+        return await this.client.set(key, value, mode, duration);
+      }
+      return await this.client.set(key, value);
+    } catch (err: any) {
+      logger.warn({ key, err: err.message }, '[Redis] Set failed, stored in local memory only');
+      return 'OK';
+    }
+  }
+
+  // Pass-through for other essential methods if needed
+  on(event: string, handler: (...args: any[]) => void) {
+    this.client?.on(event, handler);
+  }
+}
+
+let clientInstance: Redis | null = null;
+let safeClient: ResilientRedis | null = null;
 
 function buildClient(url: string): Redis {
   return new Redis(url, {
-    maxRetriesPerRequest: MAX_RETRIES,
+    maxRetriesPerRequest: 3,
     retryStrategy(times: number) {
-      const delay = Math.min(times * 100, 30000); // Exponential-ish backoff
-      return delay;
+      return Math.min(times * 100, 30000);
     },
-    enableReadyCheck:  true,
-    lazyConnect:       false,
+    enableReadyCheck: true,
+    lazyConnect: false,
   });
 }
 
 /**
- * Returns a Redis client if REDIS_URL is set, or null otherwise.
- * Safe to call in contexts where Redis is optional.
+ * Returns a ResilientRedis wrapper.
  */
-export function getRedis(): Redis | null {
-  if (!process.env.REDIS_URL) return null;
-  if (!client) {
-    client = buildClient(process.env.REDIS_URL);
-    client.on('error', (e) => console.warn('[Redis] Connection error:', e.message));
-    client.on('ready', ()  => console.info('[Redis] Connected'));
+export function getRedis(): ResilientRedis {
+  if (!safeClient) {
+    const url = process.env.REDIS_URL;
+    if (url) {
+      clientInstance = buildClient(url);
+      clientInstance.on('error', (e) => logger.warn({ err: e.message }, '[Redis] Connection error'));
+      clientInstance.on('ready', () => logger.info('[Redis] Connected'));
+    }
+    safeClient = new ResilientRedis(clientInstance);
   }
-  return client;
+  return safeClient;
 }
 
 /**
- * Returns a Redis client, throwing a descriptive error if REDIS_URL is missing.
- * Use this in all paths that require Redis.
+ * Kept for backward compatibility, now behaves like getRedis.
  */
-export function getRedisOrThrow(): Redis {
-  if (!process.env.REDIS_URL) {
-    throw new Error(
-      '[Redis] REDIS_URL environment variable is not set. ' +
-      'Set it to your Upstash Redis connection string.'
-    );
+export function getRedisOrThrow(): ResilientRedis {
+  const url = process.env.REDIS_URL;
+  if (!url) {
+    logger.error('[Redis] REDIS_URL not set, strictly using in-memory fallback');
   }
-  return getRedis()!;
+  return getRedis();
 }
 
 export default getRedis;
