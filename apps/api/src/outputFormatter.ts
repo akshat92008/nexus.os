@@ -178,9 +178,9 @@ export function transformToWorkspace(
     id: 'sec_insights',
     type: 'insight',
     title: 'Executive Insights',
-    content: ensureArray(synthesis.keyInsights).length > 0 
-      ? ensureArray(synthesis.keyInsights).map(i => ({ insight: i.insight, confidence: i.confidence || 'high' }))
-      : [{ insight: 'Synthesis complete.', confidence: 'high' }],
+    content: ensureArray<KeyInsight>(synthesis.keyInsights).length > 0 
+      ? ensureArray<KeyInsight>(synthesis.keyInsights).map(i => ({ insight: i.insight, confidence: i.confidence || 'high' }))
+      : [{ insight: 'Synthesis complete.', confidence: 'high' } as any],
     description: synthesis.executiveSummary || 'Strategizing next steps...',
   });
 

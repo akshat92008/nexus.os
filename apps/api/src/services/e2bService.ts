@@ -1,5 +1,5 @@
-import { CodeInterpreter } from '@e2b/code-interpreter';
-import { logger } from '../logger';
+import CodeInterpreter from '@e2b/code-interpreter';
+import { logger } from '../logger.js';
 
 /**
  * E2B Code Interpreter Service Wrapper

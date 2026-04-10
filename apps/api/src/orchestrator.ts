@@ -482,19 +482,20 @@ export async function cancelDurableMission(missionId: string): Promise<void> {
     await Promise.allSettled(toRemove.map((job) => job.remove()));
     logger.info(`[Orchestrator] Removed ${toRemove.length} queued task(s) for mission ${missionId}.`);
   } catch (err) {
-    logger.warn(`[Orchestrator] Queue drain failed for mission ${missionId}:`, err);
+    logger.warn({ err, missionId }, '[Orchestrator] Queue drain failed');
   }
 
   // 3. Broadcast a cancellation event so any open SSE streams close cleanly.
   //    The frontend listens for 'mission_cancelled' and stops the spinner.
   try {
-    eventBus.emit(missionId, {
+  try {
+    await eventBus.publish(missionId, {
       type: 'mission_cancelled',
       missionId,
       timestamp: new Date().toISOString(),
-    });
+    } as any);
   } catch (err) {
-    logger.warn(`[Orchestrator] eventBus emit failed for mission ${missionId}:`, err);
+    logger.warn({ err, missionId }, '[Orchestrator] eventBus publish failed');
   }
 
   logger.info(`[Orchestrator] Mission ${missionId} cancelled.`);

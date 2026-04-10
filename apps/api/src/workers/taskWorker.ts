@@ -396,7 +396,7 @@ export async function handlePostProcessing(
 export const taskWorker = new Worker<TaskJobData>(
   'tasks',
   async (job: Job<TaskJobData>) => {
-    const { taskId, missionId, workspaceId, agentType, input, contextFields } = job.data;
+    const { taskId, missionId, userId, workspaceId, agentType, input, contextFields } = job.data;
   const maxAttempts = job.opts.attempts ?? JOB_MAX_ATTEMPTS;
 
     logger.info({ taskId, missionId, agentType, attempt: job.attemptsMade + 1 }, 'Executing task');

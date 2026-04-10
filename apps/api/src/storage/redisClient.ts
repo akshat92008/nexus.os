@@ -6,7 +6,7 @@
  * falls back to a local in-memory Map.
  */
 
-import Redis from 'ioredis';
+import { Redis } from 'ioredis';
 import { logger } from '../logger.js';
 
 const localCache = new Map<string, string>();
@@ -41,6 +41,32 @@ class ResilientRedis {
     } catch (err: any) {
       logger.warn({ key, err: err.message }, '[Redis] Set failed, stored in local memory only');
       return 'OK';
+    }
+  }
+
+  async incr(key: string): Promise<number> {
+    if (!this.client) {
+      const val = parseInt(localCache.get(key) || '0', 10) + 1;
+      localCache.set(key, val.toString());
+      return val;
+    }
+    try {
+      return await this.client.incr(key);
+    } catch (err: any) {
+      logger.warn({ key, err: err.message }, '[Redis] Incr failed, using local memory');
+      const val = parseInt(localCache.get(key) || '0', 10) + 1;
+      localCache.set(key, val.toString());
+      return val;
+    }
+  }
+
+  async expire(key: string, seconds: number): Promise<number> {
+    if (!this.client) return 1;
+    try {
+      return await this.client.expire(key, seconds);
+    } catch (err: any) {
+      logger.warn({ key, err: err.message }, '[Redis] Expire failed');
+      return 1;
     }
   }
 

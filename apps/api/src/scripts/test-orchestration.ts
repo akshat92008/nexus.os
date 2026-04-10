@@ -19,13 +19,17 @@ async function testDrive() {
 
   try {
     // 1. Trigger Orchestration
-    const dag = await planMission(testGoal);
+    const sessionId = `test_${Date.now()}`;
     await startDurableMission({
-      dag,
+      goal: testGoal,
+      goalType: 'research',
       userId,
-      workspaceId: 'ws_test_prod_001'
+      sessionId,
+      workspaceId: 'ws_test_prod_001',
+      res: { write: () => {}, end: () => {} } as any,
+      isAborted: () => false
     });
-    const { missionId } = dag;
+    const missionId = sessionId;
 
     console.log(`✅ Mission Created: ${missionId}`);
 
