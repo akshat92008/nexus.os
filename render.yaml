@@ -27,6 +27,16 @@ services:
         sync: true
       - key: REDIS_URL
         sync: true
+      - key: LOG_LEVEL
+        value: info
+      - key: STRIPE_SECRET_KEY
+        sync: true
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: true
+      - key: STRIPE_PRICE_ID_PRO
+        sync: true
+      - key: STRIPE_PRICE_ID_ENTERPRISE
+        sync: true
 
   - type: worker
     name: nexus-task-worker
@@ -54,4 +64,6 @@ services:
         sync: true
       - key: REDIS_URL
         sync: true
+      - key: LOG_LEVEL
+        value: info
 
