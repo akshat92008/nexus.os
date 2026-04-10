@@ -454,14 +454,83 @@ export async function startDurableMission(params: {
   });
 }
 
+import { missionsQueue, tasksQueue } from './queue/queue.js';
+import { getSupabase } from './storage/supabaseClient.js';
+import { eventBus } from './events/eventBus.js';
+
 /**
  * Cancels a running mission by its ID.
- * In this architecture, cancellation is handled by the SSE abort signal.
- * This function is a no-op stub kept for API compatibility.
+ * Terminates all running tasks, updates mission status, and emits cancellation event.
  */
 export async function cancelDurableMission(missionId: string): Promise<void> {
   logger.info({ missionId }, 'Mission cancel requested');
-  // Cancellation is handled client-side via the isAborted() closure.
-  // Add Supabase mission status update here when persistence is wired.
+
+  const supabase = await getSupabase();
+
+  // Update mission status to cancelled atomically
+  const { error } = await supabase
+    .from('nexus_missions')
+    .update({
+      status: 'cancelled',
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', missionId)
+    .in('status', ['queued', 'running']);
+
+  if (error) {
+    logger.error({ missionId, error: error.message }, 'Failed to update mission status during cancellation');
+  }
+
+  // Cancel all pending jobs in mission queue
+  try {
+    const job = await missionsQueue.getJob(missionId);
+    if (job) {
+      await job.remove();
+      logger.info({ missionId }, 'Removed mission from execution queue');
+    }
+  } catch (queueErr: any) {
+    logger.warn({ missionId, error: queueErr.message }, 'Could not remove mission from queue');
+  }
+
+  // Cancel all associated tasks
+  try {
+    const tasks = await supabase
+      .from('tasks')
+      .select('id')
+      .eq('mission_id', missionId)
+      .in('status', ['queued', 'running']);
+
+    if (tasks.data) {
+      for (const task of tasks.data) {
+        try {
+          const taskJob = await tasksQueue.getJob(task.id);
+          if (taskJob) {
+            await taskJob.remove();
+          }
+        } catch {}
+      }
+
+      // Bulk update all pending tasks to cancelled
+      await supabase
+        .from('tasks')
+        .update({
+          status: 'cancelled',
+          updated_at: new Date().toISOString()
+        })
+        .eq('mission_id', missionId)
+        .in('status', ['queued', 'running']);
+    }
+  } catch (taskErr: any) {
+    logger.warn({ missionId, error: taskErr.message }, 'Error cancelling mission tasks');
+  }
+
+  // Emit cancellation event to all active SSE streams
+  await eventBus.publish(missionId, {
+    type: 'mission_cancelled',
+    missionId,
+    timestamp: new Date().toISOString()
+  });
+
+  logger.info({ missionId }, 'Mission successfully cancelled');
 }
 

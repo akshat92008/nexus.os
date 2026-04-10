@@ -122,7 +122,22 @@ export async function fetchWithTimeout(url, options = {}, timeoutMs = 10000, ret
 const app: express.Express = express();
 
 app.use(helmet({
-  contentSecurityPolicy: false,
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'", 'https:'],
+      scriptSrc: ["'self'", "'unsafe-eval'"],
+      imgSrc: ["'self'", 'data:', 'https:'],
+      connectSrc: ["'self'", 'https://*', 'wss://*'],
+      fontSrc: ["'self'", 'https:'],
+      objectSrc: ["'none'"],
+      mediaSrc: ["'self'"],
+      frameSrc: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+    },
+  },
+  crossOriginEmbedderPolicy: false,
 }));
 app.use(express.json({ limit: '1mb' }));
 app.use((req, res, next) => {
@@ -136,6 +151,19 @@ app.use((req, res, next) => {
 app.use('/api/llm/providers', llmHealthRouter);
 // --- Master Brain Health Endpoint ---
 app.use('/api/master', masterBrainRouter);
+
+/**
+ * Billing & Stripe Integration (Issue 12 Scaffolding)
+ */
+app.post('/api/billing/checkout', requireAuth, async (req, res) => {
+  // Placeholder: Implement Stripe Checkout session creation here
+  res.status(501).json({ error: 'Checkout flow not yet implemented. Please contact support to top up credits.' });
+});
+
+app.post('/api/billing/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  // Placeholder: Implement Stripe Webhook signature verification and ledger credit top-up here
+  res.json({ received: true });
+});
 
 // ...existing code...
 
@@ -354,6 +382,7 @@ const globalLimiter = rateLimit({
   max: 100,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req: any) => req.user?.id || req.ip || 'anonymous',
   message: { error: 'Too many requests — max 100/min' },
 });
 app.use(globalLimiter);
@@ -363,6 +392,7 @@ const orchestrateLimiter = rateLimit({
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req: any) => req.user?.id || req.ip || 'anonymous',
   message: { error: 'Too many requests' },
 });
 
@@ -720,3 +750,23 @@ if (!process.env.VERCEL) {
     logger.info({ allowedOrigins: ALLOWED_ORIGINS }, 'CORS origins configured');
   });
 }
+
+/**
+ * 🚨 Global Express Error Handler (Issue 14a)
+ * Catches unhandled promise rejections and sync throws to prevent process crashes.
+ */
+app.use((err: any, req: Request, res: Response, next: express.NextFunction) => {
+  const requestId = (req as any).requestId || 'unknown';
+  logger.fatal({ err: err.message, stack: err.stack, requestId, path: req.path }, 'Unhandled API Exception');
+
+  // If headers already sent, we must delegate to default handler
+  if (res.headersSent) {
+    return next(err);
+  }
+
+  res.status(500).json({
+    error: 'Internal Server Error',
+    requestId,
+    message: process.env.NODE_ENV === 'production' ? 'An unexpected error occurred.' : err.message
+  });
+});

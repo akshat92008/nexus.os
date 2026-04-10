@@ -49,7 +49,8 @@ export class VectorStore {
       });
       if (error) throw new Error(`[VectorStore] Store failed: ${error.message}`);
     } catch (err: any) {
-      console.warn('[VectorStore] Embedding disabled or failed:', err.message || err);
+      console.error('[VectorStore] 🚨 Critical: Embedding failed. Mission memory is degrading:', err.message || err);
+      throw err; // Re-throw to prevent silent failure
     }
   }
 
@@ -64,8 +65,8 @@ export class VectorStore {
       if (error) throw new Error(`[VectorStore] Search failed: ${error.message}`);
       return data ?? [];
     } catch (err: any) {
-      console.warn('[VectorStore] Search skipped because embedding failed or no provider configured:', err.message || err);
-      return [];
+      console.error('[VectorStore] 🚨 Critical: Search skipped because embedding failed:', err.message || err);
+      throw err;
     }
   }
 

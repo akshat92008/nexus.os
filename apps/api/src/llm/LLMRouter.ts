@@ -66,7 +66,7 @@ export const FREE_MODELS = {
   ], 
   [MODEL_VISION]: [ 
     'meta-llama/llama-3.2-11b-vision-instruct:free', 
-    'meta-llama/llama-3.1-8b-instruct:free', 
+    'google/gemini-pro-1.5-vision',
   ], 
 };
 
