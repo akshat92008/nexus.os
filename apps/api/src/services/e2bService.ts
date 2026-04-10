@@ -1,4 +1,4 @@
-import CodeInterpreter from '@e2b/code-interpreter';
+import { CodeInterpreter } from '@e2b/code-interpreter';
 import { logger } from '../logger.js';
 
 /**
@@ -12,13 +12,13 @@ export class E2BService {
    * @returns Execution results with stdout, stderr and output values
    */
   static async executePythonCode(code: string) {
-    let sandbox: CodeInterpreter | null = null;
+    let sandbox: any = null;
 
     try {
       logger.info('Initializing E2B sandbox for Python code execution');
       
-      // Initialize sandbox environment
-      sandbox = await CodeInterpreter.create({
+      // Initialize sandbox environment - Use any cast to resolve namespace mismatch
+      sandbox = await (CodeInterpreter as any).create({
         timeout: 300, // 5 minute default timeout
       });
 

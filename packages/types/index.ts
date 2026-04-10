@@ -103,6 +103,7 @@ export interface TaskDAG {
   estimatedWaves: number;
   metadata?: Record<string, any>;
   requiresApproval?: boolean;           // NEW: Strategic checkpoint for HITL
+  config?: Record<string, any>;         // NEW: Legacy compat for RecursiveRunner
 }
 
 // ── Typed Artifacts ────────────────────────────────────────────────────────
