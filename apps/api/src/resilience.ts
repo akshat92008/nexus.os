@@ -14,10 +14,10 @@ const DEFAULT_OPTIONS: Required<RetryOptions> = {
 
 /**
  * Native resilience utility to wrap external calls with retries and timeouts.
- * No external libraries used.
+ * Each attempt gets its own AbortSignal for true cancellation support.
  */
 export async function withRetry<T>(
-  operation: () => Promise<T>,
+  operation: (signal: AbortSignal) => Promise<T>,
   label: string,
   options: RetryOptions = {}
 ): Promise<T> {
@@ -25,24 +25,23 @@ export async function withRetry<T>(
   let lastError: any;
 
   for (let attempt = 1; attempt <= retries; attempt++) {
-    try {
-      // Timeout Logic
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeout);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      controller.abort(new Error(`[${label}] Timeout after ${timeout}ms`));
+    }, timeout);
 
-      // Race the operation against the timeout
-      // Note: only works if the operation supports AbortSignal or is a simple promise
+    try {
+      // Pass the AbortSignal into the operation so it can honour cancellation
       const result = await Promise.race([
-        operation(),
+        operation(controller.signal),
         new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error(`[${label}] Timeout after ${timeout}ms`)), timeout)
         ),
       ]);
-
       clearTimeout(timeoutId);
       return result;
-
     } catch (err: any) {
+      clearTimeout(timeoutId);
       lastError = err;
       const isFinalAttempt = attempt === retries;
 
@@ -50,7 +49,7 @@ export async function withRetry<T>(
         const delay = initialDelay * Math.pow(2, attempt - 1);
         logger.warn(
           { label, attempt, nextRetryDelay: delay, error: err.message },
-          `External call failure, retrying...`
+          'External call failure, retrying...'
         );
         await new Promise((resolve) => setTimeout(resolve, delay));
       } else {
@@ -76,21 +75,15 @@ export async function fetchWithResilience(
   const { timeout = 10000 } = resilienceOpts;
 
   return withRetry(
-    async () => {
-      const controller = new AbortController();
-      const id = setTimeout(() => controller.abort(), timeout);
-      try {
-        const response = await fetch(url, {
-          ...options,
-          signal: controller.signal,
-        });
-        if (!response.ok && response.status !== 404) {
-          throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
-        }
-        return response;
-      } finally {
-        clearTimeout(id);
+    async (signal) => {
+      const response = await fetch(url, {
+        ...options,
+        signal,
+      });
+      if (!response.ok && response.status !== 404) {
+        throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
       }
+      return response;
     },
     `Fetch: ${url}`,
     resilienceOpts

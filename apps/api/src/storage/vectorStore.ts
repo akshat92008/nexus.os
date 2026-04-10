@@ -42,7 +42,7 @@ export class VectorStore {
     try {
       const embedding = await getEmbedding(content);
       const client = await getSupabase();
-      const { error } = await withRetry(async () => {
+      const { error } = await withRetry(async (_signal) => {
         const result = await client.from('embeddings').insert({
           content,
           embedding,
@@ -62,7 +62,7 @@ export class VectorStore {
     try {
       const embedding = await getEmbedding(query);
       const client = await getSupabase();
-      const { data, error } = await withRetry(async () => {
+      const { data, error } = await withRetry(async (_signal) => {
         const result = await client.rpc('match_embeddings', {
           query_embedding: embedding,
           match_count: limit,

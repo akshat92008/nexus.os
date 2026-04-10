@@ -63,7 +63,7 @@ export function ensureWorkspaceDefaults(workspace: Workspace): Workspace {
 export class UserStateStore {
   async getUserState(userId: string): Promise<UserStateSnapshot> {
     const client = await getSupabase();
-    const { data, error } = await withRetry(async () => {
+    const { data, error } = await withRetry(async (_signal) => {
       const result = await client
         .from('nexus_state')
         .select('state')
@@ -96,7 +96,7 @@ export class UserStateStore {
       updatedAt: Date.now(),
     };
 
-    const { error } = await withRetry(async () => {
+    const { error } = await withRetry(async (_signal) => {
       const result = await client
         .from('nexus_state')
         .upsert({ id: userId, state: nextState, updated_at: new Date().toISOString() });

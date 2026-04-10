@@ -141,7 +141,7 @@ export class LLMRouter {
         }
         try {
           const response = await withRetry(
-            () => this.openRouterBreaker.fire({ ...opts, model }),
+            (_signal) => this.openRouterBreaker.fire({ ...opts, model }),
             `LLM: OpenRouter:${model}`,
             { retries: 2, timeout: 15000 }
           );
@@ -167,7 +167,7 @@ export class LLMRouter {
     if (this.shouldUseProvider('gemini')) {
       try {
         const response = await withRetry(
-          () => this.geminiBreaker.fire(opts),
+          (_signal) => this.geminiBreaker.fire(opts),
           'LLM: Gemini',
           { retries: 2, timeout: 20000 }
         );
@@ -185,7 +185,7 @@ export class LLMRouter {
       try {
         const groqModel = this.mapToGroqModel(tier);
         const response = await withRetry(
-          () => this.groqBreaker.fire({ ...opts, model: groqModel }),
+          (_signal) => this.groqBreaker.fire({ ...opts, model: groqModel }),
           `LLM: Groq:${groqModel}`,
           { retries: 2, timeout: 10000 }
         );

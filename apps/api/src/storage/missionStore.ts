@@ -274,7 +274,7 @@ export class MissionStore {
 
   async fetchArtifactsByContext(missionId: string, taskIds: string[]) {
     const client = await getSupabase();
-    return withRetry(async () => {
+    return withRetry(async (_signal) => {
       const { data, error } = await client
         .from('artifacts')
         .select('*')
@@ -288,7 +288,7 @@ export class MissionStore {
 
   async getTask(taskId: string) {
     const client = await getSupabase();
-    return withRetry(async () => {
+    return withRetry(async (_signal) => {
       const { data, error } = await client
         .from('tasks')
         .select('*, task_dependencies(depends_on_task_id)')
@@ -302,7 +302,7 @@ export class MissionStore {
 
   async getMissionById(missionId: string) {
     const client = await getSupabase();
-    return withRetry(async () => {
+    return withRetry(async (_signal) => {
       const { data, error } = await client
         .from('nexus_missions')
         .select('*')

@@ -199,15 +199,27 @@ class TransactionLedger {
     }
 
     // Deduct from Supabase user_credits balance
+    // deduct_user_credits returns BOOLEAN: TRUE = success, FALSE = insufficient balance
     if (client) {
-      const { error: deductError } = await (client as any).rpc('deduct_user_credits', {
+      const { data: deducted, error: deductError } = await (client as any).rpc('deduct_user_credits', {
         p_user_id: userId,
-        p_amount: PLATFORM_FEE_USD
+        p_amount: PLATFORM_FEE_USD,
       });
+
       if (deductError) {
-        console.error('[Ledger] Credit deduction failed:', deductError);
-        // We don't throw here to avoid failing the task after completion,
-        // but in a strict system we might.
+        console.error('[Ledger] Credit deduction DB error:', deductError);
+        // DB error — log and continue so task result is not lost
+      } else if (deducted === false) {
+        // Insufficient balance — this task ran on zero credits
+        console.warn(`[Ledger] ⚠️ Insufficient credits for user ${userId}. Task completed but no deduction made.`);
+        // Emit a low-balance warning event to the SSE stream
+        if (sseRes && !isAborted()) {
+          sseRes.write(`data: ${JSON.stringify({
+            type: 'insufficient_credits',
+            userId,
+            message: 'Your credit balance is empty. Top up at /billing to continue.',
+          })}\n\n`);
+        }
       }
     }
 
