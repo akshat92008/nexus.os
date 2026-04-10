@@ -129,9 +129,12 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
 
 
   // 1. Semantic Context Synthesis
-  const briefing = context.entries.length > 0
-    ? await semanticBridge.synthesizeBriefing(goal, context.entries, task)
-    : 'No prior context available. Start from scratch.';
+  if (context.entries.length > 0) {
+    await missionStore.updateTaskCheckpoint(task.id, { step: 'Briefing Context Synthesis' });
+    briefing = await semanticBridge.synthesizeBriefing(goal, context.entries, task);
+  } else {
+    briefing = 'No prior context available. Start from scratch.';
+  }
 
   const synthesizedContext: AgentContext = {
     ...context,
@@ -144,30 +147,34 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
 
   if (isAborted()) throw new Error('[Canceled] Mission aborted');
 
-  // 2. Council of Three (Logical Cross-Examination)
-  if (task.priority === 'critical' && task.agentType !== 'chief_analyst') {
     logger.info({ taskId: task.id }, 'Council of Three activated for Critical Task');
     
+    await missionStore.updateTaskCheckpoint(task.id, { step: 'Council of Three: Specialist Consultation' });
     const [specialist1, specialist2] = await Promise.all([
       callGroq({ system, user, model: MODEL_FAST, maxTokens, temperature: 0.4, jsonMode: expectsJson }),
       callGroq({ system, user, model: MODEL_FAST, maxTokens, temperature: 0.7, jsonMode: expectsJson }),
     ]);
 
+    await missionStore.updateTaskCheckpoint(task.id, { step: 'Council of Three: Master Brain Synthesis' });
     const judgePrompt = `
-      You are the NexusOS Reasoning Judge.
+      You are the NexusOS Reasoning Judge (Master Brain Tie-breaker).
       MISSION GOAL: "${goal}"
       TARGET TASK: "${task.label}"
 
-      AGENT OUTPUT 1:
+      AGENT OUTPUT 1 (Standard Temperature):
       ${specialist1.content}
 
-      AGENT OUTPUT 2:
+      AGENT OUTPUT 2 (High Temperature/Exploratory):
       ${specialist2.content}
 
       REASONING TASK:
       1. Identify contradictions or factual errors.
       2. Resolve logical inconsistencies.
       3. Synthesize a single, "Verified Artifact". 
+      
+      MASTER OVERRIDE: 
+      If AGENT 1 and AGENT 2 disagree on fundamental facts, you must act as the ultimate arbiter. 
+      Prioritize the most logically sound and goal-aligned evidence.
 
       Respond ONLY with final verified content.
     `;
@@ -252,6 +259,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
   const shouldStream = (maxTokens >= 2000) && !!sseRes;
 
   try {
+    await missionStore.updateTaskCheckpoint(task.id, { step: `Execution (${task.agentType})` });
     const { content, tokens } = await callGroq({
       system,
       user,

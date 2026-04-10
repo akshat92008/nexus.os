@@ -68,12 +68,38 @@ class EventBus {
   }
 
   async publish(missionId: string, event: NexusEvent): Promise<void> {
-    await this.publisher.publish(`mission:${missionId}`, JSON.stringify(event));
-    await this.publisher.publish('nexus_global_events', JSON.stringify(event));
+    const message = JSON.stringify(event);
+    
+    // ── SSE Buffering (Ticket 2) ───────────────────────────────────────────
+    // Store in a Redis list with 5-minute TTL to allow reconnection catch-up
+    const historyKey = `mission:history:${missionId}`;
+    await this.publisher.lpush(historyKey, message);
+    await this.publisher.ltrim(historyKey, 0, 99); // Keep last 100 events
+    await this.publisher.expire(historyKey, 300);   // 5 minute TTL
+    
+    await this.publisher.publish(`mission:${missionId}`, message);
+    await this.publisher.publish('nexus_global_events', message);
   }
 
-  async subscribe(missionId: string, handler: (event: NexusEvent) => void): Promise<void> {
+  /**
+   * Subscribes to mission events. 
+   * (Ticket 2) Optionally replays history from Redis if lastEventId is provided.
+   */
+  async subscribe(missionId: string, handler: (event: NexusEvent) => void, lastEventId?: string): Promise<void> {
     const channel = `mission:${missionId}`;
+    
+    // Catch-up logic for Ticket 2
+    if (lastEventId) {
+      const historyKey = `mission:history:${missionId}`;
+      const history = await this.publisher.lrange(historyKey, 0, -1);
+      // Redis LPUSH keeps newest first, so we reverse to play in chronological order
+      // Note: This simple implementation just replays ALL buffered events for safety
+      // as NexusEvent doesn't have unique sequential IDs yet.
+      for (const msg of history.reverse()) {
+        try { handler(JSON.parse(msg)); } catch {}
+      }
+    }
+
     if (!this.listeners.has(channel)) {
       this.listeners.set(channel, new Set());
       await this.subscriber.subscribe(channel);
