@@ -1,4 +1,5 @@
 /**
+import { logger } from "./logger.js";
  * Nexus OS — Rate Limit Governor
  *
  * A centralized concurrency controller for all Groq LLM calls.
@@ -67,7 +68,7 @@ export class RateLimitGovernor {
     this.lastRefill = Date.now();
 
     const redis = getRedis(); 
-    console.log(`[Governor] Running in ${redis ? 'distributed (Redis)' : 'local (in-memory)'} mode`); 
+    logger.info(`[Governor] Running in ${redis ? 'distributed (Redis)' : 'local (in-memory)'} mode`); 
 
     this.recoveryTimer = setInterval(() => {
       void this.drainRecoveryQueue();
@@ -144,7 +145,7 @@ export class RateLimitGovernor {
           this.paused = true;
           this.pauseUntil = Date.now() + pauseMs;
           void this.syncPause(pauseMs); 
-          console.warn(
+          logger.warn(
             `[Governor] 🔴 Global pause ${Math.round(pauseMs / 1000)}s ` +
             `(attempt ${attempt + 1}/${MAX_ATTEMPTS})`
           );
@@ -155,7 +156,7 @@ export class RateLimitGovernor {
       }
 
       if (is429 && attempt >= MAX_ATTEMPTS) {
-        console.warn(`[Governor] 🌊 Task exhausted max retries. Moving to Recovery Wave.`);
+        logger.warn(`[Governor] 🌊 Task exhausted max retries. Moving to Recovery Wave.`);
         this.enqueueRecovery(fn, err);
         throw new Error(`[Governor] Moved to recovery wave due to persistent rate limits.`);
       }
@@ -181,7 +182,7 @@ export class RateLimitGovernor {
         const remoteUntil = parseInt(val); 
         if (remoteUntil > Date.now()) { 
           const wait = remoteUntil - Date.now(); 
-          console.warn(`[Governor] Distributed pause active — waiting ${Math.round(wait/1000)}s`); 
+          logger.warn(`[Governor] Distributed pause active — waiting ${Math.round(wait/1000)}s`); 
           await sleep(wait); 
         } 
       } 
@@ -244,17 +245,17 @@ export class RateLimitGovernor {
     for (const item of readyToRun) {
       try {
         await this.execute(item.fn);
-        console.warn('[Governor] Recovery wave successfully re-ran a deferred task.');
+        logger.warn('[Governor] Recovery wave successfully re-ran a deferred task.');
       } catch (err) {
         if (this.is429Error(err) && item.recoveryAttempts + 1 < MAX_RECOVERY_ATTEMPTS) {
-          console.warn(
+          logger.warn(
             `[Governor] Recovery task still rate limited. Re-queueing (attempt ${item.recoveryAttempts + 2}/${MAX_RECOVERY_ATTEMPTS}).`
           );
           this.enqueueRecovery(item.fn, err, item.recoveryAttempts + 1);
           continue;
         }
 
-        console.error('[Governor] Recovery task failed permanently:', err ?? item.failRecord);
+        logger.error('[Governor] Recovery task failed permanently:', err ?? item.failRecord);
       }
     }
   }
@@ -328,7 +329,7 @@ export async function checkAndConsume(userId: string): Promise<RateLimitResult> 
 
   if (!redis) {
     // Redis unavailable — allow the call but log a warning
-    console.warn('[RateLimitGovernor] Redis unavailable — skipping per-user rate limit check');
+    logger.warn('[RateLimitGovernor] Redis unavailable — skipping per-user rate limit check');
     return { allowed: true, remaining: USER_LLM_LIMIT };
   }
 
@@ -345,12 +346,12 @@ export async function checkAndConsume(userId: string): Promise<RateLimitResult> 
     const allowed   = count <= USER_LLM_LIMIT;
 
     if (!allowed) {
-      console.warn(`[RateLimitGovernor] User ${userId} exceeded hourly LLM quota (${count}/${USER_LLM_LIMIT})`);
+      logger.warn(`[RateLimitGovernor] User ${userId} exceeded hourly LLM quota (${count}/${USER_LLM_LIMIT})`);
     }
 
     return { allowed, remaining };
   } catch (err) {
-    console.error('[RateLimitGovernor] Redis error in checkAndConsume:', err);
+    logger.error('[RateLimitGovernor] Redis error in checkAndConsume:', err);
     // Fail open — don't block users if Redis errors
     return { allowed: true, remaining: USER_LLM_LIMIT };
   }

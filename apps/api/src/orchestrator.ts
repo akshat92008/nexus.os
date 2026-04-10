@@ -22,6 +22,7 @@ import { sandboxOutputBuffer } from './events/sandboxOutputBuffer.js';
 import { missionsQueue, tasksQueue } from './queue/queue.js';
 import { eventBus } from './events/eventBus.js';
 import { getSupabase } from './storage/supabaseClient.js';
+import { missionStore } from './storage/missionStore.js';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -52,11 +53,11 @@ function safeEmit(res: Response, event: object, isAborted: () => boolean, sessio
   try {
     res.write(`data: ${JSON.stringify(event)}\n\n`);
   } catch (err) {
-    console.error(`[Orchestrator] SSE write failed for session ${sessionId}:`, err);
+    logger.error(`[Orchestrator] SSE write failed for session ${sessionId}:`, err);
     if (sessionId) {
       // Resilience: push to sandboxOutputBuffer for later retrieval (taskId="system", type="stdout")
       sandboxOutputBuffer.append(sessionId, 'system', 'stdout', JSON.stringify(event))
-        .catch(e => console.error('[Orchestrator] Resilience buffer failed:', e));
+        .catch(e => logger.error('[Orchestrator] Resilience buffer failed:', e));
     }
   }
 }
@@ -188,7 +189,7 @@ async function executeTask(
       registry.markCompleted?.(task.id, `artifact:${task.id}`);
 
       ledger.recordTransaction(userId, task.id, task.label, task.agentType, result.tokensUsed, res, isAborted)
-        .catch(e => console.warn('[Orchestrator] Ledger write warning:', e));
+        .catch(e => logger.warn('[Orchestrator] Ledger write warning:', e));
       
       return; // Success!
 
@@ -204,7 +205,7 @@ async function executeTask(
 
       // Exponential Backoff
       const backoff = Math.pow(2, attempt) * 1000;
-      console.warn(`[Orchestrator] Task ${task.id} failed (attempt ${attempt}). Retrying in ${backoff}ms... Error: ${message}`);
+      logger.warn(`[Orchestrator] Task ${task.id} failed (attempt ${attempt}). Retrying in ${backoff}ms... Error: ${message}`);
       
       safeEmit(res, {
         type: 'retrying',
@@ -244,7 +245,7 @@ export async function orchestrateDAG(deps: OrchestratorDeps): Promise<void> {
     }
   } catch (err: any) {
     if (err.message === 'Insufficient credits') throw err;
-    console.warn(`[Orchestrator] Initialization warning for mission ${dag.missionId}:`, err);
+    logger.warn(`[Orchestrator] Initialization warning for mission ${dag.missionId}:`, err);
   }
 
   dag.nodes.forEach((n) => registry.initTask?.(n.id));
@@ -328,13 +329,13 @@ export async function orchestrateDAG(deps: OrchestratorDeps): Promise<void> {
     try {
       await nexusStateStore.updateMissionStatus(dag.missionId, 'complete', new Date().toISOString());
     } catch (err) {
-      console.warn(`[Orchestrator] Failed to persist mission complete status for ${dag.missionId}:`, err);
+      logger.warn(`[Orchestrator] Failed to persist mission complete status for ${dag.missionId}:`, err);
     }
   } else if (isAborted()) {
     try {
       await nexusStateStore.updateMissionStatus(dag.missionId, 'aborted');
     } catch (err) {
-      console.warn(`[Orchestrator] Failed to persist mission aborted status for ${dag.missionId}:`, err);
+      logger.warn(`[Orchestrator] Failed to persist mission aborted status for ${dag.missionId}:`, err);
     }
   }
 }
@@ -349,7 +350,7 @@ export async function executeSingleAction(
   res:        any,
   isAborted:  () => boolean
 ): Promise<void> {
-  console.log(`[Orchestrator] ⚡ Executing ad-hoc action: ${actionId}`);
+  logger.info(`[Orchestrator] ⚡ Executing ad-hoc action: ${actionId}`);
   
   // Load workspace from Supabase via nexusStateStore using workspaceId
   const state = await nexusStateStore.getUserState(userId);
@@ -463,14 +464,14 @@ export async function startDurableMission(params: {
  * Cancels a running mission by its ID.
  */
 export async function cancelDurableMission(missionId: string): Promise<void> {
-  console.log(`[Orchestrator] Cancelling mission ${missionId}...`);
+  logger.info(`[Orchestrator] Cancelling mission ${missionId}...`);
 
   // 1. Mark cancelled in DB — UI will reflect this on next poll/reconnect
   try {
     await nexusStateStore.updateMissionStatus(missionId, 'cancelled');
   } catch (err) {
     // Non-fatal: the queue drain still matters even if DB write fails
-    console.warn(`[Orchestrator] Could not update mission status in DB:`, err);
+    logger.warn(`[Orchestrator] Could not update mission status in DB:`, err);
   }
 
   // 2. Drain queued BullMQ tasks that belong to this mission.
@@ -479,9 +480,9 @@ export async function cancelDurableMission(missionId: string): Promise<void> {
     const waitingJobs = await tasksQueue.getJobs(['waiting', 'delayed', 'prioritized']);
     const toRemove = waitingJobs.filter((job) => job.data?.missionId === missionId);
     await Promise.allSettled(toRemove.map((job) => job.remove()));
-    console.log(`[Orchestrator] Removed ${toRemove.length} queued task(s) for mission ${missionId}.`);
+    logger.info(`[Orchestrator] Removed ${toRemove.length} queued task(s) for mission ${missionId}.`);
   } catch (err) {
-    console.warn(`[Orchestrator] Queue drain failed for mission ${missionId}:`, err);
+    logger.warn(`[Orchestrator] Queue drain failed for mission ${missionId}:`, err);
   }
 
   // 3. Broadcast a cancellation event so any open SSE streams close cleanly.
@@ -493,9 +494,9 @@ export async function cancelDurableMission(missionId: string): Promise<void> {
       timestamp: new Date().toISOString(),
     });
   } catch (err) {
-    console.warn(`[Orchestrator] eventBus emit failed for mission ${missionId}:`, err);
+    logger.warn(`[Orchestrator] eventBus emit failed for mission ${missionId}:`, err);
   }
 
-  console.log(`[Orchestrator] Mission ${missionId} cancelled.`);
+  logger.info(`[Orchestrator] Mission ${missionId} cancelled.`);
 }
 

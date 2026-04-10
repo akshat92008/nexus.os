@@ -4,12 +4,13 @@ import { GroqProvider } from './GroqProvider.js';
 import { rateLimitMonitor } from './RateLimitMonitor.js';
 import { createBreaker } from '../circuitBreaker.js';
 import { withRetry } from '../resilience.js';
+import { logger } from '../logger.js';
 // --- Gemini/Claude/Local Fallback Providers (stubs) ---
 class GeminiProvider {
   async call(opts: LLMCallOpts): Promise<LLMResponse> {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) throw new Error('GEMINI_API_KEY not set');
-    const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=' + apiKey;
+    const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' + apiKey;
     const body = {
       contents: [{ role: 'user', parts: [{ text: `System: ${opts.system}\n\nUser: ${opts.user}` }]}],
       generationConfig: {
@@ -107,7 +108,7 @@ export class LLMRouter {
   async call(opts: LLMCallOpts): Promise<LLMResponse> {
     // 0. Context Compression Middleware
     if (opts.user.length > 20000) {
-      console.log(`[LLMRouter] 🗜️ Compressing large user context (${opts.user.length} chars)...`);
+      logger.info(`[LLMRouter] 🗜️ Compressing large user context (${opts.user.length} chars)...`);
       try {
         const summary = await this.call({
           system: 'Summarize the following agent findings concisely, preserving all key metrics, names, and strategic decisions. Output a bulleted list.',
@@ -118,7 +119,7 @@ export class LLMRouter {
         });
         opts.user = `[SUMMARY OF PRIOR CONTEXT]\n${summary.content}\n\n[LATEST CONTEXT]\n${opts.user.slice(-5000)}`;
       } catch (err) {
-        console.warn('[LLMRouter] Context compression failed, proceeding with truncated text:', err);
+        logger.warn('[LLMRouter] Context compression failed, proceeding with truncated text:', err);
         opts.user = opts.user.slice(0, 20000);
       }
     }
@@ -136,15 +137,11 @@ export class LLMRouter {
         const modelIndex = (startIndex + attempt) % models.length;
         const model = models[modelIndex];
         if (rateLimitMonitor.isRateLimited('openrouter', model)) {
-          console.warn(`[LLMRouter] Skipping rate-limited OpenRouter model ${model}.`);
+          logger.warn(`[LLMRouter] Skipping rate-limited OpenRouter model ${model}.`);
           continue;
         }
         try {
-          const response = await withRetry(
-            (_signal) => this.openRouterBreaker.fire({ ...opts, model }),
-            `LLM: OpenRouter:${model}`,
-            { retries: 2, timeout: 15000 }
-          );
+          const response = await this.openRouterBreaker.fire({ ...opts, model });
           this.rotationIndices[tier] = (modelIndex + 1) % models.length;
           rateLimitMonitor.recordSuccess('openrouter', model);
           return response;
@@ -154,11 +151,11 @@ export class LLMRouter {
           if (isRateLimit) {
             const retryAfter = this.extractRetryAfter(err.message);
             rateLimitMonitor.recordRateLimit('openrouter', model, retryAfter, err.message);
-            console.warn(`[LLMRouter] OpenRouter model ${model} rate limited, trying next model...`);
+            logger.warn(`[LLMRouter] OpenRouter model ${model} rate limited, trying next model...`);
             continue;
           }
           rateLimitMonitor.recordFailure('openrouter', model);
-          console.error(`[LLMRouter] OpenRouter error with ${model}: ${err.message}`);
+          logger.error(`[LLMRouter] OpenRouter error with ${model}: ${err.message}`);
         }
       }
     }
@@ -166,17 +163,13 @@ export class LLMRouter {
     // 2. Try Gemini (if available)
     if (this.shouldUseProvider('gemini')) {
       try {
-        const response = await withRetry(
-          (_signal) => this.geminiBreaker.fire(opts),
-          'LLM: Gemini',
-          { retries: 2, timeout: 20000 }
-        );
+        const response = await this.geminiBreaker.fire(opts);
         rateLimitMonitor.recordSuccess('gemini', opts.model);
         return response;
       } catch (err: any) {
         lastError = err;
         rateLimitMonitor.recordFailure('gemini', opts.model);
-        console.error(`[LLMRouter] Gemini error: ${err.message}`);
+        logger.error(`[LLMRouter] Gemini error: ${err.message}`);
       }
     }
 
@@ -184,26 +177,26 @@ export class LLMRouter {
     if (this.shouldUseProvider('groq')) {
       try {
         const groqModel = this.mapToGroqModel(tier);
-        const response = await withRetry(
-          (_signal) => this.groqBreaker.fire({ ...opts, model: groqModel }),
-          `LLM: Groq:${groqModel}`,
-          { retries: 2, timeout: 10000 }
-        );
+        const response = await this.groqBreaker.fire({ ...opts, model: groqModel });
         rateLimitMonitor.recordSuccess('groq', groqModel);
         return response;
       } catch (err: any) {
         const isRateLimit = err.message?.includes('429') || err.message?.toLowerCase().includes('rate limit');
         if (isRateLimit) {
           const retryAfter = this.extractRetryAfter(err.message);
-          rateLimitMonitor.recordRateLimit('groq', this.mapToGroqModel(tier), retryAfter, err.message);
+          rateLimitMonitor.recordRateLimit('groq', groqModel, retryAfter);
+          logger.warn(`[LLMRouter] Groq rate limited: ${err.message}. Model: ${groqModel}. Retry in ${retryAfter}s`);
         } else {
-          rateLimitMonitor.recordFailure('groq', this.mapToGroqModel(tier));
+          rateLimitMonitor.recordFailure('groq', groqModel);
+          logger.error(`[LLMRouter] Groq error (${groqModel}): ${err.message}`);
         }
-        console.error(`[LLMRouter] Groq fallback failed: ${err.message}`);
         lastError = err;
       }
     }
 
+    // --- Critical Exhaustion ---
+    logger.error({ tier, lastError: lastError?.message }, '[LLMRouter] All providers exhausted for reasoning task.');
+    
     // 4. Local fallback
     const response = await this.local.call(opts);
     return response;

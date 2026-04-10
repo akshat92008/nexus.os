@@ -1,4 +1,5 @@
 import { 
+import { logger } from "./logger.js";
   MODEL_POWER 
 } from './agents/agentConfig.js';
 import { llmRouter } from './llm/LLMRouter.js';
@@ -60,7 +61,7 @@ class MasterBrainV2 {
    * This is called once during API server startup.
    */
   async initDurableLoops() {
-    console.log('[MasterBrain] 🧠 Initializing Durable Decision Loops...');
+    logger.info('[MasterBrain] 🧠 Initializing Durable Decision Loops...');
 
     // 1. Decision Loop (Every 1 minute)
     await systemQueue.add(
@@ -88,7 +89,7 @@ class MasterBrainV2 {
    * Triggered by systemWorker.
    */
   async runDecisionCycle() {
-    console.log('[MasterBrain] 🧠 Running Decision Cycle...');
+    logger.info('[MasterBrain] 🧠 Running Decision Cycle...');
     const supabase = await getSupabase();
 
     // 1. Fetch active missions
@@ -98,7 +99,7 @@ class MasterBrainV2 {
       .in('status', ['running', 'paused']);
 
     if (mError) {
-      console.error('[MasterBrain] Failed to fetch active missions:', mError);
+      logger.error('[MasterBrain] Failed to fetch active missions:', mError);
       return;
     }
 
@@ -118,7 +119,7 @@ class MasterBrainV2 {
           const diffMins = (now.getTime() - startedAt.getTime()) / 60000;
 
           if (diffMins > 3) {
-            console.warn(`[MasterBrain] 🚨 Task ${task.id} stalled for ${diffMins.toFixed(1)}m. Marking failed.`);
+            logger.warn(`[MasterBrain] 🚨 Task ${task.id} stalled for ${diffMins.toFixed(1)}m. Marking failed.`);
             await nexusStateStore.updateTaskStatus(task.id, 'failed', { error: 'Task timeout: stalled for more than 3 minutes' });
             
             await eventBus.publish(mission.id, {
@@ -138,7 +139,7 @@ class MasterBrainV2 {
         const diffMins = (now.getTime() - updatedAt.getTime()) / 60000;
 
         if (diffMins > 10) {
-          console.log(`[MasterBrain] ⏯️ Resuming mission ${mission.id} (paused for ${diffMins.toFixed(1)}m)`);
+          logger.info(`[MasterBrain] ⏯️ Resuming mission ${mission.id} (paused for ${diffMins.toFixed(1)}m)`);
           await systemQueue.add('resume_mission', { missionId: mission.id });
         }
       }
@@ -166,11 +167,11 @@ class MasterBrainV2 {
 
         const overview = JSON.parse(res.content).overview;
         if (overview) {
-          console.log('[MasterBrain] 📈 Strategic Overview:', overview);
+          logger.info('[MasterBrain] 📈 Strategic Overview:', overview);
           // Optionally store this in a global state or emit event
         }
       } catch (err) {
-        console.error('[MasterBrain] Groq analysis failed:', err);
+        logger.error('[MasterBrain] Groq analysis failed:', err);
       }
     }
   }
@@ -180,7 +181,7 @@ class MasterBrainV2 {
    * Triggered by systemWorker.
    */
   async runGlobalReflection() {
-    console.log('[MasterBrain] 🧠 Running Global Reflection...');
+    logger.info('[MasterBrain] 🧠 Running Global Reflection...');
     const supabase = await getSupabase();
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
@@ -219,7 +220,7 @@ class MasterBrainV2 {
           await eventBus.publish(userId, { type: 'neural_hud_alert', severity: 'critical', message: `Strategic Risk: ${risk.title}`, timestamp: Date.now() } as any);
         }
       } catch (err) {
-        console.error(`[MasterBrain] Reflection failed for user ${userId}:`, err);
+        logger.error(`[MasterBrain] Reflection failed for user ${userId}:`, err);
       }
     }
   }

@@ -32,3 +32,9 @@ The OS Layer for Artificial Intelligence.
 ```bash
 curl -X GET http://localhost:3001/api/ready
 ```
+
+### Free Infrastructure Setup
+Before running locally, you must set up two free cloud dependencies:
+1. **Upstash Redis:** Create a free database at Upstash. Copy the URL and add it to your `.env` as `REDIS_URL`.
+2. **Supabase:** Create a free project. Copy your connection string and keys to `.env`. 
+3. **Database Migrations:** Run `pnpm migrate` (or your chosen package manager) to apply the 3 required database migrations. Without this, you will get "relation nexus_missions does not exist" errors.
