@@ -198,53 +198,24 @@ class TransactionLedger {
       sseRes.write(`data: ${JSON.stringify(event)}\n\n`);
     }
 
-    // Deduct from Supabase user_credits balance
-    // deduct_user_credits returns BOOLEAN: TRUE = success, FALSE = insufficient balance
-    if (client) {
-      const { data: deducted, error: deductError } = await (client as any).rpc('deduct_user_credits', {
-        p_user_id: userId,
-        p_amount: PLATFORM_FEE_USD,
-      });
-
-      if (deductError) {
-        console.error('[Ledger] Credit deduction DB error:', deductError);
-        // DB error — log and continue so task result is not lost
-      } else if (deducted === false) {
-        // Insufficient balance — this task ran on zero credits
-        console.warn(`[Ledger] ⚠️ Insufficient credits for user ${userId}. Task completed but no deduction made.`);
-        // Emit a low-balance warning event to the SSE stream
-        if (sseRes && !isAborted()) {
-          sseRes.write(`data: ${JSON.stringify({
-            type: 'insufficient_credits',
-            userId,
-            message: 'Your credit balance is empty. Top up at /billing to continue.',
-          })}\n\n`);
-        }
-      }
-    }
+    // ── STRIPE REMOVAL BYPASS ────────────────────────────────────────────────
+    // if (client) {
+    //   const { data: deducted, error: deductError } = await (client as any).rpc('deduct_user_credits', {
+    //     p_user_id: userId,
+    //     p_amount: PLATFORM_FEE_USD,
+    //   });
+    //   ...
+    // }
 
     return row;
   }
 
   /**
    * Checks if a user has enough balance to run at least one task.
+   * STRIPE REMOVAL: Now always returns true to unblock missions.
    */
-  async hasSufficientBalance(userId: string): Promise<boolean> {
-    const client = await getSupabase();
-    if (!client) return true; // Fail open in dev/offline mode
-
-    const { data, error } = await client
-      .from('user_credits')
-      .select('balance_usd')
-      .eq('user_id', userId)
-      .single();
-
-    if (error || !data) {
-      console.warn(`[Ledger] Could not fetch balance for ${userId}, assuming zero.`);
-      return false;
-    }
-
-    return (data as any).balance_usd >= PLATFORM_FEE_USD;
+  async hasSufficientBalance(_userId: string): Promise<boolean> {
+    return true; // Unblock all users (Nexus OS Free Tier)
   }
 
   getByUser(userId: string): LedgerRow[] {

@@ -29,14 +29,6 @@ services:
         value: "https://nexus-os.vercel.app"
       - key: REDIS_URL
         value: "REPLACEME_IN_RENDER_DASHBOARD"
-      - key: STRIPE_SECRET_KEY
-        value: "REPLACEME_IN_RENDER_DASHBOARD"
-      - key: STRIPE_WEBHOOK_SECRET
-        value: "REPLACEME_IN_RENDER_DASHBOARD"
-      - key: STRIPE_PRICE_ID_PRO
-        value: "REPLACEME_IN_RENDER_DASHBOARD"
-      - key: STRIPE_PRICE_ID_ENTERPRISE
-        value: "REPLACEME_IN_RENDER_DASHBOARD"
 
   - type: worker
     name: nexus-task-worker

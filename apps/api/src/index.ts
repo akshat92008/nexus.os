@@ -93,19 +93,10 @@ import { checkAndConsume } from './rateLimitGovernor.js';
 import { randomUUID } from 'crypto';
 import { masterBrainRouter } from './masterBrain.js';
 import { llmHealthRouter } from './llm/LLMRouter.js';
-import Stripe from 'stripe';
-
-// Place this near the top of the file with other constants
-const stripe = process.env.STRIPE_SECRET_KEY
-  ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2024-04-10' as any })
-  : null;
-
-// Credit pack options (add to .env.example too)
-const CREDIT_PACKS = [
-  { priceId: process.env.STRIPE_PRICE_5USD  ?? '', label: '$5 — 500 tasks', usd: 5 },
-  { priceId: process.env.STRIPE_PRICE_20USD ?? '', label: '$20 — 2,000 tasks', usd: 20 },
-  { priceId: process.env.STRIPE_PRICE_50USD ?? '', label: '$50 — 5,500 tasks', usd: 50 },
-];
+// --- Stripe Disabled (Free Mode) ---
+const stripe = null;
+const CREDIT_PACKS: any[] = [];
+// ------------------------------------
 // --- LLM Provider Health Endpoint ---
 
 // --- P2: Input Validation (zod) ---
@@ -160,87 +151,10 @@ app.use('/api/llm/providers', llmHealthRouter);
 app.use('/api/master', masterBrainRouter);
 
 /**
- * Billing & Stripe Integration (Issue 12 Scaffolding)
+ * Billing & Stripe Integration (DISABLED)
  */
-app.post('/api/billing/checkout', requireAuth, async (req: Request, res: Response) => {
-  if (!stripe) {
-    return res.status(503).json({ error: 'Billing not configured. Set STRIPE_SECRET_KEY.' });
-  }
-
-  const checkoutSchema = z.object({
-    priceId: z.string().min(1),
-    successUrl: z.string().url(),
-    cancelUrl: z.string().url(),
-  });
-
-  const parseResult = checkoutSchema.safeParse(req.body);
-  if (!parseResult.success) {
-    return res.status(400).json({ error: 'Invalid input', details: parseResult.error.errors });
-  }
-
-  const { priceId, successUrl, cancelUrl } = parseResult.data;
-  const userId = req.user!.id;
-  const userEmail = req.user!.email;
-
-  // Validate priceId is one of our known packs
-  const pack = CREDIT_PACKS.find(p => p.priceId === priceId);
-  if (!pack) {
-    return res.status(400).json({ error: 'Unknown price ID' });
-  }
-
-  try {
-    const session = await stripe.checkout.sessions.create({
-      mode: 'payment',
-      payment_method_types: ['card'],
-      customer_email: userEmail,
-      line_items: [{ price: priceId, quantity: 1 }],
-      success_url: successUrl,
-      cancel_url: cancelUrl,
-      metadata: { userId, usd: String(pack.usd) },
-    });
-
-    res.json({ url: session.url });
-  } catch (err: any) {
-    logger.error({ err: err.message, userId }, 'Stripe checkout session creation failed');
-    res.status(500).json({ error: 'Failed to create checkout session' });
-  }
-});
-
-app.post('/api/billing/webhook', express.raw({ type: 'application/json' }), async (req: Request, res: Response) => {
-  if (!stripe || !process.env.STRIPE_WEBHOOK_SECRET) {
-    return res.status(503).json({ error: 'Webhook not configured' });
-  }
-
-  const sig = req.headers['stripe-signature'] as string;
-  let event: Stripe.Event;
-
-  try {
-    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
-  } catch (err: any) {
-    logger.warn({ err: err.message }, 'Stripe webhook signature verification failed');
-    return res.status(400).json({ error: `Webhook signature error: ${err.message}` });
-  }
-
-  if (event.type === 'checkout.session.completed') {
-    const session = event.data.object as Stripe.Checkout.Session;
-    const userId = session.metadata?.userId;
-    const usd = parseFloat(session.metadata?.usd ?? '0');
-
-    if (userId && usd > 0) {
-      try {
-        const supabase = await getSupabase();
-        // Upsert credits — add to existing balance
-        await supabase.rpc('add_user_credits', { p_user_id: userId, p_amount: usd });
-        logger.info({ userId, usd }, 'Credits topped up via Stripe webhook');
-      } catch (err: any) {
-        logger.error({ err: err.message, userId }, 'Failed to top up credits after payment');
-        // Return 200 so Stripe doesn't retry — log to investigate
-      }
-    }
-  }
-
-  res.json({ received: true });
-});
+// app.post('/api/billing/checkout', ...);
+// app.post('/api/billing/webhook', ...);
 
 // ...existing code...
 
