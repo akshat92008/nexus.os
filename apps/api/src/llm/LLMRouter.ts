@@ -29,7 +29,7 @@ class GeminiProvider {
 }
 class LocalProvider {
   async call(opts: LLMCallOpts): Promise<LLMResponse> {
-    return { content: '[LOCAL LLM FALLBACK] No external provider available.' };
+    return { content: '[LOCAL LLM FALLBACK] No external provider available.', tokens: 0 };
   }
 }
 
@@ -82,11 +82,21 @@ export class LLMRouter {
     [MODEL_VISION]: 0,
   };
 
+  // Circuit breakers (explicitly typed and persisted)
+  private openRouterBreaker: ReturnType<typeof createBreaker>;
+  private geminiBreaker: ReturnType<typeof createBreaker>;
+  private groqBreaker: ReturnType<typeof createBreaker>;
+
   constructor() {
     this.openRouter = new OpenRouterProvider();
     this.groqFallback = new GroqProvider();
     this.gemini = new GeminiProvider();
     this.local = new LocalProvider();
+
+    // Initialize circuit breakers ONCE at construction
+    this.openRouterBreaker = createBreaker((args: LLMCallOpts) => this.openRouter.call(args));
+    this.geminiBreaker = createBreaker((args: LLMCallOpts) => this.gemini.call(args));
+    this.groqBreaker = createBreaker((args: LLMCallOpts) => this.groqFallback.call(args));
   }
 
   /**
@@ -121,7 +131,6 @@ export class LLMRouter {
 
     // 1. Try OpenRouter Rotation (with circuit breaker)
     if (this.shouldUseProvider('openrouter')) {
-      const breaker = createBreaker((args) => this.openRouter.call(args));
       for (let attempt = 0; attempt < maxAttempts; attempt++) {
         const modelIndex = (startIndex + attempt) % models.length;
         const model = models[modelIndex];
@@ -130,7 +139,7 @@ export class LLMRouter {
           continue;
         }
         try {
-          const response = await breaker.fire({ ...opts, model });
+          const response = await this.openRouterBreaker.fire({ ...opts, model });
           this.rotationIndices[tier] = (modelIndex + 1) % models.length;
           rateLimitMonitor.recordSuccess('openrouter', model);
           return response;
@@ -151,9 +160,8 @@ export class LLMRouter {
 
     // 2. Try Gemini (if available)
     if (this.shouldUseProvider('gemini')) {
-      const breaker = createBreaker((args) => this.gemini.call(args));
       try {
-        const response = await breaker.fire(opts);
+        const response = await this.geminiBreaker.fire(opts);
         rateLimitMonitor.recordSuccess('gemini', opts.model);
         return response;
       } catch (err: any) {
@@ -165,10 +173,9 @@ export class LLMRouter {
 
     // 3. Final Fallback to Groq
     if (this.shouldUseProvider('groq')) {
-      const breaker = createBreaker((args) => this.groqFallback.call(args));
       try {
         const groqModel = this.mapToGroqModel(tier);
-        const response = await breaker.fire({ ...opts, model: groqModel });
+        const response = await this.groqBreaker.fire({ ...opts, model: groqModel });
         rateLimitMonitor.recordSuccess('groq', groqModel);
         return response;
       } catch (err: any) {

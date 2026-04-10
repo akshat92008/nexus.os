@@ -23,6 +23,7 @@ import { eventBuffer } from '../events/eventBuffer.js';
 import { tasksQueue, missionsQueue, MissionJobData } from '../queue/queue.js';
 import { nexusStateStore } from '../storage/nexusStateStore.js';
 import { ledger } from '../ledger.js';
+import { logger } from '../logger.js';
 import type { NexusEvent } from '../db/models.js';
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
@@ -67,7 +68,7 @@ async function dispatchMapReduceTask(
     chunks = [input];
   }
 
-  console.log(`[MissionWorker] 🔀 Map-Reduce: splitting task ${task.id} into ${chunks.length} map chunks`);
+  logger.info({ taskId: task.id, chunkCount: chunks.length }, 'Map-Reduce: splitting task');
 
   // 🚨 FIX 3: Batch insert child tasks for Map-Reduce (Avoid synchronous for-loop bottleneck)
   const childTasksToCreate = chunks.map((chunk, idx) => {
@@ -128,7 +129,7 @@ async function dispatchMapReduceTask(
 // ── Core: enqueue tasks whose dependencies are now satisfied ──────────────
 
 export async function onTaskCompleted(taskId: string, missionId: string): Promise<void> {
-  console.log(`[MissionWorker] 🔔 task_completed: ${taskId} → checking mission ${missionId}`);
+  logger.info({ taskId, missionId }, 'Task completed event received');
 
   // 🚨 FIX 3: Optimized dependency check (Avoid pulling entire mission DAG for every task)
   let tasksToCheck: any[] = [];
@@ -158,7 +159,7 @@ export async function onTaskCompleted(taskId: string, missionId: string): Promis
 
   // 🚨 HARDEN 1: Fetch mission context only if we actually find ready tasks
   const missionMeta = await nexusStateStore.getMissionById(missionId).catch(e => {
-    console.error(`[MissionWorker] Mission fetch failed for missionId=${missionId}:`, e?.message || e);
+    logger.error({ missionId, err: e?.message || e }, 'Mission fetch failed');
     return null;
   });
   const workspaceId: string = missionMeta?.workspace_id ?? '';

@@ -29,11 +29,12 @@ import { tasksQueue, TaskJobData } from '../queue/queue.js';
 import { sandboxManager } from '../sandbox/sandboxManager.js';
 import { eventBuffer } from '../events/eventBuffer.js';
 import { vectorStore } from '../storage/vectorStore.js';
+import { logger } from '../logger.js';
 import { startLockExtension } from './utils/workerUtils.js';
 import type { TypedArtifact, CodeArtifact, AgentContext, MemoryEntry } from '@nexus-os/types';
 
 if (!process.env.REDIS_URL) {
-  console.error('[TaskWorker] FATAL: REDIS_URL required');
+  logger.fatal('REDIS_URL required');
   process.exit(1);
 }
 const REDIS_URL = process.env.REDIS_URL;
@@ -184,7 +185,7 @@ function createOutputBuffer(
   const startTimer = () => {
     if (!timer) {
       timer = setInterval(async () => {
-        await flush().catch((e) => console.warn('[OutputBuffer] flush error:', e));
+        await flush().catch((e) => logger.warn({ err: e }, '[OutputBuffer] flush error'));
       }, SANDBOX_FLUSH_INTERVAL_MS);
     }
   };
@@ -264,7 +265,7 @@ export async function handlePostProcessing(
   try {
     if ((finalArtifact as CodeArtifact).format === 'code') {
       const codeArt = finalArtifact as CodeArtifact;
-      console.log(`[Worker] 💻 Code detected in task ${taskId}. Sending to sandbox...`);
+      logger.info({ taskId }, '[Worker] 💻 Code detected. Sending to sandbox...');
 
       await eventBuffer.publish(missionId, {
         type:    'sandbox_started',
@@ -367,7 +368,7 @@ export async function handlePostProcessing(
       const indexText = (finalArtifact as any).rawContent || JSON.stringify(finalArtifact);
       await vectorStore.indexArtifact(artifactRecord.id, indexText);
     } catch (vecErr) {
-      console.warn(`[Worker] 🧠 Vector indexing failed for artifact ${artifactRecord.id}:`, vecErr);
+      logger.warn({ err: vecErr, artifactId: artifactRecord.id }, '[Worker] 🧠 Vector indexing failed');
     }
 
     await eventBuffer.publish(missionId, {
@@ -397,7 +398,7 @@ export const taskWorker = new Worker<TaskJobData>(
     const { taskId, missionId, workspaceId, agentType, input, contextFields } = job.data;
   const maxAttempts = job.opts.attempts ?? JOB_MAX_ATTEMPTS;
 
-    console.log(`[Worker] 🛠️  Executing task: ${taskId} (${agentType}) — Mission: ${missionId} (attempt ${job.attemptsMade + 1}/${maxAttempts})`);
+    logger.info({ taskId, missionId, agentType, attempt: job.attemptsMade + 1 }, 'Executing task');
 
     if (job.attemptsMade > 0) {
       await eventBuffer.publish(missionId, {
@@ -415,13 +416,13 @@ export const taskWorker = new Worker<TaskJobData>(
       // Attempt to move status from 'queued' to 'running' atomically.
       const task = await nexusStateStore.getTask(taskId);
       if (task.status === 'completed') {
-        console.log(`[Worker] ✅ Task ${taskId} already completed. Skipping.`);
+        logger.info({ taskId }, '[Worker] ✅ Task already completed. Skipping.');
         return;
       }
 
       if (task.status === 'running' && !task.input_payload?._checkpoint) {
         // Someone else is already running this, and no checkpoint exists.
-        console.warn(`[Worker] ⚠️ Task ${taskId} is already running elsewhere. Skipping.`);
+        logger.warn({ taskId }, '[Worker] ⚠️ Task is already running elsewhere. Skipping.');
         return;
       }
 

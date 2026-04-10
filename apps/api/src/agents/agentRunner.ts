@@ -50,6 +50,7 @@ export interface AgentRunResult {
 }
 
 import { llmRouter } from '../llm/LLMRouter.js';
+import { logger } from '../logger.js';
 
 // ── CORE EXECUTION ──────────────────────────────────────────────────────────
 
@@ -73,7 +74,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
     });
 
     if (replayResponse) {
-      console.log(`[AgentRunner] 🎬 REPLAYING ${task.agentType.toUpperCase()} task: ${task.id}`);
+      logger.info({ taskId: task.id, agentType: task.agentType }, '🎬 REPLAYING task');
       return {
         artifact: replayResponse,
         tokensUsed: 0, // No tokens used in replay
@@ -87,7 +88,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
   let steps = 0;
   let totalTokens = 0;
 
-  console.log(`[AgentRunner] 🤖 ${task.agentType.toUpperCase()} starting task: ${task.id}`);
+  logger.info({ taskId: task.id, agentType: task.agentType }, '🤖 Agent starting task');
 
   // SSE status update
   if (sseRes) {
