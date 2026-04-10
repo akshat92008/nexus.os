@@ -58,7 +58,14 @@ export type GoalType =
 
 // ── Task DAG ───────────────────────────────────────────────────────────────
 
-export type TaskStatus = 'pending' | 'locked' | 'running' | 'completed' | 'failed' | 'skipped';
+export enum TaskStatus {
+  PENDING = 'pending',
+  LOCKED = 'locked',
+  RUNNING = 'running',
+  COMPLETED = 'completed',
+  FAILED = 'failed',
+  SKIPPED = 'skipped'
+}
 export type OutputFormat = 'structured_json' | 'prose' | 'list' | 'code';
 export type TaskPriority = 'critical' | 'high' | 'medium' | 'low';
 
@@ -300,10 +307,20 @@ export interface ActivityLog {
   message: string;
 }
 
+export enum MissionStatus {
+  QUEUED = 'queued',
+  RUNNING = 'running',
+  COMPLETED = 'complete',
+  FAILED = 'failed',
+  CANCELLED = 'cancelled',
+  PAUSED = 'paused',
+  ACTIVE = 'active'
+}
+
 export interface OngoingMission {
   id: string;
   goal: string;
-  status: 'active' | 'paused';
+  status: MissionStatus;
   lastRun: number;
   nextRun: number;
   workspaceId: string;

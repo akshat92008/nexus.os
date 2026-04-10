@@ -18,27 +18,36 @@ export class OpenRouterProvider implements ILLMProvider {
       throw new Error('OPENROUTER_API_KEY not set');
     }
 
-    const response = await fetch(this.API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-        'HTTP-Referer': appUrl,
-        'X-Title': appName,
-      },
-      body: JSON.stringify({
-        model: opts.model,
-        temperature: opts.temperature,
-        max_tokens: Math.min(opts.maxTokens, this.HARD_TOKEN_LIMIT),
-        stream: opts.enableStreaming ?? false,
-        ...(opts.jsonMode ? { response_format: { type: 'json_object' } } : {}),
-        messages: [
-          { role: 'system', content: opts.system },
-          { role: 'user', content: opts.user },
-        ],
-      }),
-      signal: opts.signal,
-    });
+    let response: Response;
+    try {
+      response = await fetch(this.API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+          'HTTP-Referer': appUrl,
+          'X-Title': appName,
+        },
+        body: JSON.stringify({
+          model: opts.model,
+          temperature: opts.temperature,
+          max_tokens: Math.min(opts.maxTokens, this.HARD_TOKEN_LIMIT),
+          stream: opts.enableStreaming ?? false,
+          ...(opts.jsonMode ? { response_format: { type: 'json_object' } } : {}),
+          messages: [
+            { role: 'system', content: opts.system },
+            { role: 'user', content: opts.user },
+          ],
+        }),
+        signal: opts.signal,
+      });
+    } catch (err: any) {
+      console.error('[OpenRouter] Fetch failure:', err.message);
+      return {
+        content: JSON.stringify({ error: "LLM Service Unavailable", status: 502, detail: err.message }),
+        tokens: 0,
+      };
+    }
 
     if (response.status === 429) {
       const retryAfter = response.headers.get('retry-after');

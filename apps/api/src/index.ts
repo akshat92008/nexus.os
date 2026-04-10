@@ -24,21 +24,46 @@ const REQUIRED_ENV = [
   'SUPABASE_SERVICE_KEY',
   'REDIS_URL',
   'OPENROUTER_API_KEY',
-  'GROQ_API_KEY' // Added GROQ_API_KEY
+  'GROQ_API_KEY',
+  'JWT_SECRET',
+  'CORS_ALLOW_ORIGINS'
 ];
+
+// Validate all required environment variables
+const missingEnv: string[] = [];
 for (const k of REQUIRED_ENV) {
-  if (!process.env[k]) {
-    logger.fatal({ env: k }, 'Missing required environment variable');
-    throw new Error(`REDIS_URL and OPENROUTER_API_KEY must be configured.`);
+  if (!process.env[k] || process.env[k].trim() === '') {
+    missingEnv.push(k);
   }
 }
 
-// Validate PORT
-const PORT = parseInt(process.env.PORT!, 10);
-if (isNaN(PORT) || PORT < 1 || PORT > 65535) {
-  console.error(`[Startup] FATAL: Invalid PORT: ${process.env.PORT}`);
+if (missingEnv.length > 0) {
+  logger.fatal({ missing: missingEnv }, 'Missing required environment variables');
+  console.error('\n❌ FATAL: Missing required environment variables:');
+  missingEnv.forEach(k => console.error(`   - ${k}`));
+  console.error('\nPlease check your .env file and restart the server.\n');
   process.exit(1);
 }
+
+// Validate PORT format
+const PORT = parseInt(process.env.PORT!, 10);
+if (isNaN(PORT) || PORT < 1 || PORT > 65535) {
+  logger.fatal({ port: process.env.PORT }, 'Invalid PORT configuration');
+  console.error(`❌ FATAL: Invalid PORT value: ${process.env.PORT}`);
+  console.error('PORT must be a number between 1 and 65535\n');
+  process.exit(1);
+}
+
+// Validate URLs
+const URL_PATTERN = /^https?:\/\/.+/i;
+if (!URL_PATTERN.test(process.env.SUPABASE_URL!)) {
+  logger.fatal({ url: process.env.SUPABASE_URL }, 'Invalid SUPABASE_URL format');
+  console.error(`❌ FATAL: Invalid SUPABASE_URL: ${process.env.SUPABASE_URL}`);
+  console.error('Must be a valid HTTP/HTTPS URL\n');
+  process.exit(1);
+}
+
+logger.info('✅ All environment variables validated successfully');
 
 import { planMission }      from './missionPlanner.js';
 import { 
@@ -216,6 +241,18 @@ app.get('/api/marketplace/agents', (req, res) => {
   res.json(MARKETPLACE_AGENTS);
 });
 
+
+// Correlation ID — attach to every request (Task 17)
+app.use((req: Request, res: Response, next) => {
+  const id = randomUUID();
+  (req as any).requestId = id;
+  res.setHeader('X-Request-ID', id);
+  next();
+});
+
+// Apply requireAuth to all subsequent routes
+app.use(requireAuth);
+
 app.post('/api/marketplace/agents/:id/install', async (req, res) => {
   // No body expected, but validate params
   const idSchema = z.object({ id: z.string().min(1) });
@@ -247,22 +284,11 @@ app.post('/api/marketplace/agents/:id/install', async (req, res) => {
         .from('user_state')
         .insert({ user_id: req.user!.id, installed_agents: [req.params.id] });
     } else {
-      console.error('[Install] Failed to persist agent install:', dbErr);
+      logger.error({ err: dbErr.message, agentId: req.params.id }, '[Install] Failed to persist agent install');
     }
   }
   res.json({ success: true, agentId: req.params.id, message: `${agent.name} installed successfully` });
 });
-
-// Correlation ID — attach to every request (Task 17)
-app.use((req: Request, res: Response, next) => {
-  const id = randomUUID();
-  (req as any).requestId = id;
-  res.setHeader('X-Request-ID', id);
-  next();
-});
-
-// Apply requireAuth to all subsequent routes
-app.use(requireAuth);
 
 /**
  * Readiness Check (Dependencies)
@@ -343,7 +369,7 @@ app.post('/api/orchestrate', orchestrateLimiter, async (req: Request<{}, {}, Orc
   const userId = req.user.id;
   // Input validation using zod
   const OrchestrateSchema = z.object({
-    goal: z.string().min(10).max(500),
+    goal: z.string().min(10).max(2000),
     workspaceId: z.string().regex(/^[a-zA-Z0-9_]+$/).optional(),
     archMode: z.enum(['legacy', 'os']).optional(),
   });
@@ -567,8 +593,8 @@ app.get('/api/events/stream', async (req, res) => {
 
   try {
     if (!res.writableEnded) res.write('\n'); // Flush initial headers
-  } catch (e) {
-    console.error('[SSE] Failed to write initial headers:', e);
+  } catch (e: any) {
+    logger.error({ missionId, err: e.message }, '[SSE] Failed to write initial headers');
   }
 
   const handler = (event: any) => {
@@ -576,8 +602,8 @@ app.get('/api/events/stream', async (req, res) => {
       if (!res.writableEnded) {
         res.write(`data: ${JSON.stringify(event)}\n\n`);
       }
-    } catch (e) {
-      console.error('[SSE] Write error:', e);
+    } catch (e: any) {
+      logger.error({ missionId, err: e.message }, '[SSE] Write error');
     }
   };
 

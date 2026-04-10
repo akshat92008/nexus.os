@@ -9,6 +9,7 @@
 
 import type { Request, Response, NextFunction } from 'express';
 import { getSupabase } from '../storage/supabaseClient.js';
+import { logger } from '../logger.js';
 
 declare global {
   namespace Express {
@@ -65,16 +66,23 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
+    logger.warn({ ip: req.ip, path: req.path }, 'Unauthorized access attempt: Missing token');
     return res.status(401).json({ error: 'Unauthorized: Missing or malformed token' });
   }
 
   const token = authHeader.slice(7);
 
+  // Validate token format before any processing
+  if (token.length < 32 || !/^[A-Za-z0-9._-]+$/.test(token)) {
+    logger.warn({ ip: req.ip, path: req.path }, 'Unauthorized access attempt: Invalid token format');
+    return res.status(401).json({ error: 'Unauthorized: Invalid token format' });
+  }
+
   // ── Cache hit ──────────────────────────────────────────────────────────────
-  const cached = TOKEN_CACHE.get(token);
-  if (cached && cached.expiresAt > Date.now()) {
-    req.user   = cached.user;
-    req.userId = cached.user.id;
+  const cached = getCachedUser(token);
+  if (cached) {
+    req.user   = cached;
+    req.userId = cached.id;
     return next();
   }
 
@@ -84,22 +92,40 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     const { data: { user }, error } = await supabase.auth.getUser(token);
 
     if (error || !user) {
+      logger.warn({ ip: req.ip, path: req.path, error: error?.message }, 'Unauthorized access attempt: Token verification failed');
       return res.status(401).json({ error: 'Unauthorized: Invalid token' });
+    }
+
+    // Additional security checks
+    if (user.banned_at) {
+      logger.warn({ ip: req.ip, userId: user.id, email: user.email }, 'Unauthorized access attempt: Banned user');
+      return res.status(403).json({ error: 'Forbidden: Account suspended' });
+    }
+
+    if (!user.email_confirmed_at && process.env.NODE_ENV === 'production') {
+      logger.warn({ ip: req.ip, userId: user.id, email: user.email }, 'Unauthorized access attempt: Unverified email');
+      return res.status(403).json({ error: 'Forbidden: Email verification required' });
     }
 
     const authUser = { id: user.id, email: user.email ?? '' };
 
-    TOKEN_CACHE.set(token, { user: authUser, expiresAt: Date.now() + CACHE_TTL_MS });
+    setCachedUser(token, authUser);
 
     req.user   = authUser;
     req.userId = user.id;
 
-    // Lazy cache cleanup
-    if (++requestCounter % CLEANUP_INTERVAL === 0) pruneCache();
+    // Lazy cache cleanup: remove expired entries
+    const now = Date.now();
+    for (const [key, value] of TOKEN_CACHE.entries()) {
+      if (value.expiresAt <= now) {
+        TOKEN_CACHE.delete(key);
+      }
+    }
 
+    logger.debug({ userId: user.id, path: req.path }, 'Authentication successful');
     next();
   } catch (err) {
-    console.error('[AuthMiddleware] Verification failed:', err);
+    logger.error({ ip: req.ip, path: req.path, err: (err as Error).message }, 'Auth middleware verification failed');
     return res.status(401).json({ error: 'Unauthorized: Auth check failed' });
   }
 }

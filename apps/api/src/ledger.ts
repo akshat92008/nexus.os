@@ -234,7 +234,6 @@ class TransactionLedger {
 
     return (data as any).balance_usd >= PLATFORM_FEE_USD;
   }
-}
 
   getByUser(userId: string): LedgerRow[] {
     return this.memLedger.getByUser(userId);

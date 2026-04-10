@@ -64,7 +64,6 @@ services:
       PGRST_DB_ANON_ROLE: anon
       PGRST_JWT_SECRET: supabase-jwt-secret
       PGRST_SERVER_PORT: 3000
-      PGRST_DB_ANON_ROLE: anon
     ports:
       - '3000:3000'
     healthcheck:
@@ -98,15 +97,15 @@ services:
       - redis
       - supabase-proxy
     environment:
-      NODE_ENV: development
-      PORT: 3001
-      REDIS_URL: redis://redis:6379
-      SUPABASE_URL: http://supabase-proxy:54321
-      SUPABASE_SERVICE_KEY: supabase-service-role-key
-      CORS_ALLOW_ORIGINS: http://localhost:3000,tauri://localhost,https://tauri.localhost
-      GROQ_API_KEY: dummy_groq_key
-      E2B_API_KEY: dummy_e2b_key
-      OPENROUTER_API_KEY: dummy_openrouter_key
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: ${PORT:-3001}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      SUPABASE_URL: ${SUPABASE_URL:-http://supabase-proxy:54321}
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY:-}
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-http://localhost:3000,tauri://localhost,https://tauri.localhost}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      E2B_API_KEY: ${E2B_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
     ports:
       - '3001:3001'
     stdin_open: true

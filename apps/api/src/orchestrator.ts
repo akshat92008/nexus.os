@@ -9,7 +9,8 @@
  */
 
 import type { Response } from 'express';
-import type { TaskDAG, TaskNode, AgentType, TaskPriority } from '@nexus-os/types';
+import type { TaskDAG, TaskNode, AgentType, TaskPriority, MissionStatus } from '@nexus-os/types';
+import { logger } from './logger.js';
 import { TaskRegistry } from './taskRegistry.js';
 import { MissionMemory } from './missionMemory.js';
 import { getGlobalGovernor } from './rateLimitGovernor.js';
@@ -224,10 +225,23 @@ export async function orchestrateDAG(deps: OrchestratorDeps): Promise<void> {
   const governor = getGlobalGovernor();
   let missionCompleted = false;
 
+  // 🚨 Phase 3.2: Parallelize independent initialization tasks
   try {
-    await nexusStateStore.updateMissionStatus(dag.missionId, 'running');
-  } catch (err) {
-    console.warn(`[Orchestrator] Unable to mark mission ${dag.missionId} as running:`, err);
+    const [_, balanceOk] = await Promise.all([
+      nexusStateStore.updateMissionStatus(dag.missionId, 'running'),
+      ledger.hasSufficientBalance(userId)
+    ]);
+
+    if (!balanceOk) {
+      safeEmit(res, { 
+        type: 'error', 
+        message: 'Insufficient credits. Please top up your balance at /billing' 
+      }, isAborted, sessionId);
+      throw new Error('Insufficient credits');
+    }
+  } catch (err: any) {
+    if (err.message === 'Insufficient credits') throw err;
+    console.warn(`[Orchestrator] Initialization warning for mission ${dag.missionId}:`, err);
   }
 
   dag.nodes.forEach((n) => registry.initTask?.(n.id));
@@ -241,22 +255,12 @@ export async function orchestrateDAG(deps: OrchestratorDeps): Promise<void> {
     goal: dag.goal,
   }, isAborted, sessionId);
 
-  // Billing Gate: Check if user has sufficient credits
-  const hasCredits = await ledger.hasSufficientBalance(userId);
-  if (!hasCredits) {
-    safeEmit(res, { 
-      type: 'error', 
-      message: 'Insufficient credits. Please top up your balance at /billing' 
-    }, isAborted, sessionId);
-    throw new Error('Insufficient credits');
-  }
-
   try {
     for (let i = 0; i < waves.length; i++) {
       if (isAborted()) break;
       const wave = waves[i];
 
-      console.log(`[Orchestrator] 🌊 Executing Wave ${i + 1}/${waves.length}`);
+      logger.info({ missionId: sessionId, waveIndex: i + 1, waveCount: waves.length }, `🌊 Executing Wave`);
       
       const results = await Promise.allSettled(
         wave.map(async (task, idx) => {
@@ -310,9 +314,9 @@ export async function orchestrateDAG(deps: OrchestratorDeps): Promise<void> {
   } catch (err: any) {
     const status = isAborted() ? 'aborted' : 'failed';
     try {
-      await nexusStateStore.updateMissionStatus(dag.missionId, status);
-    } catch (updateErr) {
-      console.warn(`[Orchestrator] Failed to persist mission ${status} status for ${dag.missionId}:`, updateErr);
+      await nexusStateStore.updateMissionStatus(dag.missionId, status as any);
+    } catch (updateErr: any) {
+      logger.warn({ missionId: dag.missionId, status, err: updateErr.message }, 'Failed to persist mission status');
     }
     safeEmit(res, { type: 'error', message: `Mission failed: ${err.message}` }, isAborted, sessionId);
   }
@@ -456,7 +460,7 @@ export async function startDurableMission(params: {
  * This function is a no-op stub kept for API compatibility.
  */
 export async function cancelDurableMission(missionId: string): Promise<void> {
-  console.log(`[Orchestrator] Mission ${missionId} cancel requested.`);
+  logger.info({ missionId }, 'Mission cancel requested');
   // Cancellation is handled client-side via the isAborted() closure.
   // Add Supabase mission status update here when persistence is wired.
 }

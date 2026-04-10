@@ -1,51 +1,22 @@
-# Stage 1: Build
-FROM node:18-slim AS builder
+FROM node:20-alpine
 
-# Install pnpm
-ENV PNPM_HOME="/pnpm"
-ENV PATH="$PNPM_HOME:$PATH"
-RUN corepack enable
+# Create a non-root system user
+RUN addgroup -S nexus && adduser -S nexus -G nexus
 
 WORKDIR /app
 
-# Copy lockfile and workspace config
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+# Copy dependency files first for caching
+COPY package.json package-lock.json* ./
+RUN npm install --production
 
-# Copy all package.json files to install dependencies efficiently
-COPY apps/api/package.json ./apps/api/
-COPY packages/types/package.json ./packages/types/
-
-# Install dependencies
-RUN pnpm install --frozen-lockfile
-
-# Copy source code
+# Copy application source
 COPY . .
 
-# Build the API
-RUN pnpm --filter @nexus-os/api build
+# Set ownership to the non-root user
+RUN chown -R nexus:nexus /app
 
-# Stage 2: Production
-FROM node:18-slim AS runner
+# Switch to restricted user
+USER nexus
 
-WORKDIR /app
-
-# Install pnpm for production installs
-ENV PNPM_HOME="/pnpm"
-ENV PATH="$PNPM_HOME:$PATH"
-RUN corepack enable
-
-# Copy built files and production-essential files
-COPY --from=builder /app/package.json ./
-COPY --from=builder /app/pnpm-lock.yaml ./
-COPY --from=builder /app/apps/api/package.json ./apps/api/
-COPY --from=builder /app/apps/api/dist ./apps/api/dist
-COPY --from=builder /app/packages/types ./packages/types
-
-# Install production dependencies only
-RUN pnpm install --prod --frozen-lockfile
-
-# Expose port
 EXPOSE 3001
-
-# Start the API
-CMD ["node", "apps/api/dist/index.js"]
+CMD ["npm", "run", "start"]

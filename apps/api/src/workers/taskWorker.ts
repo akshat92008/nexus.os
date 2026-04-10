@@ -538,5 +538,24 @@ export const taskWorker = new Worker<TaskJobData>(
 );
 
 taskWorker.on('failed', (job, err) => {
-  console.error(`[Worker] 🚨 Job ${job?.id} failed persistently:`, err);
+  logger.error({ jobId: job?.id, err: err.message }, '[Worker] 🚨 Job failed persistently');
 });
+
+// 🚨 Phase 2.3: Graceful Shutdown Handlers
+const shutdown = async (signal: string) => {
+  logger.info({ signal }, '[Worker] 🛑 Shutdown signal received. Closing resources...');
+  try {
+    // Close the worker (stops accepting new jobs)
+    await taskWorker.close();
+    // Close the Redis connection
+    await connection.quit();
+    logger.info('[Worker] ✅ Graceful shutdown complete.');
+    process.exit(0);
+  } catch (err: any) {
+    logger.error({ err: err.message }, '[Worker] ❌ Error during shutdown');
+    process.exit(1);
+  }
+};
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
