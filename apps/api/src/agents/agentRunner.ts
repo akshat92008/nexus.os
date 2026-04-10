@@ -127,7 +127,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
 
   const callGroq = callLLM; // Maintain compatibility for the rest of the file
 
-
+  let briefing: string;
   // 1. Semantic Context Synthesis
   if (context.entries.length > 0) {
     await missionStore.updateTaskCheckpoint(task.id, { step: 'Briefing Context Synthesis' });
@@ -147,6 +147,8 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
 
   if (isAborted()) throw new Error('[Canceled] Mission aborted');
 
+  // -- P0: Council of Three (High-precision reasoning for critical tasks) --
+  if (task.priority === 'critical' || goalType === 'complex' || task.agentType === 'chief_analyst') {
     logger.info({ taskId: task.id }, 'Council of Three activated for Critical Task');
     
     await missionStore.updateTaskCheckpoint(task.id, { step: 'Council of Three: Specialist Consultation' });
@@ -304,36 +306,35 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
       }
     }
     
+    // MISSION RECORDING: Record the interaction for future replay
+    if (isRecordMode) {
+      missionRecorder.recordInteraction({
+        taskId: task.id,
+        agentType: task.agentType,
+        input: {
+          prompt: goal,
+          context: context.entries.reduce((acc, entry) => {
+            acc[entry.taskId] = entry.artifact;
+            return acc;
+          }, {} as Record<string, TypedArtifact>),
+          taskNode: task
+        },
+        output: artifact,
+        metadata: {
+          tokensUsed: tokens,
+          duration: Date.now() - startMs,
+          missionId: opts.missionId,
+          userId: opts.userId
+        }
+      });
+    }
+
     logger.info({ taskId: task.id, duration: Date.now() - startMs }, 'Agent finished task');
+    clearTimeout(runtimeTimer);
     return { artifact, tokensUsed: tokens, rawContent: content };
   } catch (error) {
+    clearTimeout(runtimeTimer);
     logger.error({ taskId: task.id, err: (error as any).message }, 'Agent execution failed');
     throw error;
   }
-
-  // MISSION RECORDING: Record the interaction for future replay
-  if (isRecordMode) {
-    missionRecorder.recordInteraction({
-      taskId: task.id,
-      agentType: task.agentType,
-      input: {
-        prompt: goal,
-        context: context.entries.reduce((acc, entry) => {
-          acc[entry.taskId] = entry.artifact;
-          return acc;
-        }, {} as Record<string, TypedArtifact>),
-        taskNode: task
-      },
-      output: artifact,
-      metadata: {
-        tokensUsed: tokens,
-        duration: Date.now() - startMs,
-        missionId: opts.missionId,
-        userId: opts.userId
-      }
-    });
-  }
-
-  clearTimeout(runtimeTimer);
-  return { artifact, tokensUsed: tokens, rawContent: content };
 }
