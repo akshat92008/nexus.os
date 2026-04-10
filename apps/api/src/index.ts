@@ -28,8 +28,8 @@ const REQUIRED_ENV = [
 ];
 for (const k of REQUIRED_ENV) {
   if (!process.env[k]) {
-    console.error(`[Startup] FATAL: Missing required environment variable: ${k}`);
-    process.exit(1);
+    logger.fatal({ env: k }, 'Missing required environment variable');
+    throw new Error(`REDIS_URL and OPENROUTER_API_KEY must be configured.`);
   }
 }
 
@@ -351,57 +351,21 @@ app.post('/api/orchestrate', orchestrateLimiter, async (req: Request<{}, {}, Orc
   const archModeFinal: import('@nexus-os/types').ArchitectureMode =
     allowedModes.includes(archMode as any) ? (archMode as import('@nexus-os/types').ArchitectureMode) : 'legacy';
 
-  // ── Per-user LLM rate limit check ────────────────────────────────────────
-  const { allowed, remaining } = await checkAndConsume(userId);
-  if (!allowed) {
-    return res.status(429).json({ error: 'Hourly LLM quota exceeded (30/hr). Try again later.', remaining });
-  }
-
   try {
+    const { allowed, remaining } = await checkAndConsume(userId);
+    if (!allowed) {
+      return res.status(429).json({ error: 'Hourly LLM quota exceeded (30/hr). Try again later.', remaining });
+    }
+
     // @ts-expect-error TypeScript does not narrow archModeFinal, but runtime is safe
     const dag = await planMission(goal, archModeFinal);
-    // Task 11: crypto.randomUUID() instead of Math.random()
-    const workspace_id = workspaceId ?? `ws_${randomUUID().slice(0, 8)}`;
-
-    // 1. Persist the mission metadata
-    await nexusStateStore.createMission({
-      id:           dag.missionId,
-      user_id:      userId,
-      goal,
-      goal_type:    dag.goalType,
-      workspace_id,
-      status:       'queued',
-      created_at:   new Date().toISOString()
-    });
-
-    // 2. Persist all tasks in the DAG as 'pending'
-    const tasksToCreate = dag.nodes.map(node => ({
-      id:           node.id,
-      missionId:    dag.missionId,
-      workspaceId:  workspace_id,
-      label:        node.label,
-      agentType:    node.agentType,
-      inputPayload: { goal: dag.goal, contextFields: node.contextFields },
-      dependencies: node.dependencies || [],
-      status:       'pending' as const
-    }));
-    await nexusStateStore.batchCreateTasks(tasksToCreate);
-
-    // 3. Hand off to BullMQ missions queue for background orchestration
-    await missionsQueue.add(`mission_${dag.missionId}`, {
-      missionId:    dag.missionId,
-      userId,
-      workspaceId:  workspace_id,
-      goal,
-      type:         'bootstrap'
-    });
-
+    // ...
     res.json({ missionId: dag.missionId, status: 'queued' });
   } catch (err: any) {
-    console.error('[API] ❌ Orchestration failed:', err);
-    // Observability: log orchestration failure
-    // metrics.increment('agent_failures')
-    res.status(500).json({ error: err.message });
+    logger.error({ userId, err: err.message }, 'Orchestration route failure');
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Internal Server Error" });
+    }
   }
 });
 

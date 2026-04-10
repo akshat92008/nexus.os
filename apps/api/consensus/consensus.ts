@@ -3,16 +3,10 @@
  *
  * Pattern: two LLM calls in parallel at different temperatures, then a
  * judge call that synthesises the best answer from both responses.
- *
- *  Draft A  (temp 0.4 — precise, conservative)
- *  Draft B  (temp 0.7 — creative, exploratory)
- *       ↓
- *  Judge    (temp 0.2 — analytical, picks the best and merges)
- *       ↓
- *  Final answer (string)
  */
 
 import { LLMRouter } from '../src/llm/LLMRouter.js';
+import { logger } from '../src/logger.js';
 
 const router = new LLMRouter();
 
@@ -28,44 +22,56 @@ Rules:
  *
  * @param prompt   The user's question or task description
  * @param context  Optional additional context injected into the system prompt
+ * @param config   Optional token configuration (Hardening Fix 1)
  * @returns        The judge-synthesised answer as a plain string
  */
-export async function runConsensus(prompt: string, context = ''): Promise<string> {
+export async function runConsensus(prompt: string, context = '', config?: any): Promise<string> {
+  // 🚨 FIX 1: Robust token limit fallback
+  const tokenLimit = config?.token?.limit ?? 1500;
+
   const systemPrompt = context
     ? `You are a helpful expert assistant.\n\nContext:\n${context}`
     : 'You are a helpful expert assistant.';
 
-  // ── Step 1: Two parallel drafts ──────────────────────────────────────────
-  const [draftA, draftB] = await Promise.all([
-    router.call({
-      user: prompt,
-      system: systemPrompt,
-      temperature: 0.4,
+  try {
+    // ── Step 1: Two parallel drafts ──────────────────────────────────────────
+    const [draftA, draftB] = await Promise.all([
+      router.call({
+        user: prompt,
+        system: systemPrompt,
+        temperature: 0.4,
+        model: 'MODEL_POWER',
+        maxTokens: tokenLimit
+      }),
+      router.call({
+        user: prompt,
+        system: systemPrompt,
+        temperature: 0.7,
+        model: 'MODEL_POWER',
+        maxTokens: tokenLimit
+      }),
+    ]);
+
+    const textA = (draftA.content || '').trim();
+    const textB = (draftB.content || '').trim();
+
+    // ── Step 2: Judge synthesises ────────────────────────────────────────────
+    const judgePrompt = `Original prompt:\n"${prompt}"\n\nDraft A:\n${textA}\n\nDraft B:\n${textB}\n\nSynthesize the single best answer.`;
+
+    const judgedResponse = await router.call({
+      user: judgePrompt,
+      system: JUDGE_SYSTEM,
+      temperature: 0.2,
       model: 'MODEL_POWER',
-      maxTokens: 1500
-    }),
-    router.call({
-      user: prompt,
-      system: systemPrompt,
-      temperature: 0.7,
-      model: 'MODEL_POWER',
-      maxTokens: 1500
-    }),
-  ]);
+      maxTokens: tokenLimit
+    });
 
-  const textA = draftA.content.trim();
-  const textB = draftB.content.trim();
+    // 🚨 FIX 2: Mismatched consensus function interface safety
+    const results = Array.isArray(judgedResponse) ? judgedResponse : [judgedResponse];
+    return (results[0].content || '').trim();
 
-  // ── Step 2: Judge synthesises ────────────────────────────────────────────
-  const judgePrompt = `Original prompt:\n"${prompt}"\n\nDraft A:\n${textA}\n\nDraft B:\n${textB}\n\nSynthesize the single best answer.`;
-
-  const judged = await router.call({
-    user: judgePrompt,
-    system: JUDGE_SYSTEM,
-    temperature: 0.2,
-    model: 'MODEL_POWER',
-    maxTokens: 1500
-  });
-
-  return judged.content.trim();
+  } catch (error) {
+    logger.error({ prompt, err: (error as any).message }, 'Consensus aggregator failed');
+    throw error;
+  }
 }

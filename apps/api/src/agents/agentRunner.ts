@@ -251,52 +251,57 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
   // Enable streaming for high-budget agents to stream long outputs in real-time
   const shouldStream = (maxTokens >= 2000) && !!sseRes;
 
-  const { content, tokens } = await callGroq({
-    system,
-    user,
-    model,
-    maxTokens,
-    temperature: task.agentType === 'analyst' ? 0.3 : 0.6,
-    jsonMode: expectsJson,
-    enableStreaming: shouldStream,
-    onStreamChunk: shouldStream ? (chunk: string) => {
-      // Stream individual chunks via SSE for real-time UI updates
-      if (sseRes && chunk.length > 0) {
-        try {
-          sseRes.write(`data: ${JSON.stringify({
-            type: 'agent_output_chunk',
-            taskId: task.id,
-            chunk: chunk,
-          })}\n\n`);
-        } catch {
-          // Socket may be closed, fail silently
+  try {
+    const { content, tokens } = await callGroq({
+      system,
+      user,
+      model,
+      maxTokens,
+      temperature: task.agentType === 'analyst' ? 0.3 : 0.6,
+      jsonMode: expectsJson,
+      enableStreaming: shouldStream,
+      onStreamChunk: shouldStream ? (chunk: string) => {
+        // Stream individual chunks via SSE for real-time UI updates
+        if (sseRes && chunk.length > 0) {
+          try {
+            sseRes.write(`data: ${JSON.stringify({
+              type: 'agent_output_chunk',
+              taskId: task.id,
+              chunk: chunk,
+            })}\n\n`);
+          } catch {
+            // Socket may be closed, fail silently
+          }
         }
-      }
-    } : undefined,
-  });
-
-  const artifact = parseTypedArtifact(content, task);
-  
-  // For coder agents, attempt code execution via toolExecutor and append results to artifact
-  if (task.agentType === 'coder' && (artifact as any).code) {
-    const result = await toolExecutor.execute({
-      toolName: 'code_execution',
-      arguments: {
-        language: 'python',
-        code: (artifact as any).code,
-      },
-      missionId: opts.missionId,
-      taskId: task.id,
-      userId: opts.userId,
-      workspaceId: opts.workspaceId,
+      } : undefined,
     });
-    (artifact as any).executionOutput = result;
-    if ((result as any).stderr) {
-      logger.warn({ taskId: task.id, stderr: (result as any).stderr }, 'Code execution returned stderr');
+    const artifact = parseTypedArtifact(content, task);
+    
+    // For coder agents, attempt code execution via toolExecutor and append results to artifact
+    if (task.agentType === 'coder' && (artifact as any).code) {
+      const result = await toolExecutor.execute({
+        toolName: 'code_execution',
+        arguments: {
+          language: 'python',
+          code: (artifact as any).code,
+        },
+        missionId: opts.missionId,
+        taskId: task.id,
+        userId: opts.userId,
+        workspaceId: opts.workspaceId,
+      });
+      (artifact as any).executionOutput = result;
+      if ((result as any).stderr) {
+        logger.warn({ taskId: task.id, stderr: (result as any).stderr }, 'Code execution returned stderr');
+      }
     }
+    
+    logger.info({ taskId: task.id, duration: Date.now() - startMs }, 'Agent finished task');
+    return { artifact, tokensUsed: tokens, rawContent: content };
+  } catch (error) {
+    logger.error({ taskId: task.id, err: (error as any).message }, 'Agent execution failed');
+    throw error;
   }
-  
-  logger.info({ taskId: task.id, duration: Date.now() - startMs }, 'Agent finished task');
 
   // MISSION RECORDING: Record the interaction for future replay
   if (isRecordMode) {
