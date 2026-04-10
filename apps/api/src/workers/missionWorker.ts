@@ -4,7 +4,8 @@ const app = express();
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', worker: 'mission', timestamp: Date.now() });
 });
-if (require.main === module) {
+import { fileURLToPath } from 'url';
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const port = process.env.HEALTH_PORT || 4002;
   app.listen(port, () => logger.info({ port }, 'MissionWorker health endpoint started'));
 }
