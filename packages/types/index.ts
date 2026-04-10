@@ -97,6 +97,7 @@ export interface TaskDAG {
   missionId: string;
   goal: string;
   goalType: GoalType;
+  status?: MissionStatus;               // NEW: Support mission-level state
   successCriteria: string[];         // measurable outcomes defining "done"
   nodes: TaskNode[];
   estimatedWaves: number;

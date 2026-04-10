@@ -14,6 +14,9 @@ import {
   TypedArtifact, 
   GoalType 
 } from '@nexus-os/types';
+import { buildAgentPrompt } from './promptBuilder.js';
+import { parseTypedArtifact } from './outputParser.js';
+import { nexusStateStore as missionStore } from '../storage/nexusStateStore.js';
 
 import { 
   MODEL_FAST, 
@@ -148,7 +151,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
   if (isAborted()) throw new Error('[Canceled] Mission aborted');
 
   // -- P0: Council of Three (High-precision reasoning for critical tasks) --
-  if (task.priority === 'critical' || goalType === 'complex' || task.agentType === 'chief_analyst') {
+  if (task.priority === 'critical' || task.agentType === 'chief_analyst') {
     logger.info({ taskId: task.id }, 'Council of Three activated for Critical Task');
     
     await missionStore.updateTaskCheckpoint(task.id, { step: 'Council of Three: Specialist Consultation' });

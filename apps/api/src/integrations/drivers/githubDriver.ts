@@ -10,7 +10,7 @@ export const githubDriver: Tool = {
   requiresApproval: true,
   schema: z.object({ 
     repo: z.string().regex(/^[\w.-]+\/[\w.-]+$/, 'Must be owner/repo format'), 
-    action: z.enum(['read_file', 'create_pr', 'push_commit', 'list_issues', 'create_issue']), 
+    action: z.enum(['read_file', 'create_pr', 'push_commit', 'list_issues', 'create_issue', 'create_repo']), 
   }),
   paramSchema: {
     repo:   { type: 'string', required: true,  description: 'GitHub repo (owner/repo)' },
@@ -70,7 +70,7 @@ export const githubDriver: Tool = {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(`GitHub API error (${response.status}): ${errorData.message || response.statusText}`);
+        throw new Error(`GitHub API error (${response.status}): ${(errorData as any).message || response.statusText}`);
       }
 
       const data = await response.json();

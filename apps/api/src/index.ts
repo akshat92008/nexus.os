@@ -132,7 +132,7 @@ app.use(helmet({
       frameSrc: ["'none'"],
       baseUri: ["'self'"],
       formAction: ["'self'"],
-      upgradeInsecureRequests: {},
+      upgradeInsecureRequests: [],
     },
   },
   crossOriginEmbedderPolicy: false,

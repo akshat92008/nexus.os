@@ -34,9 +34,8 @@ class GeminiProvider {
     } : { promptTokens: 0, completionTokens: 0 };
 
     return { 
-      text: content, 
-      tokens: usage.promptTokens + usage.completionTokens,
-      usage
+      content, 
+      tokens: usage.promptTokens + usage.completionTokens
     };
   }
 }
@@ -185,9 +184,10 @@ export class LLMRouter {
     }
 
     // 3. Final Fallback to Groq
+    let groqModel = '';
     if (this.shouldUseProvider('groq')) {
       try {
-        const groqModel = this.mapToGroqModel(tier);
+        groqModel = this.mapToGroqModel(tier);
         const response = await this.groqBreaker.fire({ ...opts, model: groqModel });
         rateLimitMonitor.recordSuccess('groq', groqModel);
         return response;

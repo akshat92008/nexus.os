@@ -70,6 +70,16 @@ class ResilientRedis {
     }
   }
 
+  async ping(): Promise<string> {
+    if (!this.client) return 'PONG (Local Fallback)';
+    try {
+      return await this.client.ping();
+    } catch (err: any) {
+      logger.warn({ err: err.message }, '[Redis] Ping failed');
+      return 'PONG (Degraded)';
+    }
+  }
+
   // Pass-through for other essential methods if needed
   on(event: string, handler: (...args: any[]) => void) {
     this.client?.on(event, handler);

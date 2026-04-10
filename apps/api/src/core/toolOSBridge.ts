@@ -16,7 +16,10 @@ class ToolOSBridge implements ToolInterface {
       }
 
       // Execute tool handler via the registry
-      const data = await tool.handler(req.payload);
+      const data = await tool.handler(req.payload, {
+        userId: (req as any).userId || 'system',
+        workspaceId: (req as any).workspaceId
+      });
       
       return { success: true, data };
     } catch (err: any) {

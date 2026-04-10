@@ -47,7 +47,6 @@ export const tasksQueue = new Queue('tasks', {
       type: 'exponential',
       delay: 3000,
     },
-    timeout: 120_000,
     removeOnComplete: true,
     removeOnFail: false,
   },
@@ -73,6 +72,7 @@ export interface MissionJobData {
 export interface TaskJobData {
   taskId:      string;
   missionId:   string;
+  userId:      string;      // NEW: Required for agent scoping
   workspaceId: string;
   agentType:   AgentType;
   input:       TaskNode;
