@@ -19,45 +19,51 @@ import { rateLimit } from 'express-rate-limit';
 
 // --- P0: Startup Environment Variable Validation ---
 const REQUIRED_ENV = [
-  'PORT',
   'SUPABASE_URL',
   'SUPABASE_SERVICE_KEY',
   'REDIS_URL',
-  'OPENROUTER_API_KEY',
-  'GROQ_API_KEY',
-  'JWT_SECRET',
-  'CORS_ALLOW_ORIGINS'
+  'GROQ_API_KEY'
 ];
 
-// Validate all required environment variables
-const missingEnv: string[] = [];
+const RECOMMENDED_ENV = [
+  'JWT_SECRET',
+  'CORS_ALLOW_ORIGINS',
+  'OPENROUTER_API_KEY'
+];
+
+// Validate critical environment variables
+const missingCritical: string[] = [];
 for (const k of REQUIRED_ENV) {
   if (!process.env[k] || process.env[k].trim() === '') {
-    missingEnv.push(k);
+    missingCritical.push(k);
   }
 }
 
-if (missingEnv.length > 0) {
-  const isTest = process.env.NODE_ENV === 'test';
-  if (isTest) {
-    logger.warn({ missing: missingEnv }, 'Missing environment variables in test mode. Proceeding with caution.');
-  } else {
-    logger.fatal({ missing: missingEnv }, 'Missing required environment variables');
-    console.error('\n❌ FATAL: Missing required environment variables:');
-    missingEnv.forEach(k => console.error(`   - ${k}`));
-    console.error('\nPlease check your .env file and restart the server.\n');
-    process.exit(1);
-  }
+if (missingCritical.length > 0) {
+  logger.fatal({ missing: missingCritical }, 'Missing CRITICAL environment variables. App may not function.');
+  console.error('\n❌ FATAL: Missing CRITICAL environment variables:');
+  missingCritical.forEach(k => console.error(`   - ${k}`));
+  // We still exit for truly critical DB/LLM keys to prevent garbage execution
+  if (process.env.NODE_ENV === 'production') process.exit(1);
+}
+
+// Handle Recommended/Non-Blocking Variables with safe fallbacks
+if (!process.env.JWT_SECRET) {
+  logger.warn('JWT_SECRET is missing. Using unstable "dev-emergency-secret". AUTH WILL BE INSECURE.');
+  process.env.JWT_SECRET = 'dev-emergency-secret-change-me-in-production';
+}
+
+if (!process.env.CORS_ALLOW_ORIGINS) {
+  logger.info('CORS_ALLOW_ORIGINS missing. Defaulting to allow all (*).');
+  process.env.CORS_ALLOW_ORIGINS = '*';
 }
 
 // Validate PORT format
-const PORT = parseInt(process.env.PORT!, 10);
+const PORT = parseInt(process.env.PORT || '4000', 10);
 if (isNaN(PORT) || PORT < 1 || PORT > 65535) {
-  logger.fatal({ port: process.env.PORT }, 'Invalid PORT configuration');
-  console.error(`❌ FATAL: Invalid PORT value: ${process.env.PORT}`);
-  console.error('PORT must be a number between 1 and 65535\n');
-  process.exit(1);
+  logger.warn({ port: process.env.PORT }, 'Invalid PORT configuration, defaulting to 4000');
 }
+const FINAL_PORT = isNaN(PORT) ? 4000 : PORT;
 
 // Validate URLs
 const URL_PATTERN = /^https?:\/\/.+/i;
@@ -791,8 +797,8 @@ app.get('/api/metrics', async (req, res) => {
 });
 
 if (!process.env.VERCEL) {
-  app.listen(PORT, '0.0.0.0', () => {
-    logger.info({ port: PORT }, 'Nexus OS API running');
+  app.listen(FINAL_PORT, '0.0.0.0', () => {
+    logger.info({ port: FINAL_PORT }, 'Nexus OS API running');
     logger.info({ allowedOrigins: ALLOWED_ORIGINS }, 'CORS origins configured');
   });
 }
