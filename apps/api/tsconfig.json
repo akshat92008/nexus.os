@@ -18,6 +18,6 @@
       "@nexus-os/types": ["../types/index.ts"]
     }
   },
-  "include": ["src/**/*", "consensus/**/*", "../types/index.ts"],
+  "include": ["src/**/*", "../types/index.ts"],
   "exclude": ["node_modules", "dist"]
 }

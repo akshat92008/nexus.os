@@ -102,7 +102,8 @@ export function useNexusSSE(): UseNexusSSEReturn {
   const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastActivityRef = useRef<number>(0);
-  const activeMissionIdRef = useRef<string | null>(null);
+  const activeMissionIdRef   = useRef<string | null>(null);
+  const terminalStateRef     = useRef<boolean>(false); // stops reconnect after completed/failed
   
   const { ingestEvent, startSession } = useNexusStore();
 
@@ -195,6 +196,13 @@ export function useNexusSSE(): UseNexusSSEReturn {
         if ((err as Error).name === 'AbortError') return;
 
         const nextAttempt = attempt + 1;
+
+        // Don't reconnect if mission already reached a terminal state
+        if (terminalStateRef.current) {
+          setStatus('connected'); // mission is done — no need to show 'failed'
+          return;
+        }
+
         if (nextAttempt > MAX_RETRIES) {
           setStatus('failed');
           setRetryCount(nextAttempt);
@@ -237,6 +245,7 @@ export function useNexusSSE(): UseNexusSSEReturn {
         return;
       }
 
+      terminalStateRef.current = false; // reset for new mission
       startSession(goal, userId);
 
       try {

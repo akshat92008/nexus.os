@@ -9,7 +9,7 @@
  *
  * All routes are fully typed. CORS is open in dev; lock it down in prod.
  */
-console.log("🚀 [HEARTBEAT] The API is starting up...");
+// startup log deferred until logger is imported
 import express, { type Request, type Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -31,6 +31,11 @@ import type { OrchestrateRequest } from '@nexus-os/types';
 import { requireAuth } from './middleware/auth.js';
 import { getSupabase } from './storage/supabaseClient.js';
 import { rateLimitMonitor } from './llm/RateLimitMonitor.js';
+import { logger } from './logger.js';
+import { attachSSEHeartbeat, attachSSETimeout } from './events/eventBus.js';
+import { getRedis } from './storage/redisClient.js';
+import { checkAndConsume } from './rateLimitGovernor.js';
+import { randomUUID } from 'crypto';
 
 dotenv.config();
 
@@ -74,7 +79,7 @@ export default app;
 
 if (!process.env.VERCEL) {
   void (async () => {
-    console.log('[API] 🚀 Initializing Nexus OS Durable Services...');
+    logger.info('Initializing Nexus OS durable services');
     
     try {
       // Start global mission event listener (reliable DAG orchestration)
@@ -83,7 +88,7 @@ if (!process.env.VERCEL) {
       // Marks 'pending' approvals older than 10 mins as 'rejected'
       await approvalGuard.cleanupStaleApprovals();
       
-      console.log('[API] ✅ Durable Services Initialized.');
+      logger.info('Durable services initialized');
     } catch (err) {
       console.error('[API] ❌ Durable Services Initialization failed:', err);
     }
@@ -183,10 +188,38 @@ app.get('/api/marketplace/agents', (req, res) => {
   res.json(MARKETPLACE_AGENTS);
 });
 
-app.post('/api/marketplace/agents/:id/install', (req, res) => {
+app.post('/api/marketplace/agents/:id/install', async (req, res) => {
   const agent = MARKETPLACE_AGENTS.find(a => a.id === req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent not found' });
+  // Task 13: Persist installed agent to user's profile in Supabase
+  try {
+    const supabase = await getSupabase();
+    const userId = req.user!.id;
+    // Upsert into user_state.installed_agents (JSONB array)
+    const { data: state } = await supabase
+      .from('user_state')
+      .select('installed_agents')
+      .eq('user_id', userId)
+      .single();
+    const current: string[] = state?.installed_agents ?? [];
+    if (!current.includes(req.params.id)) {
+      await supabase
+        .from('user_state')
+        .upsert({ user_id: userId, installed_agents: [...current, req.params.id] }, { onConflict: 'user_id' });
+    }
+  } catch (dbErr) {
+    // Non-fatal: log but still return success (agent data is static)
+    console.error('[Install] Failed to persist agent install:', dbErr);
+  }
   res.json({ success: true, agentId: req.params.id, message: `${agent.name} installed successfully` });
+});
+
+// Correlation ID — attach to every request (Task 17)
+app.use((req: Request, res: Response, next) => {
+  const id = randomUUID();
+  (req as any).requestId = id;
+  res.setHeader('X-Request-ID', id);
+  next();
 });
 
 // Apply requireAuth to all subsequent routes
@@ -196,24 +229,39 @@ app.use(requireAuth);
  * Readiness Check (Dependencies)
  */
 app.get('/api/ready', async (req, res) => {
+  const failures: string[] = [];
+
+  // Redis ping
+  let redisStatus = 'connected';
   try {
-    const client = await nexusStateStore.getSupabaseClient();
-    const { error: dbError } = await client.from('nexus_missions').select('id', { head: true }).limit(1);
-
-    if (dbError) throw dbError;
-
-    const redisReady = await eventBus.ping();
-    if (!redisReady) {
-      throw new Error('Redis ping failed');
-    }
-
-    res.json({ 
-      status: 'ready', 
-      database: 'connected', 
-      redis: 'connected' 
-    });
+    const redis = getRedis();
+    if (!redis) throw new Error('REDIS_URL not configured');
+    const pong = await redis.ping();
+    if (pong !== 'PONG') throw new Error(`Unexpected ping response: ${pong}`);
   } catch (err: any) {
-    res.status(503).json({ status: 'unready', error: err?.message ?? 'dependency unavailable' });
+    redisStatus = 'unavailable';
+    failures.push(`redis: ${err.message}`);
+  }
+
+  // Supabase SELECT 1
+  let dbStatus = 'connected';
+  try {
+    const supabase = await getSupabase();
+    const { error: dbError } = await supabase
+      .from('nexus_missions')
+      .select('id', { count: 'exact', head: true })
+      .limit(1);
+    if (dbError) throw dbError;
+  } catch (err: any) {
+    dbStatus = 'unavailable';
+    failures.push(`database: ${err.message}`);
+  }
+
+  if (failures.length > 0) {
+    return res.status(503).json({ status: 'unready', redis: redisStatus, database: dbStatus, failures });
+  }
+
+  try {
   }
 });
 
@@ -227,6 +275,16 @@ app.get('/api/agents', async (req, res) => {
 /**
  * Orchestration (Durable DAG Execution)
  */
+// Global rate limit: 100 req/min per IP (Task 12)
+const globalLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests — max 100/min' },
+});
+app.use(globalLimiter);
+
 const orchestrateLimiter = rateLimit({
   windowMs: 60_000,
   max: 10,
@@ -236,16 +294,37 @@ const orchestrateLimiter = rateLimit({
 });
 
 app.post('/api/orchestrate', orchestrateLimiter, async (req: Request<{}, {}, OrchestrateRequest>, res: Response) => {
-  const { goal, workspaceId, archMode = 'legacy' } = req.body;
+  const { goal: rawGoal, workspaceId, archMode = 'legacy' } = req.body;
   const userId = req.user!.id;
 
-  if (!goal) {
-    return res.status(400).json({ error: 'Goal is required.' });
+  // ── Input validation (Task 10) ────────────────────────────────────────────
+  if (!rawGoal || typeof rawGoal !== 'string') {
+    return res.status(400).json({ error: 'goal is required and must be a string.' });
+  }
+  // Strip HTML tags
+  const goal = rawGoal.replace(/<[^>]*>/g, '').trim();
+  if (goal.length < 10) {
+    return res.status(400).json({ error: 'goal must be at least 10 characters.' });
+  }
+  if (goal.length > 500) {
+    return res.status(400).json({ error: 'goal must be 500 characters or fewer.' });
+  }
+  if (workspaceId !== undefined) {
+    if (typeof workspaceId !== 'string' || !/^[a-zA-Z0-9_]+$/.test(workspaceId)) {
+      return res.status(400).json({ error: 'workspaceId must be alphanumeric with underscores only.' });
+    }
+  }
+
+  // ── Per-user LLM rate limit check ────────────────────────────────────────
+  const { allowed, remaining } = await checkAndConsume(userId);
+  if (!allowed) {
+    return res.status(429).json({ error: 'Hourly LLM quota exceeded (30/hr). Try again later.', remaining });
   }
 
   try {
     const dag = await planMission(goal, archMode);
-    const workspace_id = workspaceId ?? `ws_${Math.random().toString(36).slice(2, 10)}`;
+    // Task 11: crypto.randomUUID() instead of Math.random()
+    const workspace_id = workspaceId ?? `ws_${randomUUID().slice(0, 8)}`;
 
     // 1. Persist the mission metadata
     await nexusStateStore.createMission({
@@ -364,6 +443,75 @@ app.get('/api/approvals/pending', async (req, res) => {
 });
 
 /**
+ * Approve a pending task (Task 19)
+ * POST /api/approvals/:id/approve
+ */
+app.post('/api/approvals/:id/approve', async (req, res) => {
+  const { id } = req.params;
+  const userId  = req.user!.id;
+  try {
+    const supabase = await getSupabase();
+    // Verify ownership via the related mission
+    const { data: appr, error: fetchErr } = await supabase
+      .from('pending_approvals')
+      .select('*, nexus_missions!inner(user_id)')
+      .eq('id', id)
+      .single();
+    if (fetchErr || !appr) return res.status(404).json({ error: 'Approval not found' });
+    if (appr.nexus_missions.user_id !== userId) return res.status(403).json({ error: 'Forbidden' });
+    if (appr.status !== 'pending') return res.status(409).json({ error: `Approval already ${appr.status}` });
+
+    const { error: updateErr } = await supabase
+      .from('pending_approvals')
+      .update({ status: 'approved', resolved_at: new Date().toISOString() })
+      .eq('id', id);
+    if (updateErr) throw updateErr;
+
+    // Resume the paused task via BullMQ
+    if (appr.task_id) {
+      const job = await tasksQueue.getJob(appr.task_id);
+      if (job) await job.updateData({ ...job.data, approvalStatus: 'approved' });
+    }
+
+    logger.info({ approvalId: id, userId }, 'Approval granted');
+    res.json({ success: true, status: 'approved' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Reject a pending task (Task 19)
+ * POST /api/approvals/:id/reject
+ */
+app.post('/api/approvals/:id/reject', async (req, res) => {
+  const { id } = req.params;
+  const userId  = req.user!.id;
+  try {
+    const supabase = await getSupabase();
+    const { data: appr, error: fetchErr } = await supabase
+      .from('pending_approvals')
+      .select('*, nexus_missions!inner(user_id)')
+      .eq('id', id)
+      .single();
+    if (fetchErr || !appr) return res.status(404).json({ error: 'Approval not found' });
+    if (appr.nexus_missions.user_id !== userId) return res.status(403).json({ error: 'Forbidden' });
+    if (appr.status !== 'pending') return res.status(409).json({ error: `Approval already ${appr.status}` });
+
+    const { error: updateErr } = await supabase
+      .from('pending_approvals')
+      .update({ status: 'rejected', resolved_at: new Date().toISOString() })
+      .eq('id', id);
+    if (updateErr) throw updateErr;
+
+    logger.info({ approvalId: id, userId }, 'Approval rejected');
+    res.json({ success: true, status: 'rejected' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
  * Event Stream (SSE)
  */
 app.get('/api/events/stream', async (req, res) => {
@@ -391,24 +539,24 @@ app.get('/api/events/stream', async (req, res) => {
     'X-Accel-Buffering': 'no', // For Nginx
   });
 
-  res.write('retry: 10000\n\n');
-  res.write(': connected\n\n');
-
-  const keepAlive = setInterval(() => {
-    if (res.writableEnded) return;
-    res.write(': heartbeat\n\n');
-  }, 25_000);
+  res.write('\n'); // Flush initial headers
 
   const handler = (event: any) => {
-    if (res.writableEnded) return;
     res.write(`data: ${JSON.stringify(event)}\n\n`);
   };
 
   await eventBus.subscribe(missionId, handler);
 
+  // Heartbeat every 25s + auto-close after 10 min (Task 1)
+  const stopHeartbeat = attachSSEHeartbeat(res);
+  const stopTimeout   = attachSSETimeout(res, () => {
+    eventBus.unsubscribe(missionId, handler);
+  });
+
   req.on('close', () => {
-    clearInterval(keepAlive);
-    console.log(`[API] 🔌 Closed SSE stream for mission ${missionId}`);
+    logger.info({ missionId }, 'SSE stream closed by client');
+    stopHeartbeat();
+    stopTimeout();
     eventBus.unsubscribe(missionId, handler);
   });
 });
@@ -436,9 +584,54 @@ app.post('/api/state', async (req, res) => {
   }
 });
 
+/**
+ * Metrics endpoint (Task 16)
+ * GET /api/metrics
+ * Exposes: active_missions, queue_depth, tasks_completed_today, llm_errors_last_hour
+ */
+app.get('/api/metrics', async (req, res) => {
+  try {
+    const redis   = getRedis();
+    const supabase = await getSupabase();
+
+    // Active missions from DB
+    const { count: activeMissions } = await supabase
+      .from('nexus_missions')
+      .select('id', { count: 'exact', head: true })
+      .in('status', ['queued', 'running'])
+      .then((r) => ({ count: r.count ?? 0 }));
+
+    // BullMQ queue depths
+    const [missionWaiting, taskWaiting] = await Promise.all([
+      missionsQueue.getWaitingCount(),
+      tasksQueue.getWaitingCount(),
+    ]);
+
+    // Redis counters written by existing code
+    const [completedToday, llmErrors] = redis
+      ? await Promise.all([
+          redis.get('nexus:metrics:tasks_completed_today').then((v) => parseInt(v ?? '0')),
+          redis.get('nexus:metrics:llm_errors_last_hour').then((v) => parseInt(v ?? '0')),
+        ])
+      : [0, 0];
+
+    res.json({
+      active_missions:         activeMissions,
+      queue_depth:             missionWaiting + taskWaiting,
+      missions_queue:          missionWaiting,
+      tasks_queue:             taskWaiting,
+      tasks_completed_today:   completedToday,
+      llm_errors_last_hour:    llmErrors,
+      timestamp:               new Date().toISOString(),
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 if (!process.env.VERCEL) {
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[API] ⚡ Nexus OS Backend running at http://0.0.0.0:${PORT}`);
-    console.log(`[API] 🌍 Allowed Origins: ${ALLOWED_ORIGINS.join(', ')}`);
+    logger.info({ port: PORT }, 'Nexus OS API running');
+    logger.info({ allowedOrigins: ALLOWED_ORIGINS }, 'CORS origins configured');
   });
 }

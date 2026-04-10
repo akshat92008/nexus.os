@@ -1,48 +1,62 @@
 /**
- * Nexus OS — Consensus module
+ * Nexus OS — Council of Three (Consensus Engine)
  *
- * Lightweight opinion aggregation for mission-level decisions.
- * This file is intentionally simple so it can be wired in later
- * without introducing paid or external dependencies.
+ * Pattern: two LLM calls in parallel at different temperatures, then a
+ * judge call that synthesises the best answer from both responses.
+ *
+ *  Draft A  (temp 0.4 — precise, conservative)
+ *  Draft B  (temp 0.7 — creative, exploratory)
+ *       ↓
+ *  Judge    (temp 0.2 — analytical, picks the best and merges)
+ *       ↓
+ *  Final answer (string)
  */
 
-export interface ConsensusOpinion {
-  sourceId: string;
-  confidence: number;
-  recommendation: string;
-  rationale?: string;
-}
+import { LLMRouter } from '../src/llm/LLMRouter.js';
 
-export interface ConsensusResult {
-  winner: ConsensusOpinion | null;
-  score: number;
-  summary: string;
-  opinions: ConsensusOpinion[];
-}
+const router = new LLMRouter();
 
-export function aggregateConsensus(opinions: ConsensusOpinion[]): ConsensusResult {
-  if (opinions.length === 0) {
-    return {
-      winner: null,
-      score: 0,
-      summary: 'No consensus opinions were provided.',
-      opinions: [],
-    };
-  }
+const JUDGE_SYSTEM = `You are a critical synthesis judge. You receive two draft responses to the same prompt.
+Your job is to produce ONE final answer that takes the strongest elements from each draft.
+Rules:
+- Do not mention "Draft A" or "Draft B" in your final output.
+- Do not add preamble like "Here is the synthesised answer".
+- Output ONLY the final answer text. Nothing else.`;
 
-  const sorted = [...opinions].sort((a, b) => b.confidence - a.confidence);
-  const winner = sorted[0];
-  const average = opinions.reduce((sum, item) => sum + item.confidence, 0) / opinions.length;
+/**
+ * Run the Council of Three consensus pattern.
+ *
+ * @param prompt   The user's question or task description
+ * @param context  Optional additional context injected into the system prompt
+ * @returns        The judge-synthesised answer as a plain string
+ */
+export async function runConsensus(prompt: string, context = ''): Promise<string> {
+  const systemPrompt = context
+    ? `You are a helpful expert assistant.\n\nContext:\n${context}`
+    : 'You are a helpful expert assistant.';
 
-  return {
-    winner,
-    score: Number(average.toFixed(2)),
-    summary: `Consensus reached with ${opinions.length} opinions. Highest confidence recommendation: ${winner.recommendation}`,
-    opinions,
-  };
-}
+  // ── Step 1: Two parallel drafts ──────────────────────────────────────────
+  const [draftA, draftB] = await Promise.all([
+    router.chat(
+      [{ role: 'user', content: prompt }],
+      { temperature: 0.4, tier: 'MODEL_POWER', systemPrompt }
+    ),
+    router.chat(
+      [{ role: 'user', content: prompt }],
+      { temperature: 0.7, tier: 'MODEL_POWER', systemPrompt }
+    ),
+  ]);
 
-export function mergeRecommendations(opinions: ConsensusOpinion[]): string {
-  const unique = Array.from(new Map(opinions.map((item) => [item.recommendation, item])).values());
-  return unique.map((item, index) => `${index + 1}. ${item.recommendation}`).join('\n');
+  const textA = draftA.content.trim();
+  const textB = draftB.content.trim();
+
+  // ── Step 2: Judge synthesises ────────────────────────────────────────────
+  const judgePrompt = `Original prompt:\n"${prompt}"\n\nDraft A:\n${textA}\n\nDraft B:\n${textB}\n\nSynthesize the single best answer.`;
+
+  const judged = await router.chat(
+    [{ role: 'user', content: judgePrompt }],
+    { temperature: 0.2, tier: 'MODEL_POWER', systemPrompt: JUDGE_SYSTEM }
+  );
+
+  return judged.content.trim();
 }

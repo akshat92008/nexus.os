@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 /**
  * Nexus OS — Mission Planner v2.2
  * 
@@ -42,7 +43,7 @@ function validateAndRepair(raw: unknown, goal: string): TaskDAG {
   const ids = new Set<string>(plan.nodes.map((n: any) => n.id));
 
   for (const node of plan.nodes) {
-    if (!node.id) node.id = `task_${Math.random().toString(36).slice(2, 7)}`;
+    if (!node.id) node.id = `task_${randomUUID().slice(0, 8)}`;
     if (!VALID_AGENT_TYPES.includes(node.agentType)) node.agentType = 'researcher';
     if (!Array.isArray(node.dependencies)) node.dependencies = [];
     if (!Array.isArray(node.contextFields)) node.contextFields = node.dependencies.slice();

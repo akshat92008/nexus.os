@@ -303,3 +303,55 @@ export function getGlobalGovernor(): RateLimitGovernor {
 }
 
 export const globalGovernor = getGlobalGovernor();
+
+// ── Per-User Rate Limiter ─────────────────────────────────────────────────────
+// Separate from the concurrency governor above.
+// Tracks per-user LLM call counts in Redis (INCR + EXPIRE).
+// Free tier limit: 30 LLM calls per user per hour.
+
+const USER_LLM_LIMIT    = 30;
+const USER_WINDOW_SECS  = 3600; // 1 hour
+
+export interface RateLimitResult {
+  allowed:   boolean;
+  remaining: number;
+}
+
+/**
+ * Checks whether a user is within their hourly LLM quota and, if so,
+ * increments their counter. Uses Redis INCR + EXPIRE for atomic counting.
+ *
+ * Falls back to "allowed" if Redis is unavailable (graceful degradation).
+ */
+export async function checkAndConsume(userId: string): Promise<RateLimitResult> {
+  const redis = getRedis();
+
+  if (!redis) {
+    // Redis unavailable — allow the call but log a warning
+    console.warn('[RateLimitGovernor] Redis unavailable — skipping per-user rate limit check');
+    return { allowed: true, remaining: USER_LLM_LIMIT };
+  }
+
+  const key = `nexus:ratelimit:llm:${userId}`;
+
+  try {
+    const count = await redis.incr(key);
+    if (count === 1) {
+      // First call in this window — set expiry
+      await redis.expire(key, USER_WINDOW_SECS);
+    }
+
+    const remaining = Math.max(0, USER_LLM_LIMIT - count);
+    const allowed   = count <= USER_LLM_LIMIT;
+
+    if (!allowed) {
+      console.warn(`[RateLimitGovernor] User ${userId} exceeded hourly LLM quota (${count}/${USER_LLM_LIMIT})`);
+    }
+
+    return { allowed, remaining };
+  } catch (err) {
+    console.error('[RateLimitGovernor] Redis error in checkAndConsume:', err);
+    // Fail open — don't block users if Redis errors
+    return { allowed: true, remaining: USER_LLM_LIMIT };
+  }
+}

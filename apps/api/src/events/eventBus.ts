@@ -1,21 +1,41 @@
 /**
  * Nexus OS — Event Bus
- * 
- * Decentralized event system using Redis Pub/Sub.
- * Decouples core logic from Express 'res' objects.
+ *
+ * Fixes applied:
+ *  - JSON.parse wrapped in try/catch — malformed messages are logged and skipped
+ *  - attachSSEHeartbeat(): sends ": ping" every 25s to prevent proxy timeouts
+ *  - attachSSETimeout(): auto-closes stale SSE connections after 10 minutes
  */
 
 import { Redis } from 'ioredis';
+import type { Response } from 'express';
 import type { NexusEvent } from '../db/models.js';
 
-const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
-const REDIS_OPTIONS = {
-  maxRetriesPerRequest: 3,
-  connectTimeout: 10000,
-  lazyConnect: true,
-  enableReadyCheck: false,
-  retryStrategy: (times: number) => Math.min(times * 100, 2000),
-};
+const REDIS_URL = process.env.REDIS_URL;
+if (!REDIS_URL) {
+  throw new Error('[EventBus] REDIS_URL environment variable is required');
+}
+
+const SSE_HEARTBEAT_INTERVAL_MS = 25_000;
+const SSE_MAX_LIFETIME_MS       = 10 * 60 * 1000;
+
+export function attachSSEHeartbeat(res: Response): () => void {
+  const interval = setInterval(() => {
+    if (!res.writableEnded) res.write(': ping\n\n');
+  }, SSE_HEARTBEAT_INTERVAL_MS);
+  return () => clearInterval(interval);
+}
+
+export function attachSSETimeout(res: Response, onTimeout?: () => void): () => void {
+  const timer = setTimeout(() => {
+    if (!res.writableEnded) {
+      res.write('data: {"type":"timeout","message":"Stream closed after 10 minutes"}\n\n');
+      res.end();
+    }
+    onTimeout?.();
+  }, SSE_MAX_LIFETIME_MS);
+  return () => clearTimeout(timer);
+}
 
 class EventBus {
   private publisher: Redis;
@@ -23,52 +43,35 @@ class EventBus {
   private listeners: Map<string, Set<(event: NexusEvent) => void>> = new Map();
 
   constructor() {
-    this.publisher = new Redis(REDIS_URL, REDIS_OPTIONS);
-    this.subscriber = new Redis(REDIS_URL, REDIS_OPTIONS);
+    this.publisher  = new Redis(REDIS_URL!);
+    this.subscriber = new Redis(REDIS_URL!);
 
     this.subscriber.on('message', (channel: string, message: string) => {
+      let event: NexusEvent;
       try {
-        const event = JSON.parse(message) as NexusEvent;
-        const handlers = this.listeners.get(channel);
-        if (handlers) {
-          handlers.forEach(handler => handler(event));
-        }
-      } catch (err) {
-        console.warn('[EventBus] Failed to parse message from Redis:', err);
+        event = JSON.parse(message) as NexusEvent;
+      } catch {
+        console.warn(`[EventBus] Malformed message on "${channel}" — skipping:`, message.slice(0, 200));
+        return;
+      }
+      const handlers = this.listeners.get(channel);
+      if (handlers) {
+        handlers.forEach((handler) => {
+          try { handler(event); }
+          catch (err) { console.error(`[EventBus] Handler threw on "${channel}":`, err); }
+        });
       }
     });
 
-    this.subscriber.on('error', (err) => {
-      console.warn('[EventBus] Subscriber error:', err instanceof Error ? err.message : String(err));
-    });
-
-    this.publisher.on('error', (err) => {
-      console.warn('[EventBus] Publisher error:', err instanceof Error ? err.message : String(err));
-    });
+    this.publisher.on('error',  (e) => console.warn('[EventBus] Publisher error:', e.message));
+    this.subscriber.on('error', (e) => console.warn('[EventBus] Subscriber error:', e.message));
   }
 
-  /**
-   * Publish an event to a mission-specific channel
-   */
   async publish(missionId: string, event: NexusEvent): Promise<void> {
     await this.publisher.publish(`mission:${missionId}`, JSON.stringify(event));
-    // Also publish to a global channel for system-wide monitoring
     await this.publisher.publish('nexus_global_events', JSON.stringify(event));
   }
 
-  async ping(): Promise<boolean> {
-    try {
-      const result = await this.publisher.ping();
-      return result === 'PONG';
-    } catch (err) {
-      console.warn('[EventBus] Redis ping failed:', err instanceof Error ? err.message : String(err));
-      return false;
-    }
-  }
-
-  /**
-   * Subscribe to events for a specific mission
-   */
   async subscribe(missionId: string, handler: (event: NexusEvent) => void): Promise<void> {
     const channel = `mission:${missionId}`;
     if (!this.listeners.has(channel)) {
@@ -78,9 +81,6 @@ class EventBus {
     this.listeners.get(channel)!.add(handler);
   }
 
-  /**
-   * Global listener for internal OS orchestration (event-driven)
-   */
   async subscribeGlobal(handler: (event: NexusEvent) => void): Promise<void> {
     const channel = 'nexus_global_events';
     if (!this.listeners.has(channel)) {
@@ -90,9 +90,6 @@ class EventBus {
     this.listeners.get(channel)!.add(handler);
   }
 
-  /**
-   * Unsubscribe from events
-   */
   async unsubscribe(missionId: string, handler: (event: NexusEvent) => void): Promise<void> {
     const channel = `mission:${missionId}`;
     const handlers = this.listeners.get(channel);
