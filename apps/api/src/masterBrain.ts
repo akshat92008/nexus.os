@@ -171,7 +171,7 @@ class MasterBrainV2 {
           // Optionally store this in a global state or emit event
         }
       } catch (err) {
-        logger.error('[MasterBrain] Groq analysis failed:', err);
+        logger.error({ err }, '[MasterBrain] Strategic analysis failed');
       }
     }
   }

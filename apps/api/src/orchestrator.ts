@@ -488,7 +488,6 @@ export async function cancelDurableMission(missionId: string): Promise<void> {
   // 3. Broadcast a cancellation event so any open SSE streams close cleanly.
   //    The frontend listens for 'mission_cancelled' and stops the spinner.
   try {
-  try {
     await eventBus.publish(missionId, {
       type: 'mission_cancelled',
       missionId,
