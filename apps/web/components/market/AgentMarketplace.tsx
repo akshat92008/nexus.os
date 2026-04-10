@@ -68,7 +68,7 @@ export function AgentMarketplace() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [ui.agentsViewOpen, installedAgentIds]);
 
   useEffect(() => {
     if (!ui.agentsViewOpen) return;
