@@ -12,10 +12,9 @@ import { useRef, useCallback, useState } from 'react';
 import { useNexusStore } from '../store/nexusStore';
 import type { NexusSSEEvent } from '@nexus-os/types';
 import { createClient } from '../lib/supabase';
+import { API_BASE, APP_CONFIG } from '../lib/constants';
 
-export const API_BASE = process.env.NEXT_PUBLIC_API_URL || (typeof window !== 'undefined' ? '' : 'http://localhost:3001');
-const MAX_RETRIES = 8;
-const BASE_DELAY = 1000;
+const { MAX_RETRIES, BASE_DELAY } = APP_CONFIG;
 
 async function streamSSE(
   input: RequestInfo | URL,

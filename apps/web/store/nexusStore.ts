@@ -10,7 +10,7 @@
 import { create } from 'zustand';
 import { subscribeWithSelector, persist } from 'zustand/middleware';
 import { NexusStore, UserStateSnapshot } from './types';
-import { API_BASE } from '../hooks/useNexusSSE';
+import { API_BASE } from '../lib/constants';
 
 // Slice Imports
 import { createAgentSlice } from './slices/agentSlice';
