@@ -146,7 +146,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
 
   // 2. Council of Three (Logical Cross-Examination)
   if (task.priority === 'critical' && task.agentType !== 'chief_analyst') {
-    console.log(`[AgentRunner] ⚖️ Council of Three activated for Critical Task: ${task.id}`);
+    logger.info({ taskId: task.id }, 'Council of Three activated for Critical Task');
     
     const [specialist1, specialist2] = await Promise.all([
       callGroq({ system, user, model: MODEL_FAST, maxTokens, temperature: 0.4, jsonMode: expectsJson }),
@@ -292,11 +292,11 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
     });
     (artifact as any).executionOutput = result;
     if ((result as any).stderr) {
-      console.warn(`[AgentRunner] Code execution returned stderr: ${(result as any).stderr}`);
+      logger.warn({ taskId: task.id, stderr: (result as any).stderr }, 'Code execution returned stderr');
     }
   }
   
-  console.log(`[AgentRunner] ✅ ${task.agentType.toUpperCase()} finished task: ${task.id} (${Date.now() - startMs}ms)`);
+  logger.info({ taskId: task.id, duration: Date.now() - startMs }, 'Agent finished task');
 
   // MISSION RECORDING: Record the interaction for future replay
   if (isRecordMode) {

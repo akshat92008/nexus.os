@@ -41,13 +41,15 @@ export async function runConsensus(prompt: string, context = ''): Promise<string
       user: prompt,
       system: systemPrompt,
       temperature: 0.4,
-      model: 'MODEL_POWER'
+      model: 'MODEL_POWER',
+      maxTokens: 1500
     }),
     router.call({
       user: prompt,
       system: systemPrompt,
       temperature: 0.7,
-      model: 'MODEL_POWER'
+      model: 'MODEL_POWER',
+      maxTokens: 1500
     }),
   ]);
 
@@ -61,7 +63,8 @@ export async function runConsensus(prompt: string, context = ''): Promise<string
     user: judgePrompt,
     system: JUDGE_SYSTEM,
     temperature: 0.2,
-    model: 'MODEL_POWER'
+    model: 'MODEL_POWER',
+    maxTokens: 1500
   });
 
   return judged.content.trim();

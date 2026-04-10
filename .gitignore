@@ -42,5 +42,6 @@ nexus-os-updated/
 files (3)/
 node_modules/
 .DS_Store
+nexus-state.json
 
 .aider*

@@ -6,7 +6,7 @@ app.get('/health', (req, res) => {
 });
 if (require.main === module) {
   const port = process.env.HEALTH_PORT || 4001;
-  app.listen(port, () => console.log(`[TaskWorker] Health endpoint on :${port}`));
+  app.listen(port, () => logger.info({ port }, 'TaskWorker health endpoint started'));
 }
 /**
  * Nexus OS — Task Worker (Durable Execution)
@@ -429,7 +429,7 @@ export const taskWorker = new Worker<TaskJobData>(
       const claimed = await nexusStateStore.updateTaskStatus(taskId, 'running');
       if (!claimed && !task.input_payload?._checkpoint) {
         // Someone else claimed it first.
-        console.warn(`[Worker] ⚠️ Task ${taskId} could not be claimed for execution. Already claimed?`);
+        logger.warn({ taskId }, 'Task could not be claimed for execution. Already claimed?');
         return;
       }
 
@@ -438,7 +438,7 @@ export const taskWorker = new Worker<TaskJobData>(
       const resumeFromStep = checkpoint?.step || 'start';
 
       if (resumeFromStep === 'agent_finished' && checkpoint) {
-        console.log(`[Worker] ⏩ Resuming Task ${taskId} from 'agent_finished' checkpoint.`);
+        logger.info({ taskId }, 'Resuming task from agent_finished checkpoint');
         const result = {
           artifact:   checkpoint.data,
           tokensUsed: checkpoint.tokensUsed || 0,
@@ -495,7 +495,7 @@ export const taskWorker = new Worker<TaskJobData>(
       return await handlePostProcessing(job, result, task, input);
 
     } catch (err: any) {
-      console.error(`[Worker] ❌ Task failed: ${taskId}`, err);
+      logger.error({ taskId, err: err.message }, 'Task failed');
       const isFinalAttempt = job.attemptsMade + 1 >= maxAttempts;
       const errorPayload = {
         type:       'task_failed',

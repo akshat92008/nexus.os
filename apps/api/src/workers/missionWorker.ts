@@ -6,7 +6,7 @@ app.get('/health', (req, res) => {
 });
 if (require.main === module) {
   const port = process.env.HEALTH_PORT || 4002;
-  app.listen(port, () => console.log(`[MissionWorker] Health endpoint on :${port}`));
+  app.listen(port, () => logger.info({ port }, 'MissionWorker health endpoint started'));
 }
 /**
  * Nexus OS — Mission Worker
@@ -190,7 +190,7 @@ export async function onTaskCompleted(taskId: string, missionId: string): Promis
             input:        task.input_payload,
             contextFields: deps.map((d: any) => d.depends_on_task_id),
           });
-          console.log(`[MissionWorker] 🚀 Enqueued task ${task.id} for mission ${missionId}`);
+          logger.info({ taskId: task.id, missionId }, 'Enqueued task for mission');
         }
       }
     }
@@ -207,7 +207,7 @@ async function checkMissionCompletion(missionId: string, tasks: any[]) {
   const anyFailed    = activeTasks.some((t: any)  => t.status === 'failed');
 
   if (anyFailed) {
-    console.log(`[MissionWorker] ❌ Mission failed: ${missionId}`);
+    logger.error({ missionId }, 'Mission failed');
     await nexusStateStore.updateMissionStatus(missionId, 'failed');
     await eventBuffer.publish(missionId, {
       type:      'mission_failed',
@@ -216,7 +216,7 @@ async function checkMissionCompletion(missionId: string, tasks: any[]) {
       error:     'One or more tasks failed.',
     });
   } else if (allCompleted) {
-    console.log(`[MissionWorker] ✅ Mission complete: ${missionId}`);
+    logger.info({ missionId }, 'Mission complete');
     await nexusStateStore.updateMissionStatus(missionId, 'complete', new Date().toISOString());
     await eventBuffer.publish(missionId, {
       type:      'mission_completed',
@@ -243,12 +243,12 @@ export function startMissionEventListener(): void {
           removeOnComplete: true 
         });
       } catch (err) {
-        console.error('[MissionWorker] ❌ onTaskCompleted error:', err);
+        logger.error({ err: (err as any).message || err }, 'onTaskCompleted error');
       }
     }
   });
 
-  console.log('[MissionWorker] 👂 Listening for task_completed events');
+  logger.info('Listening for task_completed events');
 }
 
 // ── BullMQ Worker: handles initial mission bootstrap only ─────────────────
@@ -264,7 +264,7 @@ export const missionWorker = new Worker<MissionJobData>(
     if (userId) {
       const hasCredits = await ledger.hasSufficientBalance(userId);
       if (!hasCredits) {
-        console.warn(`[MissionWorker] ❌ Insufficient credits for user ${userId}. Skipping mission ${missionId}`);
+        logger.warn({ userId, missionId }, 'Insufficient credits. Skipping mission');
         await nexusStateStore.updateMissionStatus(missionId, 'failed');
         await eventBuffer.publish(missionId, {
           type: 'mission_failed',
@@ -277,15 +277,15 @@ export const missionWorker = new Worker<MissionJobData>(
     }
 
     if (type === 'mission_check') {
-      console.log(`[MissionWorker] 🕵️ Reliable Check: mission ${missionId} (due to task ${taskId})`);
+      logger.info({ missionId, taskId }, 'Reliable Check triggered');
       return await onTaskCompleted(taskId || '__fallback__', missionId);
     }
 
-    console.log(`[MissionWorker] 🧠 Mission bootstrapped: ${missionId}`);
+    logger.info({ missionId }, 'Mission bootstrapped');
 
     const tasks = await nexusStateStore.getMissionTasks(missionId);
     if (!tasks || tasks.length === 0) {
-      console.warn(`[MissionWorker] ⚠️ No tasks found for mission: ${missionId}`);
+      logger.warn({ missionId }, 'No tasks found for mission');
       return;
     }
 
