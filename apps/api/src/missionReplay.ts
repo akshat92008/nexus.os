@@ -180,7 +180,7 @@ export class MissionReplayer {
   ): boolean {
     return recorded.prompt === current.prompt &&
            recorded.taskNode.id === current.taskNode.id &&
-           recorded.agentType === current.taskNode.agentType;
+           recorded.taskNode.agentType === current.taskNode.agentType;
   }
 
   getAvailableRecordings(): string[] {

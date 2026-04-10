@@ -130,7 +130,7 @@ export class LLMRouter {
         });
         opts.user = `[SUMMARY OF PRIOR CONTEXT]\n${summary.content}\n\n[LATEST CONTEXT]\n${opts.user.slice(-5000)}`;
       } catch (err) {
-        logger.warn('[LLMRouter] Context compression failed, proceeding with truncated text:', err);
+        logger.warn({ err }, '[LLMRouter] Context compression failed, proceeding with truncated text');
         opts.user = opts.user.slice(0, 20000);
       }
     }

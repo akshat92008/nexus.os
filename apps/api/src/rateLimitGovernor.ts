@@ -255,7 +255,9 @@ export class RateLimitGovernor {
           continue;
         }
 
-        logger.error('[Governor] Recovery task failed permanently:', err ?? item.failRecord);
+        const errorObj = err ?? item.failRecord;
+        logger.error({ err: errorObj }, '[Governor] Recovery task failed permanently');
+        this.activeTasks.delete(id);
       }
     }
   }
@@ -350,9 +352,8 @@ export async function checkAndConsume(userId: string): Promise<RateLimitResult> 
     }
 
     return { allowed, remaining };
-  } catch (err) {
-    logger.error('[RateLimitGovernor] Redis error in checkAndConsume:', err);
-    // Fail open — don't block users if Redis errors
+  } catch (err: any) {
+    logger.error({ err }, '[RateLimitGovernor] Redis error in checkAndConsume');
     return { allowed: true, remaining: USER_LLM_LIMIT };
   }
 }

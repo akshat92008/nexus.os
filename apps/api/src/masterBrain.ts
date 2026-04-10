@@ -97,7 +97,7 @@ class MasterBrainV2 {
       .in('status', ['running', 'paused']);
 
     if (mError) {
-      logger.error('[MasterBrain] Failed to fetch active missions:', mError);
+      logger.error({ err: mError }, '[MasterBrain] Failed to fetch active missions');
       return;
     }
 
@@ -161,12 +161,13 @@ class MasterBrainV2 {
           user: prompt,
           model: MODEL_POWER,
           temperature: 0.3,
+          maxTokens: 1000,
           jsonMode: true,
         });
 
         const overview = JSON.parse(res.content).overview;
         if (overview) {
-          logger.info('[MasterBrain] 📈 Strategic Overview:', overview);
+          logger.info({ overview }, '[MasterBrain] 📈 Strategic Overview');
           // Optionally store this in a global state or emit event
         }
       } catch (err) {
@@ -206,6 +207,7 @@ class MasterBrainV2 {
           user: prompt,
           model: MODEL_POWER,
           temperature: 0.3,
+          maxTokens: 1500,
           jsonMode: true,
         });
 
@@ -219,7 +221,7 @@ class MasterBrainV2 {
           await eventBus.publish(userId, { type: 'neural_hud_alert', severity: 'critical', message: `Strategic Risk: ${risk.title}`, timestamp: Date.now() } as any);
         }
       } catch (err) {
-        logger.error(`[MasterBrain] Reflection failed for user ${userId}:`, err);
+        logger.error({ err, userId }, '[MasterBrain] Reflection failed for user');
       }
     }
   }
