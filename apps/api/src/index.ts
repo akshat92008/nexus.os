@@ -474,7 +474,6 @@ app.post('/api/orchestrate', orchestrateLimiter, async (req: Request<{}, {}, Orc
       return res.status(429).json({ error: 'Hourly LLM quota exceeded (30/hr). Try again later.', remaining });
     }
 
-    // @ts-expect-error TypeScript does not narrow archModeFinal, but runtime is safe
     const dag = await planMission(goal, archModeFinal);
     // ...
     res.json({ missionId: dag.missionId, status: 'queued' });

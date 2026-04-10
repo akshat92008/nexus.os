@@ -258,7 +258,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
 
   // Standard execution
   const isIntelligenceTask = ['researcher', 'analyst', 'chief_analyst'].includes(task.agentType);
-  const model = (isIntelligenceTask || task.priority === 'critical') ? MODEL_POWER : MODEL_FAST;
+  const model = (isIntelligenceTask || (task.priority as string) === 'critical') ? MODEL_POWER : MODEL_FAST;
 
   // Enable streaming for high-budget agents to stream long outputs in real-time
   const shouldStream = (maxTokens >= 2000) && !!sseRes;

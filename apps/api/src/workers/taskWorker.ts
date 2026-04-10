@@ -478,16 +478,16 @@ export const taskWorker = new Worker<TaskJobData>(
 
       await nexusStateStore.updateTaskCheckpoint(taskId, { step: 'context_ready' });
 
-      // 4. Run agent with circuit breakers (FIX #9)
-      const result = await runAgentWithCircuitBreaker({
-        task:      input,
-        goal:      input.label,
-        goalType:  'general',
+      // 5. Execute Agent
+      const result = await runAgent({
+        task: input,
+        goal: input.label,
+        goalType: 'general',
         context,
         missionId,
-        userId,
-        isAborted: () => false,
-      }) as any;
+        userId: job.data.userId,
+        isAborted: () => false
+      });
 
       await nexusStateStore.updateTaskCheckpoint(taskId, {
         step:       'agent_finished',
@@ -531,10 +531,8 @@ export const taskWorker = new Worker<TaskJobData>(
     connection,
     concurrency: 5,
     lockDuration: LOCK_DURATION_MS,
-    settings: {
-      stalledInterval: 5000,
-      maxStalledCount: 1,
-    },
+    stalledInterval: 5000,
+    maxStalledCount: 1,
   }
 );
 

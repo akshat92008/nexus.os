@@ -25,12 +25,12 @@ class GeminiProvider {
     });
     if (!res.ok) throw new Error('Gemini API error: ' + res.status);
     const data = await res.json();
-    const content = data.candidates?.[0]?.content?.parts?.[0]?.text || '[Gemini: No response]';
+    const content = (data as any).candidates?.[0]?.content?.parts?.[0]?.text || '[Gemini: No response]';
     
     // Extract usage metadata for billing/metrics (Ticket 3)
-    const usage = data.usageMetadata ? {
-      promptTokens: data.usageMetadata.promptTokenCount ?? 0,
-      completionTokens: data.usageMetadata.candidatesTokenCount ?? 0,
+    const usage = (data as any).usageMetadata ? {
+      promptTokens: (data as any).usageMetadata.promptTokenCount ?? 0,
+      completionTokens: (data as any).usageMetadata.candidatesTokenCount ?? 0,
     } : { promptTokens: 0, completionTokens: 0 };
 
     return { 

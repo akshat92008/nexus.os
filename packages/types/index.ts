@@ -102,6 +102,7 @@ export interface TaskDAG {
   nodes: TaskNode[];
   estimatedWaves: number;
   metadata?: Record<string, any>;
+  requiresApproval?: boolean;           // NEW: Strategic checkpoint for HITL
 }
 
 // ── Typed Artifacts ────────────────────────────────────────────────────────

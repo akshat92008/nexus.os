@@ -59,6 +59,8 @@ export async function handleTaskJob(job: Job<TaskJobData>) {
       goal: input.label,
       goalType: 'general',
       context,
+      missionId,
+      userId: job.data.userId,
       isAborted: () => false
     });
 
