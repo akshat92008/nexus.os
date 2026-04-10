@@ -155,6 +155,7 @@ class MasterBrainV2 {
       const missionSummary = completeMissions.map(m => `- ${m.goal}`).join('\n');
       const prompt = `You are the Nexus OS Master Brain. Analyze these recently completed missions and provide a 1-sentence 'Strategic Overview' of the system's current momentum. Return as JSON: { "overview": string }.\n\nMissions:\n${missionSummary}`;
 
+      try {
         const res = await llmRouter.call({
           system: 'You are a strategic system analyzer. Return valid JSON.',
           user: prompt,
