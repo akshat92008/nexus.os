@@ -192,15 +192,6 @@ export class MissionReplayer {
   }
 }
 
-  getAvailableRecordings(): string[] {
-    return Array.from(this.recordings.keys());
-  }
-
-  getRecording(missionId: string): MissionRecording | undefined {
-    return this.recordings.get(missionId);
-  }
-}
-
 // Global instances for use across the application
 export const missionRecorder = new MissionRecorder(
   'test-mission',

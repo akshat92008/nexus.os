@@ -1,7 +1,5 @@
-import { 
 import { logger } from "./logger.js";
-  MODEL_POWER 
-} from './agents/agentConfig.js';
+import { MODEL_POWER } from './agents/agentConfig.js';
 import { llmRouter } from './llm/LLMRouter.js';
 import type { TaskDAG, OngoingMission } from '@nexus-os/types';
 import { systemQueue } from './queue/queue.js';
