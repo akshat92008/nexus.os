@@ -29,8 +29,12 @@ interface CachedUser {
 }
 
 const TOKEN_CACHE = new Map<string, CachedUser>();
-const MAX_CACHE_SIZE = 1000;
+const MAX_CACHE_SIZE = 2000;
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+// Janitor state
+let requestsSinceLastCleanup = 0;
+const CLEANUP_THRESHOLD = 50; 
 
 function getCachedUser(token: string): { id: string; email: string } | null {
   const cached = TOKEN_CACHE.get(token);
@@ -48,10 +52,12 @@ function getCachedUser(token: string): { id: string; email: string } | null {
 }
 
 function setCachedUser(token: string, user: { id: string; email: string }): void {
-  // If cache is too big, remove the oldest entry (first key in the map)
-  if (TOKEN_CACHE.size >= MAX_CACHE_SIZE) {
+  // 🚨 HARDEN: Strict Size Cap
+  // Map.keys().next() is O(1) in V8 for deletion of the oldest entry (insertion order).
+  while (TOKEN_CACHE.size >= MAX_CACHE_SIZE) {
     const firstKey = TOKEN_CACHE.keys().next().value;
     if (firstKey !== undefined) TOKEN_CACHE.delete(firstKey);
+    else break;
   }
   TOKEN_CACHE.set(token, { user, expiresAt: Date.now() + CACHE_TTL_MS });
 }
@@ -114,11 +120,20 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     req.user   = authUser;
     req.userId = user.id;
 
-    // Lazy cache cleanup: remove expired entries
-    const now = Date.now();
-    for (const [key, value] of TOKEN_CACHE.entries()) {
-      if (value.expiresAt <= now) {
-        TOKEN_CACHE.delete(key);
+    // 🚨 HARDEN: Incremental Janitor
+    // Every N requests, we prune a handful of expired entries to prevent infinite bloat
+    // without the O(n) cost of a full map traversal on every request.
+    requestsSinceLastCleanup++;
+    if (requestsSinceLastCleanup >= CLEANUP_THRESHOLD) {
+      requestsSinceLastCleanup = 0;
+      const now = Date.now();
+      let prunedCount = 0;
+      for (const [key, value] of TOKEN_CACHE.entries()) {
+        if (value.expiresAt <= now) {
+          TOKEN_CACHE.delete(key);
+          prunedCount++;
+        }
+        if (prunedCount > 20) break; // Limit work per request
       }
     }
 
