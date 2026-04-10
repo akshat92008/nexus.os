@@ -202,7 +202,7 @@ export class RateLimitGovernor {
     if (!redis) return; 
     const expiresAt = Date.now() + pauseMs; 
     const ttlSeconds = Math.ceil(pauseMs / 1000) + 5; 
-    await redis.set('nexus:governor:pauseUntil', expiresAt, 'EX', ttlSeconds); 
+    await redis.set('nexus:governor:pauseUntil', expiresAt.toString(), 'EX', ttlSeconds); 
   } 
 
   private drainQueue(): void {

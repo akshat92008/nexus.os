@@ -70,7 +70,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
     const replayResponse = missionReplayer.getReplayResponse(task.id, task.agentType, {
       prompt: goal,
       context: context.entries.reduce((acc, entry) => {
-        acc[entry.taskId] = entry.artifact;
+        acc[entry.taskId] = entry.data;
         return acc;
       }, {} as Record<string, TypedArtifact>),
       taskNode: task
@@ -236,7 +236,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
         input: {
           prompt: goal,
           context: synthesizedContext.entries.reduce((acc, entry) => {
-            acc[entry.taskId] = entry.artifact;
+            acc[entry.taskId] = entry.data;
             return acc;
           }, {} as Record<string, TypedArtifact>),
           taskNode: task
@@ -317,7 +317,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
         input: {
           prompt: goal,
           context: context.entries.reduce((acc, entry) => {
-            acc[entry.taskId] = entry.artifact;
+            acc[entry.taskId] = entry.data;
             return acc;
           }, {} as Record<string, TypedArtifact>),
           taskNode: task

@@ -312,6 +312,7 @@ export interface ActivityLog {
 }
 
 export const MissionStatus = {
+  PENDING:   'pending',             // NEW: Restore compatibility with planner
   QUEUED:    'queued',
   RUNNING:   'running',
   COMPLETED: 'complete',
@@ -578,10 +579,10 @@ export interface PlanReadyEvent {
   type: 'plan_ready';
   parallelCount: number;
   sequentialCount: number;
-  waveCount: number;                               // NEW
-  nodeCount: number;                               // NEW
-  goalType: GoalType;                              // NEW
-  successCriteria: string[];                       // NEW
+  waveCount: number;
+  nodeCount: number;
+  goalType: GoalType;
+  successCriteria: string[];
   tasks: { parallel: SubTask[]; sequential: SubTask[] }; // kept for compat
   estimatedFeeUsd: number;
 }
