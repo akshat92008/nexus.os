@@ -183,21 +183,20 @@ export function AgentMarketplace() {
                           <span className="text-[10px] font-black uppercase tracking-widest text-zinc-600">
                             {agent.category}
                           </span>
-                        
-                        {agent.installed ? (
-                          <div className="flex items-center gap-1.5 text-emerald-400 font-bold text-xs uppercase tracking-wider">
-                            <CheckCircle2 size={14} />
-                            Installed
-                          </div>
-                        ) : (
-                          <button 
-                            onClick={() => installAgent(agent.id)}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-600 text-white text-xs font-bold uppercase tracking-wider hover:bg-violet-500 transition-all shadow-lg shadow-violet-600/10"
-                          >
-                            Install <ArrowUpRight size={14} />
-                          </button>
-                        )}
-                      </div>
+                          {agent.installed ? (
+                            <div className="flex items-center gap-1.5 text-emerald-400 font-bold text-xs uppercase tracking-wider">
+                              <CheckCircle2 size={14} />
+                              Installed
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => installAgent(agent.id)}
+                              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-600 text-white text-xs font-bold uppercase tracking-wider hover:bg-violet-500 transition-all shadow-lg shadow-violet-600/10"
+                            >
+                              Install <ArrowUpRight size={14} />
+                            </button>
+                          )}
+                        </div>
                     </motion.div>
                   ))}
                 </div>
