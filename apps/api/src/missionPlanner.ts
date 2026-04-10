@@ -1,8 +1,14 @@
 import { randomUUID } from 'crypto';
 /**
- * Nexus OS — Mission Planner v2.2
- * 
- * Modular high-precision task decomposition engine.
+ * Nexus OS — Mission Planner v2.3
+ *
+ * FIX: Removed hardcoded Groq fetch calls.
+ * Now routes through LLMRouter so it gets:
+ *   - OpenRouter primary with model rotation
+ *   - Groq as automatic fallback
+ *   - Rate-limit monitoring & backoff
+ *
+ * Drop-in replacement for missionPlanner.ts — no other files change.
  */
 
 import {
@@ -14,6 +20,8 @@ import {
 import { findBestAgentForType } from './agents/agentRegistry.js';
 import { universalPlanner } from './core/universalPlanner.js';
 import type { ArchitectureMode } from '@nexus-os/types';
+import { llmRouter } from './llm/LLMRouter.js';       // ← was missing
+import { MODEL_POWER } from './llm/LLMRouter.js';     // ← use the power tier for planning
 
 export interface MapReduceTaskNode {
   id: string;
@@ -27,10 +35,9 @@ export interface MapReduceTaskNode {
 import { SYSTEM_PROMPT, getDomainGuidance } from './planning/plannerPrompts.js';
 import { extractJSON, detectCycles, deduplicateAndScore } from './planning/dagUtils.js';
 
-const GROQ_API_URL  = 'https://api.groq.com/openai/v1/chat/completions';
-const PLANNER_MODEL = 'llama-3.3-70b-versatile';
-const MAX_RETRIES   = 3;
-const RETRY_DELAY   = 1000;
+// Removed: GROQ_API_URL, PLANNER_MODEL (now handled by LLMRouter)
+const MAX_RETRIES  = 3;
+const RETRY_DELAY  = 1000;
 const VALID_AGENT_TYPES: AgentType[] = ['researcher', 'analyst', 'writer', 'coder', 'strategist', 'summarizer'];
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -65,57 +72,40 @@ function validateAndRepair(raw: unknown, goal: string): TaskDAG {
     goalType: (plan.goalType as GoalType) || 'general',
     successCriteria: Array.isArray(plan.successCriteria) ? plan.successCriteria : [],
     nodes: deduplicateAndScore(plan.nodes, goal),
-    estimatedWaves: 0, // Computed at runtime by worker
+    estimatedWaves: 0,
   };
 }
 
 export async function planMission(goal: string, archMode: ArchitectureMode = 'legacy'): Promise<TaskDAG> {
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) throw new Error('GROQ_API_KEY not set');
-
   if (archMode === 'os') return await universalPlanner.plan(goal, 'os');
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const dtResponse = await fetch(GROQ_API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-        body: JSON.stringify({
-          model: PLANNER_MODEL,
-          temperature: 0.0,
-          max_tokens: 30,
-          messages: [
-            { role: 'system', content: 'Classify this goal into: lead_gen, strategy, research, content, code, analysis, general.' },
-            { role: 'user', content: goal },
-          ],
-        }),
-      });
-
+      // Step 1: Classify the goal type (fast call, low tokens)
       let goalType = 'general';
-      if (dtResponse.ok) {
-        const dtData = await dtResponse.json() as any;
-        goalType = dtData?.choices?.[0]?.message?.content?.trim().toLowerCase() || 'general';
+      try {
+        const dtResult = await llmRouter.call({
+          system: 'Classify this goal into exactly one word: lead_gen, strategy, research, content, code, analysis, general. Reply with only the word.',
+          user: goal,
+          model: MODEL_POWER,
+          maxTokens: 10,
+          temperature: 0.0,
+        });
+        goalType = dtResult.content.trim().toLowerCase().split(/\s+/)[0] || 'general';
+      } catch {
+        // classification failure is non-fatal — proceed with 'general'
       }
 
-      const response = await fetch(GROQ_API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-        body: JSON.stringify({
-          model: PLANNER_MODEL,
-          temperature: 0.15,
-          max_tokens: 1800,
-          messages: [
-            { role: 'system', content: SYSTEM_PROMPT },
-            { role: 'user', content: `GOAL: "${goal}"\nTYPE: ${goalType}\nGUIDANCE: ${getDomainGuidance(goalType)}` },
-          ],
-          response_format: { type: 'json_object' },
-        }),
+      // Step 2: Generate the full DAG plan
+      const result = await llmRouter.call({
+        system: SYSTEM_PROMPT,
+        user: `GOAL: "${goal}"\nTYPE: ${goalType}\nGUIDANCE: ${getDomainGuidance(goalType)}`,
+        model: MODEL_POWER,
+        maxTokens: 1800,
+        temperature: 0.15,
       });
 
-      if (!response.ok) throw new Error(`API Error: ${response.status}`);
-
-      const data = await response.json() as any;
-      const parsed = extractJSON(data?.choices?.[0]?.message?.content || '');
+      const parsed = extractJSON(result.content);
       return validateAndRepair(parsed, goal);
 
     } catch (err) {

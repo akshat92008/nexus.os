@@ -1,14 +1,29 @@
 'use client';
 
+/**
+ * Nexus OS — Financial Dashboard v2.2 (Stabilized)
+ *
+ * FIX: Implements "Honest Empty States".
+ * Prevents seed-data hallucinations for new users by showing clear CTAs 
+ * to connect real data sources instead of fake hardcoded numbers.
+ */
+
 import { useNexusStore } from '../../store/nexusStore';
 import { motion } from 'framer-motion';
-import { TrendingUp, TrendingDown, DollarSign, PieChart, BarChart3, Wallet, Clock, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import {
+  TrendingUp, DollarSign, PieChart, 
+  BarChart3, Plus, Link2, Wallet, Clock
+} from 'lucide-react';
 
 export function FinancialView() {
   const finances = useNexusStore((s) => s.finances);
 
+  // Verification: Real data exists if there are records in the history
+  const hasRealData = finances.records && finances.records.length > 0;
+
   return (
     <div className="flex-1 max-w-6xl mx-auto w-full flex flex-col gap-8 pb-20 fade-in pt-4">
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -16,150 +31,136 @@ export function FinancialView() {
           <p className="text-zinc-500 mt-1">Real-time overview of your business performance.</p>
         </div>
         <div className="flex gap-3">
-          <button className="px-4 py-2 rounded-xl bg-zinc-800 text-zinc-300 text-sm font-bold hover:bg-zinc-700 transition-all border border-zinc-700">
+          <button className="px-4 py-2 rounded-xl bg-zinc-800 text-zinc-300 text-sm font-bold hover:bg-zinc-700 transition-all border border-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed" disabled={!hasRealData}>
             Export Report
           </button>
-          <button className="px-4 py-2 rounded-xl bg-violet-600 text-white text-sm font-bold hover:bg-violet-500 transition-all shadow-lg shadow-violet-500/20">
+          <button className="px-4 py-2 rounded-xl bg-violet-600 text-white text-sm font-bold hover:bg-violet-500 transition-all shadow-lg shadow-violet-500/20 flex items-center gap-2">
+            <Plus size={14} />
             Add Transaction
           </button>
         </div>
       </div>
 
-      {/* Top Stats */}
+      {/* Key Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <StatCard 
-          label="Total Revenue" 
-          value={`$${finances.revenue.toLocaleString()}`} 
-          trend="+15% MoM" 
-          isPositive={true} 
+        <StatCard
+          label="Total Revenue"
+          value={`$${(finances.revenue ?? 0).toLocaleString()}`}
+          trend={hasRealData ? undefined : 'Waiting for data...'}
           icon={<DollarSign size={20} className="text-emerald-400" />}
         />
-        <StatCard 
-          label="Total Expenses" 
-          value={`$${finances.expenses.toLocaleString()}`} 
-          trend="-5% MoM" 
-          isPositive={true} 
+        <StatCard
+          label="Total Expenses"
+          value={`$${(finances.expenses ?? 0).toLocaleString()}`}
+          trend={hasRealData ? undefined : 'Waiting for data...'}
           icon={<PieChart size={20} className="text-rose-400" />}
         />
-        <StatCard 
-          label="Net Profit" 
-          value={`$${finances.profit.toLocaleString()}`} 
-          trend="+22% MoM" 
-          isPositive={true} 
+        <StatCard
+          label="Net Profit"
+          value={`$${((finances.revenue ?? 0) - (finances.expenses ?? 0)).toLocaleString()}`}
+          trend={hasRealData ? undefined : 'Waiting for data...'}
           icon={<TrendingUp size={20} className="text-violet-400" />}
         />
       </div>
 
-      {/* Charts & Tables */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Revenue Trend */}
-        <div className="p-6 rounded-3xl border border-zinc-800 bg-zinc-900/40 backdrop-blur-sm">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-sm font-bold uppercase tracking-widest text-zinc-500 flex items-center gap-2">
-              <BarChart3 size={16} /> Revenue Trend (Last 12 Months)
-            </h3>
+      {/* Empty State / Dashboard Content */}
+      {!hasRealData ? (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex flex-col items-center justify-center gap-8 py-24 rounded-[2.5rem] border border-dashed border-zinc-800 bg-zinc-900/20 backdrop-blur-sm shadow-inner"
+        >
+          <div className="w-16 h-16 rounded-3xl bg-violet-500/10 flex items-center justify-center border border-violet-500/20 shadow-xl shadow-violet-500/5">
+            <BarChart3 size={32} className="text-violet-400" />
           </div>
-          <div className="h-48 flex items-end gap-2 px-2">
-            {finances.revenueTrend.map((val, i) => (
-              <motion.div 
-                key={i}
-                initial={{ height: 0 }}
-                animate={{ height: `${(val / Math.max(...finances.revenueTrend)) * 100}%` }}
-                className="flex-1 bg-violet-500/40 rounded-t-lg hover:bg-violet-500/60 transition-all relative group"
-              >
-                <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-zinc-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity">
-                  ${(val / 1000).toFixed(1)}k
-                </div>
-              </motion.div>
-            ))}
+          <div className="text-center space-y-2">
+            <h2 className="text-zinc-100 font-bold text-xl">No Financial Activity Detected</h2>
+            <p className="text-zinc-500 text-sm max-w-sm mx-auto leading-relaxed">
+              Connect your bank, stripe, or accounting software to begin tracking revenue, Runway, and cash flow in real-time.
+            </p>
           </div>
-          <div className="flex justify-between mt-4 px-2 text-[10px] text-zinc-600 font-bold uppercase tracking-widest">
-            <span>Jan</span>
-            <span>Jun</span>
-            <span>Dec</span>
+          <div className="flex gap-4">
+            <button className="flex items-center gap-2.5 px-6 py-3 rounded-2xl bg-violet-600 text-white text-sm font-bold hover:bg-violet-500 transition-all shadow-xl shadow-violet-500/30">
+              <Link2 size={16} />
+              Connect Data Source
+            </button>
+            <button className="flex items-center gap-2.5 px-6 py-3 rounded-2xl bg-zinc-800 text-zinc-300 text-sm font-bold hover:bg-zinc-700 transition-all border border-zinc-700">
+              <Plus size={16} />
+              Import CSV
+            </button>
           </div>
-        </div>
+        </motion.div>
+      ) : (
+        <div className="space-y-8">
+          {/* Legacy positions for cash/runway if real data exists */}
+          <div className="p-8 rounded-3xl border border-zinc-800 bg-zinc-900/40 flex flex-wrap gap-12 items-center">
+             <div className="flex items-center gap-4">
+              <div className="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/20">
+                <Wallet size={24} className="text-emerald-400" />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-zinc-500 mb-0.5 uppercase tracking-wider">Cash Position</div>
+                <div className="text-2xl font-bold text-zinc-100">${(finances.cashPosition ?? 0).toLocaleString()}</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-2xl bg-violet-500/10 border border-violet-500/20">
+                <Clock size={24} className="text-violet-400" />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-zinc-500 mb-0.5 uppercase tracking-wider">Runway</div>
+                <div className="text-2xl font-bold text-zinc-100">{finances.runway ?? 0} Months</div>
+              </div>
+            </div>
+          </div>
 
-        {/* Top Sources & Expenses */}
-        <div className="grid grid-cols-1 gap-6">
-          <div className="p-6 rounded-3xl border border-zinc-800 bg-zinc-900/40 backdrop-blur-sm">
-            <h3 className="text-sm font-bold uppercase tracking-widest text-zinc-500 flex items-center gap-2 mb-4">
-              Top Revenue Sources
-            </h3>
-            <div className="space-y-4">
-              {finances.topRevenueSources.map((s, i) => (
-                <div key={i} className="flex items-center justify-between">
-                  <span className="text-sm text-zinc-300">{s.source}</span>
-                  <span className="text-sm font-bold text-zinc-100">${s.amount.toLocaleString()}</span>
+          {/* Transaction Ledger */}
+          <div className="rounded-3xl border border-zinc-800 bg-zinc-900/40 overflow-hidden">
+            <div className="px-8 py-5 border-b border-zinc-800 flex items-center justify-between bg-zinc-900/20">
+              <h2 className="text-zinc-100 font-bold text-sm tracking-tight">Recent Activity</h2>
+              <span className="text-zinc-500 text-xs font-medium bg-zinc-800 px-2 py-1 rounded-md">{finances.records.length} transactions</span>
+            </div>
+            <div className="divide-y divide-zinc-800/60 max-h-[400px] overflow-y-auto custom-scrollbar">
+              {finances.records.map((record: any, i: number) => (
+                <div key={record.id ?? i} className="flex items-center justify-between px-8 py-4 hover:bg-zinc-800/20 transition-colors">
+                  <div className="flex items-center gap-4">
+                    <div className={`w-2 h-2 rounded-full ${record.amount >= 0 ? 'bg-emerald-500' : 'bg-rose-500'} shadow-sm shadow-black`} />
+                    <div>
+                      <p className="text-zinc-200 text-sm font-semibold">{record.label ?? 'System Transaction'}</p>
+                      <p className="text-zinc-500 text-[11px] font-medium">{new Date(record.date).toLocaleDateString()}</p>
+                    </div>
+                  </div>
+                  <span className={`text-sm font-bold ${record.amount >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {record.amount >= 0 ? '+' : '-'}${Math.abs(record.amount ?? 0).toLocaleString()}
+                  </span>
                 </div>
               ))}
             </div>
           </div>
-          <div className="p-6 rounded-3xl border border-zinc-800 bg-zinc-900/40 backdrop-blur-sm">
-            <h3 className="text-sm font-bold uppercase tracking-widest text-zinc-500 flex items-center gap-2 mb-4">
-              Top Expenses
-            </h3>
-            <div className="space-y-4">
-              {finances.topExpenses.map((e, i) => (
-                <div key={i} className="flex items-center justify-between">
-                  <span className="text-sm text-zinc-300">{e.category}</span>
-                  <span className="text-sm font-bold text-zinc-100">${e.amount.toLocaleString()}</span>
-                </div>
-              ))}
-            </div>
-          </div>
         </div>
-      </div>
+      )}
 
-      {/* Cash Position & Runway */}
-      <div className="p-8 rounded-3xl border border-zinc-800 bg-gradient-to-br from-zinc-900/40 to-violet-900/10 backdrop-blur-sm flex flex-wrap gap-12 items-center">
-        <div className="flex items-center gap-4">
-          <div className="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/20">
-            <Wallet size={24} className="text-emerald-400" />
-          </div>
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.2em] font-black text-zinc-500 mb-0.5">Cash Position</div>
-            <div className="text-2xl font-bold text-zinc-100">${finances.cashPosition.toLocaleString()}</div>
-          </div>
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="p-3 rounded-2xl bg-violet-500/10 border border-violet-500/20">
-            <Clock size={24} className="text-violet-400" />
-          </div>
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.2em] font-black text-zinc-500 mb-0.5">Estimated Runway</div>
-            <div className="text-2xl font-bold text-zinc-100">{finances.runway} Months</div>
-          </div>
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="p-3 rounded-2xl bg-cyan-500/10 border border-cyan-500/20">
-            <TrendingUp size={24} className="text-cyan-400" />
-          </div>
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.2em] font-black text-zinc-500 mb-0.5">Profitability</div>
-            <div className="text-2xl font-bold text-zinc-100">{((finances.profit / finances.revenue) * 100).toFixed(1)}%</div>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
 
-function StatCard({ label, value, trend, isPositive, icon }: any) {
+// ── Shared Components ─────────────────────────────────────────────────────────
+
+function StatCard({ label, value, trend, icon }: { label: string; value: string; trend?: string; icon: React.ReactNode }) {
   return (
-    <div className="p-6 rounded-3xl border border-zinc-800 bg-zinc-900/40 backdrop-blur-sm relative overflow-hidden group">
-      <div className="absolute -right-4 -top-4 w-24 h-24 bg-zinc-800/20 blur-2xl rounded-full group-hover:bg-zinc-800/40 transition-all" />
-      <div className="flex items-center justify-between mb-4">
-        <div className="p-2 rounded-xl bg-zinc-800/50 border border-zinc-700/50">
+    <div className="rounded-3xl border border-zinc-800 bg-zinc-900/40 p-7 flex flex-col gap-4 hover:border-zinc-700 transition-all group">
+      <div className="flex items-center justify-between">
+        <span className="text-zinc-500 text-xs font-bold uppercase tracking-widest">{label}</span>
+        <div className="p-2 rounded-xl bg-zinc-950/50 border border-zinc-800 group-hover:bg-zinc-800/50 transition-all">
           {icon}
         </div>
-        <div className={`flex items-center gap-1 text-[10px] font-black uppercase tracking-widest ${isPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
-          {isPositive ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
-          {trend}
-        </div>
       </div>
-      <div className="text-[10px] uppercase tracking-[0.2em] font-black text-zinc-500 mb-1">{label}</div>
-      <div className="text-3xl font-black text-zinc-100">{value}</div>
+      <div className="space-y-1">
+        <p className="text-3xl font-black text-zinc-100 tracking-tight">{value}</p>
+        {trend && (
+          <span className="text-[10px] font-black uppercase tracking-widest text-zinc-700">{trend}</span>
+        )}
+      </div>
     </div>
   );
 }

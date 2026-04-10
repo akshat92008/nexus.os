@@ -19,6 +19,9 @@ import { transformToWorkspace } from './outputFormatter.js';
 import { ledger } from './ledger.js';
 import { nexusStateStore } from './storage/nexusStateStore.js';
 import { sandboxOutputBuffer } from './events/sandboxOutputBuffer.js';
+import { missionsQueue, tasksQueue } from './queue/queue.js';
+import { eventBus } from './events/eventBus.js';
+import { getSupabase } from './storage/supabaseClient.js';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -454,83 +457,45 @@ export async function startDurableMission(params: {
   });
 }
 
-import { missionsQueue, tasksQueue } from './queue/queue.js';
-import { getSupabase } from './storage/supabaseClient.js';
-import { eventBus } from './events/eventBus.js';
+// (Imports moved to top)
 
 /**
  * Cancels a running mission by its ID.
- * Terminates all running tasks, updates mission status, and emits cancellation event.
  */
 export async function cancelDurableMission(missionId: string): Promise<void> {
-  logger.info({ missionId }, 'Mission cancel requested');
+  console.log(`[Orchestrator] Cancelling mission ${missionId}...`);
 
-  const supabase = await getSupabase();
-
-  // Update mission status to cancelled atomically
-  const { error } = await supabase
-    .from('nexus_missions')
-    .update({
-      status: 'cancelled',
-      updated_at: new Date().toISOString()
-    })
-    .eq('id', missionId)
-    .in('status', ['queued', 'running']);
-
-  if (error) {
-    logger.error({ missionId, error: error.message }, 'Failed to update mission status during cancellation');
-  }
-
-  // Cancel all pending jobs in mission queue
+  // 1. Mark cancelled in DB — UI will reflect this on next poll/reconnect
   try {
-    const job = await missionsQueue.getJob(missionId);
-    if (job) {
-      await job.remove();
-      logger.info({ missionId }, 'Removed mission from execution queue');
-    }
-  } catch (queueErr: any) {
-    logger.warn({ missionId, error: queueErr.message }, 'Could not remove mission from queue');
+    await nexusStateStore.updateMissionStatus(missionId, 'cancelled');
+  } catch (err) {
+    // Non-fatal: the queue drain still matters even if DB write fails
+    console.warn(`[Orchestrator] Could not update mission status in DB:`, err);
   }
 
-  // Cancel all associated tasks
+  // 2. Drain queued BullMQ tasks that belong to this mission.
+  //    Jobs store missionId in their data, so we match on that.
   try {
-    const tasks = await supabase
-      .from('tasks')
-      .select('id')
-      .eq('mission_id', missionId)
-      .in('status', ['queued', 'running']);
-
-    if (tasks.data) {
-      for (const task of tasks.data) {
-        try {
-          const taskJob = await tasksQueue.getJob(task.id);
-          if (taskJob) {
-            await taskJob.remove();
-          }
-        } catch {}
-      }
-
-      // Bulk update all pending tasks to cancelled
-      await supabase
-        .from('tasks')
-        .update({
-          status: 'cancelled',
-          updated_at: new Date().toISOString()
-        })
-        .eq('mission_id', missionId)
-        .in('status', ['queued', 'running']);
-    }
-  } catch (taskErr: any) {
-    logger.warn({ missionId, error: taskErr.message }, 'Error cancelling mission tasks');
+    const waitingJobs = await tasksQueue.getJobs(['waiting', 'delayed', 'prioritized']);
+    const toRemove = waitingJobs.filter((job) => job.data?.missionId === missionId);
+    await Promise.allSettled(toRemove.map((job) => job.remove()));
+    console.log(`[Orchestrator] Removed ${toRemove.length} queued task(s) for mission ${missionId}.`);
+  } catch (err) {
+    console.warn(`[Orchestrator] Queue drain failed for mission ${missionId}:`, err);
   }
 
-  // Emit cancellation event to all active SSE streams
-  await eventBus.publish(missionId, {
-    type: 'mission_cancelled',
-    missionId,
-    timestamp: new Date().toISOString()
-  });
+  // 3. Broadcast a cancellation event so any open SSE streams close cleanly.
+  //    The frontend listens for 'mission_cancelled' and stops the spinner.
+  try {
+    eventBus.emit(missionId, {
+      type: 'mission_cancelled',
+      missionId,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.warn(`[Orchestrator] eventBus emit failed for mission ${missionId}:`, err);
+  }
 
-  logger.info({ missionId }, 'Mission successfully cancelled');
+  console.log(`[Orchestrator] Mission ${missionId} cancelled.`);
 }
 

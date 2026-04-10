@@ -100,6 +100,7 @@ export interface TaskDAG {
   successCriteria: string[];         // measurable outcomes defining "done"
   nodes: TaskNode[];
   estimatedWaves: number;
+  metadata?: Record<string, any>;
 }
 
 // ── Typed Artifacts ────────────────────────────────────────────────────────
