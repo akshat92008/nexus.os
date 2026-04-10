@@ -1,5 +1,6 @@
 import { fetchWithTimeout } from '../index.js';
 import { withRetry } from '../resilience.js';
+import { getSupabase } from './supabaseClient.js';
 
 const OPENROUTER_EMBED_URL = 'https://openrouter.ai/api/v1/embeddings';
 
@@ -80,6 +81,10 @@ export class VectorStore {
 
   async storeAgentArtifact(taskId: string, agentType: string, content: string): Promise<void> {
     await this.store(content, { taskId, agentType, type: 'artifact', ts: Date.now() });
+  }
+
+  async indexArtifact(artifactId: string, content: string): Promise<void> {
+    await this.store(content, { artifactId, type: 'indexed_artifact', ts: Date.now() });
   }
 }
 

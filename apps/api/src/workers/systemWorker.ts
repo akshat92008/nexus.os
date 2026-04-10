@@ -97,9 +97,13 @@ async function handleScheduledMission(userId: string, workspaceId: string, goal:
   
   // 2. Start durable mission
   await startDurableMission({
-    dag,
+    goal,
+    goalType: 'general',
     userId,
-    workspaceId
+    sessionId: `scheduled-${Date.now()}`,
+    workspaceId,
+    res: { write: () => true, end: () => true } as any, // Mock Response for background worker
+    isAborted: () => false
   });
 }
 

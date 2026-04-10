@@ -484,6 +484,8 @@ export const taskWorker = new Worker<TaskJobData>(
         goal:      input.label,
         goalType:  'general',
         context,
+        missionId,
+        userId,
         isAborted: () => false,
       }) as any;
 
@@ -530,7 +532,6 @@ export const taskWorker = new Worker<TaskJobData>(
     concurrency: 5,
     lockDuration: LOCK_DURATION_MS,
     settings: {
-      retryProcessDelay: 5000,
       stalledInterval: 5000,
       maxStalledCount: 1,
     },
