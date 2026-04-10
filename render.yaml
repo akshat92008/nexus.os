@@ -1,31 +1,3 @@
-envVarGroups:
-  - name: nexus-shared-secrets
-    envVars:
-      - key: SUPABASE_URL
-        sync: true
-      - key: SUPABASE_SERVICE_KEY
-        sync: true
-      - key: SUPABASE_ANON_KEY
-        sync: true
-      - key: OPENROUTER_API_KEY
-        sync: true
-      - key: GROQ_API_KEY
-        sync: true
-      - key: GEMINI_API_KEY
-        sync: true
-      - key: APP_URL
-        sync: true
-      - key: REDIS_URL
-        sync: true
-      - key: STRIPE_SECRET_KEY
-        sync: true
-      - key: STRIPE_WEBHOOK_SECRET
-        sync: true
-      - key: STRIPE_PRICE_ID_PRO
-        sync: true
-      - key: STRIPE_PRICE_ID_ENTERPRISE
-        sync: true
-
 services:
   - type: web
     name: nexus-api
@@ -41,7 +13,30 @@ services:
         value: 3001
       - key: LOG_LEVEL
         value: info
-      - fromGroup: nexus-shared-secrets
+      - key: SUPABASE_URL
+        value: "REPLACEME_IN_RENDER_DASHBOARD"
+      - key: SUPABASE_SERVICE_KEY
+        value: "REPLACEME_IN_RENDER_DASHBOARD"
+      - key: SUPABASE_ANON_KEY
+        value: "REPLACEME_IN_RENDER_DASHBOARD"
+      - key: OPENROUTER_API_KEY
+        value: "REPLACEME_IN_RENDER_DASHBOARD"
+      - key: GROQ_API_KEY
+        value: "REPLACEME_IN_RENDER_DASHBOARD"
+      - key: GEMINI_API_KEY
+        value: "REPLACEME_IN_RENDER_DASHBOARD"
+      - key: APP_URL
+        value: "https://nexus-os.vercel.app"
+      - key: REDIS_URL
+        value: "REPLACEME_IN_RENDER_DASHBOARD"
+      - key: STRIPE_SECRET_KEY
+        value: "REPLACEME_IN_RENDER_DASHBOARD"
+      - key: STRIPE_WEBHOOK_SECRET
+        value: "REPLACEME_IN_RENDER_DASHBOARD"
+      - key: STRIPE_PRICE_ID_PRO
+        value: "REPLACEME_IN_RENDER_DASHBOARD"
+      - key: STRIPE_PRICE_ID_ENTERPRISE
+        value: "REPLACEME_IN_RENDER_DASHBOARD"
 
   - type: worker
     name: nexus-task-worker
@@ -55,4 +50,19 @@ services:
         value: production
       - key: LOG_LEVEL
         value: info
-      - fromGroup: nexus-shared-secrets
+      - key: SUPABASE_URL
+        value: "REPLACEME_IN_RENDER_DASHBOARD"
+      - key: SUPABASE_SERVICE_KEY
+        value: "REPLACEME_IN_RENDER_DASHBOARD"
+      - key: SUPABASE_ANON_KEY
+        value: "REPLACEME_IN_RENDER_DASHBOARD"
+      - key: OPENROUTER_API_KEY
+        value: "REPLACEME_IN_RENDER_DASHBOARD"
+      - key: GROQ_API_KEY
+        value: "REPLACEME_IN_RENDER_DASHBOARD"
+      - key: GEMINI_API_KEY
+        value: "REPLACEME_IN_RENDER_DASHBOARD"
+      - key: APP_URL
+        value: "https://nexus-os.vercel.app"
+      - key: REDIS_URL
+        value: "REPLACEME_IN_RENDER_DASHBOARD"
