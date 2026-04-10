@@ -34,7 +34,7 @@ class GeminiProvider {
     } : { promptTokens: 0, completionTokens: 0 };
 
     return { 
-      content, 
+      text: content, 
       tokens: usage.promptTokens + usage.completionTokens,
       usage
     };
