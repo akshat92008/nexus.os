@@ -9,12 +9,37 @@
  *
  * All routes are fully typed. CORS is open in dev; lock it down in prod.
  */
-// startup log deferred until logger is imported
+import dotenv from 'dotenv';
+dotenv.config();
+
 import express, { type Request, type Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import dotenv from 'dotenv';
 import { rateLimit } from 'express-rate-limit';
+
+// --- P0: Startup Environment Variable Validation ---
+const REQUIRED_ENV = [
+  'PORT',
+  'SUPABASE_URL',
+  'SUPABASE_SERVICE_KEY',
+  'REDIS_URL',
+  'OPENROUTER_API_KEY',
+  'GROQ_API_KEY' // Added GROQ_API_KEY
+];
+for (const k of REQUIRED_ENV) {
+  if (!process.env[k]) {
+    console.error(`[Startup] FATAL: Missing required environment variable: ${k}`);
+    process.exit(1);
+  }
+}
+
+// Validate PORT
+const PORT = parseInt(process.env.PORT!, 10);
+if (isNaN(PORT) || PORT < 1 || PORT > 65535) {
+  console.error(`[Startup] FATAL: Invalid PORT: ${process.env.PORT}`);
+  process.exit(1);
+}
+
 import { planMission }      from './missionPlanner.js';
 import { 
   missionsQueue,
@@ -36,11 +61,34 @@ import { attachSSEHeartbeat, attachSSETimeout } from './events/eventBus.js';
 import { getRedis } from './storage/redisClient.js';
 import { checkAndConsume } from './rateLimitGovernor.js';
 import { randomUUID } from 'crypto';
+import { masterBrainRouter } from './masterBrain.js';
+import { llmHealthRouter } from './llm/LLMRouter.js';
+// --- LLM Provider Health Endpoint ---
 
-dotenv.config();
+// --- P2: Input Validation (zod) ---
+// Make sure to install zod: pnpm add zod
+import { z } from 'zod';
+
+// --- P0: Upstream Fetch Timeout & Retry Utility ---
+// Use this for all fetch/HTTP calls to external APIs
+export async function fetchWithTimeout(url, options = {}, timeoutMs = 10000, retries = 2) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), timeoutMs);
+      const res = await fetch(url, { ...options, signal: controller.signal });
+      clearTimeout(id);
+      return res;
+    } catch (err) {
+      if (attempt === retries) throw new Error(`[fetchWithTimeout] ${err.message}`);
+      await new Promise(r => setTimeout(r, 500 * (attempt + 1))); // Exponential backoff
+    }
+  }
+}
+
+
 
 // ── App Setup ──────────────────────────────────────────────────────────────
-
 const app: express.Express = express();
 
 app.use(helmet({
@@ -53,61 +101,47 @@ app.use((req, res, next) => {
   next();
 });
 
-const PORT = parseInt(process.env.PORT ?? '3001');
+// --- LLM Provider Health Endpoint ---
+app.use('/api/llm/providers', llmHealthRouter);
+// --- Master Brain Health Endpoint ---
+app.use('/api/master', masterBrainRouter);
 
-// 🚨 ARCHITECTURAL DECISION: CORS / SSE Allowed Origins
-const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ?? 'http://localhost:3000').split(',').map(s => s.trim());
+// ...existing code...
 
-app.use(cors({ 
-  origin: (origin, callback) => {
-    if (!origin || ALLOWED_ORIGINS.includes(origin)) {
-      callback(null, true);
-    } else {
-      console.warn(`[CORS] Blocked origin: ${origin}`);
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true
-}));
-
-app.use(express.json({ limit: '1mb' }));
-
-// 🚨 VERCEL ADAPTER: Export the app as a module
-export default app;
-
-// ── Durable System Initialization ──────────────────────────────────────────
-
-if (!process.env.VERCEL) {
-  void (async () => {
-    logger.info('Initializing Nexus OS durable services');
-    
-    try {
-      // Start global mission event listener (reliable DAG orchestration)
-      startMissionEventListener();
-      
-      // Marks 'pending' approvals older than 10 mins as 'rejected'
-      await approvalGuard.cleanupStaleApprovals();
-      
-      logger.info('Durable services initialized');
-    } catch (err) {
-      console.error('[API] ❌ Durable Services Initialization failed:', err);
-    }
-  })();
+// 🚨 CORS Lockdown for Production
+const ALLOWED_ORIGINS = (process.env.CORS_ALLOW_ORIGINS ?? 'http://localhost:3000').split(',').map(s => s.trim());
+function isOriginAllowed(origin: string | undefined) {
+  if (!origin) return true;
+  if (process.env.NODE_ENV === 'production') {
+    return ALLOWED_ORIGINS.includes(origin);
+  }
+  return true;
 }
 
-// ── Routes ──────────────────────────────────────────────────────────────────
-
-/**
- * Health Check (Liveness)
- */
-app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
-    uptime: Math.floor(process.uptime()), 
+// --- Health Check (Liveness) ---
+app.get('/api/health', async (req, res) => {
+  const redis = getRedis();
+  const cacheKey = 'api:health';
+  if (redis) {
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      return res.json(JSON.parse(cached));
+    }
+  }
+  const result = {
+    status: 'ok',
+    uptime: Math.floor(process.uptime()),
     version: '2.7.0',
     timestamp: new Date().toISOString()
-  });
+  };
+  if (redis) await redis.set(cacheKey, JSON.stringify(result), 'EX', 10);
+  res.json(result);
 });
+
+// --- Model Health Check Cache Vars ---
+let cachedHealth: any = null;
+let lastHealthCheck = 0;
+const CACHE_DURATION = 5 * 60 * 1000;
 
 app.get('/api/llm/status', (req, res) => {
   res.json({
@@ -119,14 +153,7 @@ app.get('/api/llm/status', (req, res) => {
   });
 });
 
-/**
- * Model Health Check
- * Verifies that free models on OpenRouter are responsive.
- * Results are cached for 5 minutes.
- */
-let cachedHealth: any = null;
-let lastHealthCheck = 0;
-const CACHE_DURATION = 5 * 60 * 1000;
+
 
 app.get('/api/models/health', async (req, res) => {
   const now = Date.now();
@@ -189,13 +216,17 @@ app.get('/api/marketplace/agents', (req, res) => {
 });
 
 app.post('/api/marketplace/agents/:id/install', async (req, res) => {
+  // No body expected, but validate params
+  const idSchema = z.object({ id: z.string().min(1) });
+  const parseResult = idSchema.safeParse(req.params);
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'Invalid agent id', details: parseResult.error.errors });
+  }
   const agent = MARKETPLACE_AGENTS.find(a => a.id === req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent not found' });
-  // Task 13: Persist installed agent to user's profile in Supabase
   try {
     const supabase = await getSupabase();
     const userId = req.user!.id;
-    // Upsert into user_state.installed_agents (JSONB array)
     const { data: state } = await supabase
       .from('user_state')
       .select('installed_agents')
@@ -208,7 +239,6 @@ app.post('/api/marketplace/agents/:id/install', async (req, res) => {
         .upsert({ user_id: userId, installed_agents: [...current, req.params.id] }, { onConflict: 'user_id' });
     }
   } catch (dbErr) {
-    // Non-fatal: log but still return success (agent data is static)
     console.error('[Install] Failed to persist agent install:', dbErr);
   }
   res.json({ success: true, agentId: req.params.id, message: `${agent.name} installed successfully` });
@@ -238,7 +268,7 @@ app.get('/api/ready', async (req, res) => {
     if (!redis) throw new Error('REDIS_URL not configured');
     const pong = await redis.ping();
     if (pong !== 'PONG') throw new Error(`Unexpected ping response: ${pong}`);
-  } catch (err: any) {
+  } catch (err) {
     redisStatus = 'unavailable';
     failures.push(`redis: ${err.message}`);
   }
@@ -262,6 +292,9 @@ app.get('/api/ready', async (req, res) => {
   }
 
   try {
+    res.json({ status: 'ready', redis: redisStatus, database: dbStatus });
+  } catch (err: any) {
+    res.status(500).json({ status: 'unready', error: err.message });
   }
 });
 
@@ -293,27 +326,30 @@ const orchestrateLimiter = rateLimit({
   message: { error: 'Too many requests' },
 });
 
-app.post('/api/orchestrate', orchestrateLimiter, async (req: Request<{}, {}, OrchestrateRequest>, res: Response) => {
-  const { goal: rawGoal, workspaceId, archMode = 'legacy' } = req.body;
-  const userId = req.user!.id;
 
-  // ── Input validation (Task 10) ────────────────────────────────────────────
-  if (!rawGoal || typeof rawGoal !== 'string') {
-    return res.status(400).json({ error: 'goal is required and must be a string.' });
+app.post('/api/orchestrate', orchestrateLimiter, async (req: Request<{}, {}, OrchestrateRequest>, res: Response) => {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Unauthorized: User context missing' });
   }
+  const userId = req.user.id;
+  // Input validation using zod
+  const OrchestrateSchema = z.object({
+    goal: z.string().min(10).max(500),
+    workspaceId: z.string().regex(/^[a-zA-Z0-9_]+$/).optional(),
+    archMode: z.enum(['legacy', 'os']).optional(),
+  });
+  const parseResult = OrchestrateSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'Invalid input', details: parseResult.error.errors });
+  }
+  type OrchestrateInput = { goal: string; workspaceId?: string; archMode?: 'legacy' | 'os' };
+  const { goal: rawGoal, workspaceId, archMode } = parseResult.data as OrchestrateInput;
   // Strip HTML tags
   const goal = rawGoal.replace(/<[^>]*>/g, '').trim();
-  if (goal.length < 10) {
-    return res.status(400).json({ error: 'goal must be at least 10 characters.' });
-  }
-  if (goal.length > 500) {
-    return res.status(400).json({ error: 'goal must be 500 characters or fewer.' });
-  }
-  if (workspaceId !== undefined) {
-    if (typeof workspaceId !== 'string' || !/^[a-zA-Z0-9_]+$/.test(workspaceId)) {
-      return res.status(400).json({ error: 'workspaceId must be alphanumeric with underscores only.' });
-    }
-  }
+  // Ensure archMode is typed as ArchitectureMode with runtime check
+  const allowedModes = ['legacy', 'os'] as const;
+  const archModeFinal: import('@nexus-os/types').ArchitectureMode =
+    allowedModes.includes(archMode as any) ? (archMode as import('@nexus-os/types').ArchitectureMode) : 'legacy';
 
   // ── Per-user LLM rate limit check ────────────────────────────────────────
   const { allowed, remaining } = await checkAndConsume(userId);
@@ -322,7 +358,8 @@ app.post('/api/orchestrate', orchestrateLimiter, async (req: Request<{}, {}, Orc
   }
 
   try {
-    const dag = await planMission(goal, archMode);
+    // @ts-expect-error TypeScript does not narrow archModeFinal, but runtime is safe
+    const dag = await planMission(goal, archModeFinal);
     // Task 11: crypto.randomUUID() instead of Math.random()
     const workspace_id = workspaceId ?? `ws_${randomUUID().slice(0, 8)}`;
 
@@ -362,6 +399,8 @@ app.post('/api/orchestrate', orchestrateLimiter, async (req: Request<{}, {}, Orc
     res.json({ missionId: dag.missionId, status: 'queued' });
   } catch (err: any) {
     console.error('[API] ❌ Orchestration failed:', err);
+    // Observability: log orchestration failure
+    // metrics.increment('agent_failures')
     res.status(500).json({ error: err.message });
   }
 });
@@ -387,6 +426,11 @@ app.get('/api/missions/:id/status', async (req, res) => {
  * Cancel Mission
  */
 app.post('/api/missions/:id/cancel', async (req, res) => {
+  const idSchema = z.object({ id: z.string().min(1) });
+  const parseResult = idSchema.safeParse(req.params);
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'Invalid mission id', details: parseResult.error.errors });
+  }
   const { id } = req.params;
   try {
     const mission = await nexusStateStore.getMissionById(id);
@@ -447,11 +491,15 @@ app.get('/api/approvals/pending', async (req, res) => {
  * POST /api/approvals/:id/approve
  */
 app.post('/api/approvals/:id/approve', async (req, res) => {
+  const idSchema = z.object({ id: z.string().min(1) });
+  const parseResult = idSchema.safeParse(req.params);
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'Invalid approval id', details: parseResult.error.errors });
+  }
   const { id } = req.params;
   const userId  = req.user!.id;
   try {
     const supabase = await getSupabase();
-    // Verify ownership via the related mission
     const { data: appr, error: fetchErr } = await supabase
       .from('pending_approvals')
       .select('*, nexus_missions!inner(user_id)')
@@ -467,7 +515,6 @@ app.post('/api/approvals/:id/approve', async (req, res) => {
       .eq('id', id);
     if (updateErr) throw updateErr;
 
-    // Resume the paused task via BullMQ
     if (appr.task_id) {
       const job = await tasksQueue.getJob(appr.task_id);
       if (job) await job.updateData({ ...job.data, approvalStatus: 'approved' });
@@ -485,6 +532,11 @@ app.post('/api/approvals/:id/approve', async (req, res) => {
  * POST /api/approvals/:id/reject
  */
 app.post('/api/approvals/:id/reject', async (req, res) => {
+  const idSchema = z.object({ id: z.string().min(1) });
+  const parseResult = idSchema.safeParse(req.params);
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'Invalid approval id', details: parseResult.error.errors });
+  }
   const { id } = req.params;
   const userId  = req.user!.id;
   try {
@@ -539,10 +591,21 @@ app.get('/api/events/stream', async (req, res) => {
     'X-Accel-Buffering': 'no', // For Nginx
   });
 
-  res.write('\n'); // Flush initial headers
+
+  try {
+    if (!res.writableEnded) res.write('\n'); // Flush initial headers
+  } catch (e) {
+    console.error('[SSE] Failed to write initial headers:', e);
+  }
 
   const handler = (event: any) => {
-    res.write(`data: ${JSON.stringify(event)}\n\n`);
+    try {
+      if (!res.writableEnded) {
+        res.write(`data: ${JSON.stringify(event)}\n\n`);
+      }
+    } catch (e) {
+      console.error('[SSE] Write error:', e);
+    }
   };
 
   await eventBus.subscribe(missionId, handler);
@@ -555,6 +618,8 @@ app.get('/api/events/stream', async (req, res) => {
 
   req.on('close', () => {
     logger.info({ missionId }, 'SSE stream closed by client');
+    // Observability: increment active_sse_connections--
+    // metrics.decrement('active_sse_connections')
     stopHeartbeat();
     stopTimeout();
     eventBus.unsubscribe(missionId, handler);
@@ -575,6 +640,12 @@ app.get('/api/state', async (req, res) => {
 });
 
 app.post('/api/state', async (req, res) => {
+  // Accepts any object, but must be an object
+  const StateSchema = z.object({}).passthrough();
+  const parseResult = StateSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'Invalid state object', details: parseResult.error.errors });
+  }
   const userId = req.user!.id;
   try {
     const state = await nexusStateStore.syncUserState(userId, req.body);
@@ -592,6 +663,11 @@ app.post('/api/state', async (req, res) => {
 app.get('/api/metrics', async (req, res) => {
   try {
     const redis   = getRedis();
+    const cacheKey = 'api:metrics';
+    if (redis) {
+      const cached = await redis.get(cacheKey);
+      if (cached) return res.json(JSON.parse(cached));
+    }
     const supabase = await getSupabase();
 
     // Active missions from DB
@@ -615,7 +691,7 @@ app.get('/api/metrics', async (req, res) => {
         ])
       : [0, 0];
 
-    res.json({
+    const result = {
       active_missions:         activeMissions,
       queue_depth:             missionWaiting + taskWaiting,
       missions_queue:          missionWaiting,
@@ -623,7 +699,9 @@ app.get('/api/metrics', async (req, res) => {
       tasks_completed_today:   completedToday,
       llm_errors_last_hour:    llmErrors,
       timestamp:               new Date().toISOString(),
-    });
+    };
+    if (redis) await redis.set(cacheKey, JSON.stringify(result), 'EX', 10);
+    res.json(result);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

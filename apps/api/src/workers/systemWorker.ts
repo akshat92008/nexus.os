@@ -1,3 +1,13 @@
+// --- Health Endpoint for Worker ---
+import express from 'express';
+const app = express();
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', worker: 'system', timestamp: Date.now() });
+});
+if (require.main === module) {
+  const port = process.env.HEALTH_PORT || 4003;
+  app.listen(port, () => console.log(`[SystemWorker] Health endpoint on :${port}`));
+}
 /**
  * Nexus OS — System Worker
  * 

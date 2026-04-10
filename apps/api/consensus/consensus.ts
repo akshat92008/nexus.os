@@ -37,14 +37,18 @@ export async function runConsensus(prompt: string, context = ''): Promise<string
 
   // ── Step 1: Two parallel drafts ──────────────────────────────────────────
   const [draftA, draftB] = await Promise.all([
-    router.chat(
-      [{ role: 'user', content: prompt }],
-      { temperature: 0.4, tier: 'MODEL_POWER', systemPrompt }
-    ),
-    router.chat(
-      [{ role: 'user', content: prompt }],
-      { temperature: 0.7, tier: 'MODEL_POWER', systemPrompt }
-    ),
+    router.call({
+      user: prompt,
+      system: systemPrompt,
+      temperature: 0.4,
+      model: 'MODEL_POWER'
+    }),
+    router.call({
+      user: prompt,
+      system: systemPrompt,
+      temperature: 0.7,
+      model: 'MODEL_POWER'
+    }),
   ]);
 
   const textA = draftA.content.trim();
@@ -53,10 +57,12 @@ export async function runConsensus(prompt: string, context = ''): Promise<string
   // ── Step 2: Judge synthesises ────────────────────────────────────────────
   const judgePrompt = `Original prompt:\n"${prompt}"\n\nDraft A:\n${textA}\n\nDraft B:\n${textB}\n\nSynthesize the single best answer.`;
 
-  const judged = await router.chat(
-    [{ role: 'user', content: judgePrompt }],
-    { temperature: 0.2, tier: 'MODEL_POWER', systemPrompt: JUDGE_SYSTEM }
-  );
+  const judged = await router.call({
+    user: judgePrompt,
+    system: JUDGE_SYSTEM,
+    temperature: 0.2,
+    model: 'MODEL_POWER'
+  });
 
   return judged.content.trim();
 }

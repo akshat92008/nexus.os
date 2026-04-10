@@ -19,6 +19,10 @@ services:
         sync: true
       - key: OPENROUTER_API_KEY
         sync: true
+      - key: GROQ_API_KEY
+        sync: true
+      - key: GEMINI_API_KEY
+        sync: true
       - key: APP_URL
         sync: true
       - key: REDIS_URL
@@ -44,6 +48,10 @@ services:
       - key: SUPABASE_ANON_KEY
         sync: true
       - key: OPENROUTER_API_KEY
+        sync: true
+      - key: GROQ_API_KEY
+        sync: true
+      - key: GEMINI_API_KEY
         sync: true
       - key: APP_URL
         sync: true

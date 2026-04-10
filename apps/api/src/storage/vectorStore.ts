@@ -1,4 +1,5 @@
 import { getSupabase } from './supabaseClient.js';
+import { fetchWithTimeout } from '../index.js';
 
 const OPENROUTER_EMBED_URL = 'https://openrouter.ai/api/v1/embeddings';
 
@@ -7,19 +8,28 @@ async function getEmbedding(text: string): Promise<number[]> {
     throw new Error('OpenRouter embedding requires OPENROUTER_API_KEY');
   }
 
-  const res = await fetch(OPENROUTER_EMBED_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: 'text-embedding-3-small',
-      input: text,
-    }),
-  });
+  let res;
+  try {
+    res = await fetchWithTimeout(OPENROUTER_EMBED_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: 'text-embedding-3-small',
+        input: text,
+      }),
+    }, 10000, 2);
+  } catch (err) {
+    console.error('[VectorStore] Upstream timeout or error:', err.message);
+    // Observability: metrics.increment('upstream_timeouts')
+    throw new Error(`[VectorStore] OpenRouter embed timeout/error: ${err.message}`);
+  }
 
   if (!res.ok) {
+    console.error('[VectorStore] OpenRouter embed failed:', res.status);
+    // Observability: metrics.increment('upstream_timeouts')
     throw new Error(`[VectorStore] OpenRouter embed failed: ${res.status}`);
   }
 

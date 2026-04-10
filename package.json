@@ -6,18 +6,21 @@
   "packageManager": "pnpm@9.5.0",
   "scripts": {
     "dev": "pnpm -r --parallel dev",
-    "dev:api":   "pnpm --filter @nexus-os/api dev",
-    "dev:web":   "pnpm --filter @nexus-os/web dev",
-    "build":     "pnpm --filter @nexus-os/api build && pnpm --filter @nexus-os/web build",
-    "lint":      "pnpm -r lint",
+    "dev:api": "pnpm --filter @nexus-os/api dev",
+    "dev:web": "pnpm --filter @nexus-os/web dev",
+    "build": "pnpm --filter @nexus-os/api build && pnpm --filter @nexus-os/web build",
+    "lint": "pnpm -r lint",
     "typecheck": "pnpm -r exec tsc --noEmit",
-    "test":      "pnpm -r test",
-    "test:e2e":  "pnpm --filter @nexus-os/api test:e2e",
+    "test": "pnpm -r test",
+    "test:e2e": "pnpm --filter @nexus-os/api test:e2e",
     "test:e2e:record": "MISSION_REPLAY_MODE=record pnpm --filter @nexus-os/api test:e2e",
     "test:e2e:replay": "MISSION_REPLAY_MODE=replay pnpm --filter @nexus-os/api test:e2e"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
-    "typescript":   "^5.5.3"
+    "typescript": "^5.5.3"
+  },
+  "dependencies": {
+    "zod": "^3.22.0"
   }
 }

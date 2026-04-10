@@ -2,6 +2,36 @@ import { ILLMProvider, LLMCallOpts, LLMResponse } from './ILLMProvider.js';
 import { OpenRouterProvider } from './OpenRouterProvider.js';
 import { GroqProvider } from './GroqProvider.js';
 import { rateLimitMonitor } from './RateLimitMonitor.js';
+import { createBreaker } from '../circuitBreaker.js';
+// --- Gemini/Claude/Local Fallback Providers (stubs) ---
+class GeminiProvider {
+  async call(opts: LLMCallOpts): Promise<LLMResponse> {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) throw new Error('GEMINI_API_KEY not set');
+    const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=' + apiKey;
+    const body = {
+      contents: [{ role: 'user', parts: [{ text: `System: ${opts.system}\n\nUser: ${opts.user}` }]}],
+      generationConfig: {
+        temperature: opts.temperature ?? 0.7,
+        maxOutputTokens: opts.maxTokens ?? 2048
+      }
+    };
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) throw new Error('Gemini API error: ' + res.status);
+    const data = await res.json();
+    const content = data.candidates?.[0]?.content?.parts?.[0]?.text || '[Gemini: No response]';
+    return { content, tokens: 0 }; // Tokens tracking not implemented for direct Gemini stub
+  }
+}
+class LocalProvider {
+  async call(opts: LLMCallOpts): Promise<LLMResponse> {
+    return { content: '[LOCAL LLM FALLBACK] No external provider available.' };
+  }
+}
 
 /**
  * Nexus OS — LLMRouter
@@ -43,6 +73,8 @@ export const FREE_MODELS = {
 export class LLMRouter {
   private openRouter: ILLMProvider;
   private groqFallback: ILLMProvider;
+  private gemini: ILLMProvider;
+  private local: ILLMProvider;
   private rotationIndices: Record<string, number> = {
     [MODEL_FAST]: 0,
     [MODEL_POWER]: 0,
@@ -53,6 +85,8 @@ export class LLMRouter {
   constructor() {
     this.openRouter = new OpenRouterProvider();
     this.groqFallback = new GroqProvider();
+    this.gemini = new GeminiProvider();
+    this.local = new LocalProvider();
   }
 
   /**
@@ -85,65 +119,74 @@ export class LLMRouter {
     const startIndex = this.rotationIndices[tier] || 0;
     const maxAttempts = Math.min(models.length, 3);
 
-    // 1. Try OpenRouter Rotation
+    // 1. Try OpenRouter Rotation (with circuit breaker)
     if (this.shouldUseProvider('openrouter')) {
+      const breaker = createBreaker((args) => this.openRouter.call(args));
       for (let attempt = 0; attempt < maxAttempts; attempt++) {
         const modelIndex = (startIndex + attempt) % models.length;
         const model = models[modelIndex];
-        
         if (rateLimitMonitor.isRateLimited('openrouter', model)) {
           console.warn(`[LLMRouter] Skipping rate-limited OpenRouter model ${model}.`);
           continue;
         }
-
         try {
-          const response = await this.openRouter.call({
-            ...opts,
-            model,
-          });
-
+          const response = await breaker.fire({ ...opts, model });
           this.rotationIndices[tier] = (modelIndex + 1) % models.length;
           rateLimitMonitor.recordSuccess('openrouter', model);
           return response;
-
         } catch (err: any) {
           lastError = err;
           const isRateLimit = err.message?.includes('429') || err.message?.toLowerCase().includes('rate limit');
-          
           if (isRateLimit) {
             const retryAfter = this.extractRetryAfter(err.message);
             rateLimitMonitor.recordRateLimit('openrouter', model, retryAfter, err.message);
             console.warn(`[LLMRouter] OpenRouter model ${model} rate limited, trying next model...`);
             continue;
           }
-
           rateLimitMonitor.recordFailure('openrouter', model);
           console.error(`[LLMRouter] OpenRouter error with ${model}: ${err.message}`);
         }
       }
     }
 
-    // 2. Final Fallback to Groq
-    console.warn(`[LLMRouter] All provider attempts failed. Engaging Groq fallback for tier ${tier}...`);
-    try {
-      const groqModel = this.mapToGroqModel(tier);
-      const response = await this.groqFallback.call({
-        ...opts,
-        model: groqModel,
-      });
-      rateLimitMonitor.recordSuccess('groq', groqModel);
-      return response;
-    } catch (err: any) {
-      const isRateLimit = err.message?.includes('429') || err.message?.toLowerCase().includes('rate limit');
-      if (isRateLimit) {
-        const retryAfter = this.extractRetryAfter(err.message);
-        rateLimitMonitor.recordRateLimit('groq', this.mapToGroqModel(tier), retryAfter, err.message);
-      } else {
-        rateLimitMonitor.recordFailure('groq', this.mapToGroqModel(tier));
+    // 2. Try Gemini (if available)
+    if (this.shouldUseProvider('gemini')) {
+      const breaker = createBreaker((args) => this.gemini.call(args));
+      try {
+        const response = await breaker.fire(opts);
+        rateLimitMonitor.recordSuccess('gemini', opts.model);
+        return response;
+      } catch (err: any) {
+        lastError = err;
+        rateLimitMonitor.recordFailure('gemini', opts.model);
+        console.error(`[LLMRouter] Gemini error: ${err.message}`);
       }
-      console.error(`[LLMRouter] Groq fallback failed: ${err.message}`);
-      throw lastError || err;
     }
+
+    // 3. Final Fallback to Groq
+    if (this.shouldUseProvider('groq')) {
+      const breaker = createBreaker((args) => this.groqFallback.call(args));
+      try {
+        const groqModel = this.mapToGroqModel(tier);
+        const response = await breaker.fire({ ...opts, model: groqModel });
+        rateLimitMonitor.recordSuccess('groq', groqModel);
+        return response;
+      } catch (err: any) {
+        const isRateLimit = err.message?.includes('429') || err.message?.toLowerCase().includes('rate limit');
+        if (isRateLimit) {
+          const retryAfter = this.extractRetryAfter(err.message);
+          rateLimitMonitor.recordRateLimit('groq', this.mapToGroqModel(tier), retryAfter, err.message);
+        } else {
+          rateLimitMonitor.recordFailure('groq', this.mapToGroqModel(tier));
+        }
+        console.error(`[LLMRouter] Groq fallback failed: ${err.message}`);
+        lastError = err;
+      }
+    }
+
+    // 4. Local fallback
+    const response = await this.local.call(opts);
+    return response;
   }
 
   /**
@@ -175,6 +218,8 @@ export class LLMRouter {
         return Boolean(process.env.OPENROUTER_API_KEY);
       case 'groq':
         return Boolean(process.env.GROQ_API_KEY);
+      case 'gemini':
+        return Boolean(process.env.GEMINI_API_KEY);
       default:
         return false;
     }
@@ -201,5 +246,18 @@ export class LLMRouter {
     return 60;
   }
 }
+
+// --- Provider Health Check Endpoint ---
+import express from 'express';
+export const llmHealthRouter = express.Router();
+llmHealthRouter.get('/health', async (req, res) => {
+  res.json({
+    openrouter: Boolean(process.env.OPENROUTER_API_KEY),
+    groq: Boolean(process.env.GROQ_API_KEY),
+    gemini: Boolean(process.env.GEMINI_API_KEY),
+    local: true,
+    timestamp: Date.now()
+  });
+});
 
 export const llmRouter = new LLMRouter();

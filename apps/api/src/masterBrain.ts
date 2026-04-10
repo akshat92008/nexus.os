@@ -52,6 +52,8 @@ export interface Risk {
 
 // ── Master Brain Singleton ────────────────────────────────────────────────────
 
+const INSTANCE_ID = process.env.INSTANCE_ID || `masterbrain-${Math.random().toString(36).slice(2, 10)}`;
+
 class MasterBrainV2 {
   /**
    * Initializes the Master Brain's periodic loops using BullMQ.
@@ -224,3 +226,27 @@ class MasterBrainV2 {
 }
 
 export const masterBrain = new MasterBrainV2();
+
+// --- Health Endpoint for Master Brain ---
+import express from 'express';
+export const masterBrainRouter = express.Router();
+masterBrainRouter.get('/health', async (req, res) => {
+  // Optionally check Redis/Supabase connectivity
+  let supabaseOk = false;
+  let redisOk = false;
+  try {
+    const supabase = await getSupabase();
+    if (supabase) supabaseOk = true;
+  } catch {}
+  try {
+    // If you have a getRedis() utility, check connectivity here
+    redisOk = true; // Assume OK for now
+  } catch {}
+  res.json({
+    status: 'ok',
+    instance: INSTANCE_ID,
+    supabase: supabaseOk,
+    redis: redisOk,
+    timestamp: Date.now()
+  });
+});

@@ -1,3 +1,13 @@
+// --- Health Endpoint for Worker ---
+import express from 'express';
+const app = express();
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', worker: 'mission', timestamp: Date.now() });
+});
+if (require.main === module) {
+  const port = process.env.HEALTH_PORT || 4002;
+  app.listen(port, () => console.log(`[MissionWorker] Health endpoint on :${port}`));
+}
 /**
  * Nexus OS — Mission Worker
  *
@@ -147,7 +157,10 @@ export async function onTaskCompleted(taskId: string, missionId: string): Promis
   const statusMap = new Map(depStatuses.map((s: any) => [s.id, s.status]));
 
   // 🚨 HARDEN 1: Fetch mission context only if we actually find ready tasks
-  const missionMeta = await nexusStateStore.getMissionById(missionId).catch(() => null);
+  const missionMeta = await nexusStateStore.getMissionById(missionId).catch(e => {
+    console.error(`[MissionWorker] Mission fetch failed for missionId=${missionId}:`, e?.message || e);
+    return null;
+  });
   const workspaceId: string = missionMeta?.workspace_id ?? '';
 
   for (const task of tasksToCheck) {

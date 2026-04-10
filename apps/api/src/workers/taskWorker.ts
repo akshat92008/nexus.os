@@ -1,3 +1,13 @@
+// --- Health Endpoint for Worker ---
+import express from 'express';
+const app = express();
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', worker: 'task', timestamp: Date.now() });
+});
+if (require.main === module) {
+  const port = process.env.HEALTH_PORT || 4001;
+  app.listen(port, () => console.log(`[TaskWorker] Health endpoint on :${port}`));
+}
 /**
  * Nexus OS — Task Worker (Durable Execution)
  *
@@ -22,7 +32,11 @@ import { vectorStore } from '../storage/vectorStore.js';
 import { startLockExtension } from './utils/workerUtils.js';
 import type { TypedArtifact, CodeArtifact, AgentContext, MemoryEntry } from '@nexus-os/types';
 
-const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
+if (!process.env.REDIS_URL) {
+  console.error('[TaskWorker] FATAL: REDIS_URL required');
+  process.exit(1);
+}
+const REDIS_URL = process.env.REDIS_URL;
 const connection = new Redis(REDIS_URL, { maxRetriesPerRequest: null });
 
 // ── Constants ────────────────────────────────────────────────────────────────
