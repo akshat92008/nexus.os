@@ -27,16 +27,32 @@ interface CachedUser {
   expiresAt: number;
 }
 
-const TOKEN_CACHE      = new Map<string, CachedUser>();
-const CACHE_TTL_MS     = 5 * 60 * 1000;  // 5 minutes
-const CLEANUP_INTERVAL = 100;             // clean stale entries every N requests
-let   requestCounter   = 0;
+const TOKEN_CACHE = new Map<string, CachedUser>();
+const MAX_CACHE_SIZE = 1000;
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-function pruneCache(): void {
-  const now = Date.now();
-  for (const [token, entry] of TOKEN_CACHE) {
-    if (entry.expiresAt <= now) TOKEN_CACHE.delete(token);
+function getCachedUser(token: string): { id: string; email: string } | null {
+  const cached = TOKEN_CACHE.get(token);
+  if (!cached) return null;
+
+  if (cached.expiresAt <= Date.now()) {
+    TOKEN_CACHE.delete(token);
+    return null;
   }
+
+  // LRU behavior: refresh position on hit
+  TOKEN_CACHE.delete(token);
+  TOKEN_CACHE.set(token, cached);
+  return cached.user;
+}
+
+function setCachedUser(token: string, user: { id: string; email: string }): void {
+  // If cache is too big, remove the oldest entry (first key in the map)
+  if (TOKEN_CACHE.size >= MAX_CACHE_SIZE) {
+    const firstKey = TOKEN_CACHE.keys().next().value;
+    if (firstKey !== undefined) TOKEN_CACHE.delete(firstKey);
+  }
+  TOKEN_CACHE.set(token, { user, expiresAt: Date.now() + CACHE_TTL_MS });
 }
 
 // ── Middleware ───────────────────────────────────────────────────────────────

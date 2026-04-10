@@ -120,7 +120,8 @@ export function useNexusSSE(): UseNexusSSEReturn {
       watchdogRef.current = null;
     }
     clearRetryTimeout();
-    abortRef.current?.abort();
+    // 🚨 FIX 6: Removed abortRef.current?.abort() from general cleanup
+    // so that navigating away doesn't kill the background session.
     abortRef.current = null;
   }, [clearRetryTimeout]);
 

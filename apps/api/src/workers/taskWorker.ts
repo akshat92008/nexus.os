@@ -124,7 +124,8 @@ function truncateContext(raw: string, limit: number): string {
   }
 
   // Fallback: Slice at a reasonable boundary (not mid-multibyte char)
-  const sliced = raw.slice(0, limit);
+  const chars = [...raw];
+  const sliced = chars.slice(0, limit).join('');
   return sliced + `\n\n[... Truncated for token safety — original size: ${bytes} bytes ...]`;
 }
 
@@ -496,7 +497,9 @@ export const taskWorker = new Worker<TaskJobData>(
 
     } catch (err: any) {
       logger.error({ taskId, err: err.message }, 'Task failed');
-      const isFinalAttempt = job.attemptsMade + 1 >= maxAttempts;
+      const isTokenLimit = err.message?.includes('[CircuitBreaker]');
+      const isFinalAttempt = isTokenLimit || (job.attemptsMade + 1 >= maxAttempts);
+      
       const errorPayload = {
         type:       'task_failed',
         taskId,
@@ -509,6 +512,10 @@ export const taskWorker = new Worker<TaskJobData>(
 
       if (isFinalAttempt) {
         await nexusStateStore.updateTaskStatus(taskId, 'failed', { error: err.message });
+        if (isTokenLimit) {
+          // Prevent BullMQ from retrying if it's a circuit breaker trip
+          await job.discard();
+        }
       } else {
         await nexusStateStore.updateTaskStatus(taskId, 'queued', { error: err.message });
       }

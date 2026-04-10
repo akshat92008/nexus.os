@@ -19,8 +19,8 @@ function buildClient(url: string): Redis {
   return new Redis(url, {
     maxRetriesPerRequest: MAX_RETRIES,
     retryStrategy(times: number) {
-      if (times > MAX_RETRIES) return null; // stop retrying
-      return RETRY_DELAY;
+      const delay = Math.min(times * 100, 30000); // Exponential-ish backoff
+      return delay;
     },
     enableReadyCheck:  true,
     lazyConnect:       false,

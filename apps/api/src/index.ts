@@ -94,6 +94,7 @@ const app: express.Express = express();
 app.use(helmet({
   contentSecurityPolicy: false,
 }));
+app.use(express.json({ limit: '1mb' }));
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
@@ -238,8 +239,16 @@ app.post('/api/marketplace/agents/:id/install', async (req, res) => {
         .from('user_state')
         .upsert({ user_id: userId, installed_agents: [...current, req.params.id] }, { onConflict: 'user_id' });
     }
-  } catch (dbErr) {
-    console.error('[Install] Failed to persist agent install:', dbErr);
+  } catch (dbErr: any) {
+    if (dbErr.code === 'PGRST116') {
+      // User has no prior state, create it
+      const supabase = await getSupabase();
+      await supabase
+        .from('user_state')
+        .insert({ user_id: req.user!.id, installed_agents: [req.params.id] });
+    } else {
+      console.error('[Install] Failed to persist agent install:', dbErr);
+    }
   }
   res.json({ success: true, agentId: req.params.id, message: `${agent.name} installed successfully` });
 });
@@ -605,7 +614,10 @@ app.get('/api/state', async (req, res) => {
 
 app.post('/api/state', async (req, res) => {
   // Accepts any object, but must be an object
-  const StateSchema = z.object({}).passthrough();
+  const StateSchema = z.record(z.any()).refine(
+    (obj) => JSON.stringify(obj).length < 2 * 1024 * 1024,
+    { message: "State object exceeds 2MB limit" }
+  );
   const parseResult = StateSchema.safeParse(req.body);
   if (!parseResult.success) {
     return res.status(400).json({ error: 'Invalid state object', details: parseResult.error.errors });

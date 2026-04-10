@@ -51,8 +51,9 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
 
 function chunkText(text: string, maxChars = 2000): string[] {
   const chunks: string[] = [];
-  for (let i = 0; i < text.length; i += maxChars) {
-    chunks.push(text.slice(i, i + maxChars));
+  const chars = [...text]; // Multi-byte safe spread
+  for (let i = 0; i < chars.length; i += maxChars) {
+    chunks.push(chars.slice(i, i + maxChars).join(''));
   }
   return chunks;
 }
@@ -110,7 +111,10 @@ async function dispatchMapReduceTask(
           missionId,
           workspaceId,
           agentType:    task.agent_type,
-          input:        { ...task, id: childTask.id, label: childTask.label },
+          input:        { 
+            input_payload: childTask.inputPayload, 
+            label: childTask.label 
+          },
           contextFields: [],
         });
       }
@@ -258,6 +262,19 @@ export function startMissionEventListener(): void {
   });
 
   logger.info('Listening for task_completed events');
+
+  // 🚨 FIX 5: Periodic Recovery Sweep (Resilience against dropped PubSub events)
+  setInterval(async () => {
+    try {
+      const activeMissions = await nexusStateStore.getActiveMissions();
+      for (const m of activeMissions) {
+        // Attempt to "nudge" each active mission
+        await onTaskCompleted('__fallback__', m.id);
+      }
+    } catch (err) {
+      // Background noise
+    }
+  }, 60_000); // Every 60 seconds
 }
 
 // ── BullMQ Worker: handles initial mission bootstrap only ─────────────────

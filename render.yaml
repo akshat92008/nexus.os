@@ -26,10 +26,7 @@ services:
       - key: APP_URL
         sync: true
       - key: REDIS_URL
-        fromService:
-          type: redis
-          name: nexus-redis
-          property: connectionString
+        sync: true
 
   - type: worker
     name: nexus-task-worker
@@ -56,15 +53,5 @@ services:
       - key: APP_URL
         sync: true
       - key: REDIS_URL
-        fromService:
-          type: redis
-          name: nexus-redis
-          property: connectionString
+        sync: true
 
-databases:
-  - name: nexus-redis
-    type: redis
-    # Render Redis is paid. For a free ioredis-compatible alternative, 
-    # users should set REDIS_URL to an Upstash connection string in envVars.
-    plan: starter
-    ipAllowList: [] # Standard internal access only

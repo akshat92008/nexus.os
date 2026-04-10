@@ -371,6 +371,16 @@ export class MissionStore {
     if (error) throw new Error(`[MissionStore] listAllSchedules failed: ${error.message}`);
     return data;
   }
+
+  async getActiveMissions() {
+    const client = await getSupabase();
+    const { data, error } = await client
+      .from('nexus_missions')
+      .select('id')
+      .in('status', ['queued', 'running']);
+    if (error) throw new Error(`[MissionStore] getActiveMissions failed: ${error.message}`);
+    return data;
+  }
 }
 
 export const missionStore = new MissionStore();
