@@ -38,11 +38,16 @@ for (const k of REQUIRED_ENV) {
 }
 
 if (missingEnv.length > 0) {
-  logger.fatal({ missing: missingEnv }, 'Missing required environment variables');
-  console.error('\n❌ FATAL: Missing required environment variables:');
-  missingEnv.forEach(k => console.error(`   - ${k}`));
-  console.error('\nPlease check your .env file and restart the server.\n');
-  process.exit(1);
+  const isTest = process.env.NODE_ENV === 'test';
+  if (isTest) {
+    logger.warn({ missing: missingEnv }, 'Missing environment variables in test mode. Proceeding with caution.');
+  } else {
+    logger.fatal({ missing: missingEnv }, 'Missing required environment variables');
+    console.error('\n❌ FATAL: Missing required environment variables:');
+    missingEnv.forEach(k => console.error(`   - ${k}`));
+    console.error('\nPlease check your .env file and restart the server.\n');
+    process.exit(1);
+  }
 }
 
 // Validate PORT format

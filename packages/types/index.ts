@@ -58,14 +58,16 @@ export type GoalType =
 
 // ── Task DAG ───────────────────────────────────────────────────────────────
 
-export enum TaskStatus {
-  PENDING = 'pending',
-  LOCKED = 'locked',
-  RUNNING = 'running',
-  COMPLETED = 'completed',
-  FAILED = 'failed',
-  SKIPPED = 'skipped'
-}
+export const TaskStatus = {
+  PENDING:   'pending',
+  LOCKED:    'locked',
+  RUNNING:   'running',
+  COMPLETED: 'completed',
+  FAILED:    'failed',
+  SKIPPED:   'skipped'
+} as const;
+
+export type TaskStatus = typeof TaskStatus[keyof typeof TaskStatus];
 export type OutputFormat = 'structured_json' | 'prose' | 'list' | 'code';
 export type TaskPriority = 'critical' | 'high' | 'medium' | 'low';
 
@@ -307,15 +309,17 @@ export interface ActivityLog {
   message: string;
 }
 
-export enum MissionStatus {
-  QUEUED = 'queued',
-  RUNNING = 'running',
-  COMPLETED = 'complete',
-  FAILED = 'failed',
-  CANCELLED = 'cancelled',
-  PAUSED = 'paused',
-  ACTIVE = 'active'
-}
+export const MissionStatus = {
+  QUEUED:    'queued',
+  RUNNING:   'running',
+  COMPLETED: 'complete',
+  FAILED:    'failed',
+  CANCELLED: 'cancelled',
+  PAUSED:    'paused',
+  ACTIVE:    'active'
+} as const;
+
+export type MissionStatus = typeof MissionStatus[keyof typeof MissionStatus];
 
 export interface OngoingMission {
   id: string;
