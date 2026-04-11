@@ -41,7 +41,11 @@ class GeminiProvider {
 }
 class LocalProvider {
   async call(opts: LLMCallOpts): Promise<LLMResponse> {
-    return { content: '[LOCAL LLM FALLBACK] No external provider available.', tokens: 0 };
+    const content = '[LOCAL LLM FALLBACK] No external provider available.';
+    return { 
+      content, 
+      tokens: Math.ceil(content.length / 4) 
+    };
   }
 }
 
@@ -62,13 +66,13 @@ export const MODEL_VISION = 'MODEL_VISION';
 // Rotation lists for free models (OpenRouter)
 export const FREE_MODELS = { 
   [MODEL_FAST]: [ 
-    'meta-llama/llama-3.1-8b-instruct:free', 
+    'google/gemini-2.0-flash-exp:free',
+    'meta-llama/llama-3.3-70b-instruct:free', 
     'mistralai/mistral-7b-instruct:free', 
-    'microsoft/phi-3-mini-128k-instruct:free', 
   ], 
   [MODEL_POWER]: [ 
-    'deepseek/deepseek-r1:free', 
     'meta-llama/llama-3.3-70b-instruct:free', 
+    'deepseek/deepseek-r1:free', 
     'qwen/qwen-2.5-72b-instruct:free', 
   ], 
   [MODEL_CODE]: [ 
@@ -77,8 +81,8 @@ export const FREE_MODELS = {
     'meta-llama/llama-3.3-70b-instruct:free', 
   ], 
   [MODEL_VISION]: [ 
+    'google/gemini-2.0-flash-exp:free',
     'meta-llama/llama-3.2-11b-vision-instruct:free', 
-    'google/gemini-pro-1.5-vision',
   ], 
 };
 

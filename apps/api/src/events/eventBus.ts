@@ -10,13 +10,12 @@
 import { Redis } from 'ioredis';
 import type { Response } from 'express';
 import type { NexusEvent } from '../db/models.js';
+import { EventEmitter } from 'events';
+import { logger } from '../logger.js';
 
 const REDIS_URL = process.env.REDIS_URL;
-if (!REDIS_URL) {
-  throw new Error('[EventBus] REDIS_URL environment variable is required');
-}
 
-const SSE_HEARTBEAT_INTERVAL_MS = 25_000;
+const SSE_HEARTBEAT_INTERVAL_MS = 10_000;
 const SSE_MAX_LIFETIME_MS       = 10 * 60 * 1000;
 
 export function attachSSEHeartbeat(res: Response): () => void {
@@ -38,71 +37,96 @@ export function attachSSETimeout(res: Response, onTimeout?: () => void): () => v
 }
 
 class EventBus {
-  private publisher: Redis;
-  private subscriber: Redis;
+  private publisher: Redis | null = null;
+  private subscriber: Redis | null = null;
+  private localEmitter: EventEmitter = new EventEmitter();
   private listeners: Map<string, Set<(event: NexusEvent) => void>> = new Map();
+  private isLocalMode: boolean = false;
 
   constructor() {
-    this.publisher  = new Redis(REDIS_URL!);
-    this.subscriber = new Redis(REDIS_URL!);
+    if (!REDIS_URL) {
+      logger.warn('[EventBus] REDIS_URL missing. Running in Local Mode (In-Memory).');
+      this.isLocalMode = true;
+      return;
+    }
 
-    this.subscriber.on('message', (channel: string, message: string) => {
-      let event: NexusEvent;
-      try {
-        event = JSON.parse(message) as NexusEvent;
-      } catch {
-        console.warn(`[EventBus] Malformed message on "${channel}" — skipping:`, message.slice(0, 200));
-        return;
-      }
-      const handlers = this.listeners.get(channel);
-      if (handlers) {
-        handlers.forEach((handler) => {
-          try { handler(event); }
-          catch (err) { console.error(`[EventBus] Handler threw on "${channel}":`, err); }
-        });
-      }
-    });
+    try {
+      this.publisher  = new Redis(REDIS_URL, { maxRetriesPerRequest: 3 });
+      this.subscriber = new Redis(REDIS_URL, { maxRetriesPerRequest: 3 });
 
-    this.publisher.on('error',  (e) => console.warn('[EventBus] Publisher error:', e.message));
-    this.subscriber.on('error', (e) => console.warn('[EventBus] Subscriber error:', e.message));
+      this.subscriber.on('message', (channel: string, message: string) => {
+        let event: NexusEvent;
+        try {
+          event = JSON.parse(message) as NexusEvent;
+        } catch {
+          logger.warn(`[EventBus] Malformed message on "${channel}" — skipping`);
+          return;
+        }
+        this.emitToLocalListeners(channel, event);
+      });
+
+      this.publisher.on('error', (e) => logger.warn({ err: e.message }, '[EventBus] Publisher error'));
+      this.subscriber.on('error', (e) => logger.warn({ err: e.message }, '[EventBus] Subscriber error'));
+    } catch (err: any) {
+      logger.error({ err: err.message }, '[EventBus] Failed to connect to Redis. Falling back to Local Mode.');
+      this.isLocalMode = true;
+    }
+  }
+
+  private emitToLocalListeners(channel: string, event: NexusEvent) {
+    const handlers = this.listeners.get(channel);
+    if (handlers) {
+      handlers.forEach((handler) => {
+        try { handler(event); }
+        catch (err) { logger.error({ err }, `[EventBus] Handler threw on "${channel}"`); }
+      });
+    }
+    // Also emit to the internal event emitter for local-only events
+    this.localEmitter.emit(channel, event);
   }
 
   async publish(missionId: string, event: NexusEvent): Promise<void> {
     const message = JSON.stringify(event);
-    
-    // ── SSE Buffering (Ticket 2) ───────────────────────────────────────────
-    // Store in a Redis list with 5-minute TTL to allow reconnection catch-up
-    const historyKey = `mission:history:${missionId}`;
-    await this.publisher.lpush(historyKey, message);
-    await this.publisher.ltrim(historyKey, 0, 99); // Keep last 100 events
-    await this.publisher.expire(historyKey, 300);   // 5 minute TTL
-    
-    await this.publisher.publish(`mission:${missionId}`, message);
-    await this.publisher.publish('nexus_global_events', message);
+    const channel = `mission:${missionId}`;
+
+    if (!this.isLocalMode && this.publisher) {
+      try {
+        const historyKey = `mission:history:${missionId}`;
+        await this.publisher.lpush(historyKey, message);
+        await this.publisher.ltrim(historyKey, 0, 99);
+        await this.publisher.expire(historyKey, 300);
+        await this.publisher.publish(channel, message);
+        await this.publisher.publish('nexus_global_events', message);
+      } catch (err: any) {
+        logger.warn({ err: err.message }, '[EventBus] Redis publish failed, using local only');
+      }
+    }
+
+    // Always emit locally for immediate feedback and as fallback
+    this.emitToLocalListeners(channel, event);
+    this.emitToLocalListeners('nexus_global_events', event);
   }
 
-  /**
-   * Subscribes to mission events. 
-   * (Ticket 2) Optionally replays history from Redis if lastEventId is provided.
-   */
   async subscribe(missionId: string, handler: (event: NexusEvent) => void, lastEventId?: string): Promise<void> {
     const channel = `mission:${missionId}`;
     
-    // Catch-up logic for Ticket 2
-    if (lastEventId) {
-      const historyKey = `mission:history:${missionId}`;
-      const history = await this.publisher.lrange(historyKey, 0, -1);
-      // Redis LPUSH keeps newest first, so we reverse to play in chronological order
-      // Note: This simple implementation just replays ALL buffered events for safety
-      // as NexusEvent doesn't have unique sequential IDs yet.
-      for (const msg of history.reverse()) {
-        try { handler(JSON.parse(msg)); } catch {}
+    if (!this.isLocalMode && this.publisher && lastEventId) {
+      try {
+        const historyKey = `mission:history:${missionId}`;
+        const history = await this.publisher.lrange(historyKey, 0, -1);
+        for (const msg of history.reverse()) {
+          try { handler(JSON.parse(msg)); } catch {}
+        }
+      } catch (err) {
+        logger.warn('[EventBus] Redis history replay failed');
       }
     }
 
     if (!this.listeners.has(channel)) {
       this.listeners.set(channel, new Set());
-      await this.subscriber.subscribe(channel);
+      if (!this.isLocalMode && this.subscriber) {
+        this.subscriber.subscribe(channel).catch(e => logger.warn(`[EventBus] Redis sub failed: ${e.message}`));
+      }
     }
     this.listeners.get(channel)!.add(handler);
   }
@@ -111,7 +135,9 @@ class EventBus {
     const channel = 'nexus_global_events';
     if (!this.listeners.has(channel)) {
       this.listeners.set(channel, new Set());
-      await this.subscriber.subscribe(channel);
+      if (!this.isLocalMode && this.subscriber) {
+        this.subscriber.subscribe(channel).catch(e => logger.warn(`[EventBus] Redis sub global failed: ${e.message}`));
+      }
     }
     this.listeners.get(channel)!.add(handler);
   }
@@ -123,7 +149,9 @@ class EventBus {
       handlers.delete(handler);
       if (handlers.size === 0) {
         this.listeners.delete(channel);
-        await this.subscriber.unsubscribe(channel);
+        if (!this.isLocalMode && this.subscriber) {
+          this.subscriber.unsubscribe(channel).catch(() => {});
+        }
       }
     }
   }

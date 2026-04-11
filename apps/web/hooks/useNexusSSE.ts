@@ -95,7 +95,7 @@ interface UseNexusSSEReturn {
 }
 
 export function useNexusSSE(): UseNexusSSEReturn {
-  const [status, setStatus] = useState<'connecting' | 'connected' | 'reconnecting' | 'failed'>('connecting');
+  const [status, setStatus] = useState<'connecting' | 'connected' | 'reconnecting' | 'failed'>('connected');
   const [retryCount, setRetryCount] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
   const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -104,7 +104,7 @@ export function useNexusSSE(): UseNexusSSEReturn {
   const activeMissionIdRef   = useRef<string | null>(null);
   const terminalStateRef     = useRef<boolean>(false); // stops reconnect after completed/failed
   
-  const { ingestEvent, startSession } = useNexusStore();
+  const { ingestEvent, startSession, resetWorkspace } = useNexusStore();
 
   const clearRetryTimeout = useCallback(() => {
     if (retryTimeoutRef.current) {
@@ -171,7 +171,7 @@ export function useNexusSSE(): UseNexusSSEReturn {
         // Use the store's current state correctly
         const { session } = useNexusStore.getState();
         
-        if (session.status === 'running' && silenceDuration > 15000) {
+        if (session.status === 'running' && silenceDuration > 30000) {
           console.warn(`[Watchdog] ⚠️ No mission activity for ${silenceDuration}ms. Reconnecting stream...`);
           // Clear current interval before recursing to prevent leaks
           if (watchdogRef.current) clearInterval(watchdogRef.current);
@@ -262,6 +262,8 @@ export function useNexusSSE(): UseNexusSSEReturn {
 
         if (!response.ok) {
           const err = await response.json().catch(() => ({ error: 'Trigger failed' }));
+          resetWorkspace(); // ← clear 'Mission in progress' bar on any API failure
+          setStatus('connected');
           ingestEvent({ type: 'error', message: err.error ?? 'Orchestration trigger failed' });
           return;
         }
@@ -271,6 +273,8 @@ export function useNexusSSE(): UseNexusSSEReturn {
         void subscribeToMission(missionId);
 
       } catch (err: any) {
+        resetWorkspace(); // ← clear 'Mission in progress' bar on network failure
+        setStatus('connected');
         ingestEvent({
           type:    'error',
           message: err instanceof Error ? err.message : 'Network failure',

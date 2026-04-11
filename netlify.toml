@@ -1,0 +1,15 @@
+[build]
+  command = "pnpm build --filter @nexus-os/web"
+  publish = "apps/web/.next"
+  base = "/"
+
+[build.environment]
+  NODE_VERSION = "20"
+  PNPM_FLAGS = "--shamefully-hoist"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+[functions]
+  node_wrapper = "esbuild"
+  external_node_modules = ["@nexus-os/types"]

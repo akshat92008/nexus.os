@@ -146,60 +146,65 @@ export function AgentMarketplace() {
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                    {loading ? Array.from({ length: 6 }).map((_, idx) => (
-                      <div key={idx} className="animate-pulse rounded-[28px] border border-zinc-800/80 bg-zinc-900/30 p-6">
-                        <div className="h-8 w-8 rounded-2xl bg-zinc-800/70 mb-5" />
-                        <div className="h-5 w-3/4 rounded-xl bg-zinc-800/70 mb-3" />
-                        <div className="h-4 w-full rounded-xl bg-zinc-800/70 mb-2" />
-                        <div className="h-4 w-5/6 rounded-xl bg-zinc-800/70 mt-auto" />
-                      </div>
-                    )) : filteredAgents.map((agent) => (
-                      <motion.div
-                        layout
-                        key={agent.id}
-                        className="p-6 rounded-[28px] bg-zinc-900/30 border border-zinc-800/80 hover:border-violet-500/30 transition-all cursor-pointer group hover:bg-zinc-900/50"
-                      >
-                        <div className="flex items-start justify-between mb-4">
-                          <div className={`p-3 rounded-2xl ${agent.bg} ${agent.color} transition-transform group-hover:scale-110`}>
-                            <agent.icon size={24} />
-                          </div>
-                          <div className="flex flex-col items-end">
-                             <div className="flex items-center gap-1 text-emerald-400 mb-1">
+                    {loading ? (
+                      Array.from({ length: 6 }).map((_, idx) => (
+                        <div key={idx} className="animate-pulse rounded-[28px] border border-zinc-800/80 bg-zinc-900/30 p-6">
+                          <div className="h-8 w-8 rounded-2xl bg-zinc-800/70 mb-5" />
+                          <div className="h-5 w-3/4 rounded-xl bg-zinc-800/70 mb-3" />
+                          <div className="h-4 w-full rounded-xl bg-zinc-800/70 mb-2" />
+                          <div className="h-4 w-5/6 rounded-xl bg-zinc-800/70 mt-auto" />
+                        </div>
+                      ))
+                    ) : (
+                      filteredAgents.map((agent) => (
+                        <motion.div
+                          layout
+                          key={agent.id}
+                          className="p-6 rounded-[28px] bg-zinc-900/30 border border-zinc-800/80 hover:border-violet-500/30 transition-all cursor-pointer group hover:bg-zinc-900/50"
+                        >
+                          <div className="flex items-start justify-between mb-4">
+                            <div className={`p-3 rounded-2xl ${agent.bg} ${agent.color} transition-transform group-hover:scale-110`}>
+                              <agent.icon size={24} />
+                            </div>
+                            <div className="flex flex-col items-end">
+                              <div className="flex items-center gap-1 text-emerald-400 mb-1">
                                 <span className="text-xs font-bold">{agent.rating}</span>
                                 <Sparkles size={12} fill="currentColor" />
-                             </div>
-                             <span className="text-[10px] font-black text-zinc-600 uppercase tracking-tighter">{agent.users} users</span>
-                          </div>
-                        </div>
-
-                        <h3 className="text-lg font-bold text-zinc-100 mb-2 group-hover:text-violet-400 transition-colors">
-                          {agent.name}
-                        </h3>
-                        <p className="text-sm text-zinc-500 leading-relaxed mb-6 h-10 line-clamp-2">
-                          {agent.description}
-                        </p>
-
-                        <div className="flex items-center justify-between mt-auto">
-                          <span className="text-[10px] font-black uppercase tracking-widest text-zinc-600">
-                            {agent.category}
-                          </span>
-                          {agent.installed ? (
-                            <div className="flex items-center gap-1.5 text-emerald-400 font-bold text-xs uppercase tracking-wider">
-                              <CheckCircle2 size={14} />
-                              Installed
+                              </div>
+                              <span className="text-[10px] font-black text-zinc-600 uppercase tracking-tighter">{agent.users} users</span>
                             </div>
-                          ) : (
-                            <button
-                              onClick={() => installAgent(agent.id)}
-                              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-600 text-white text-xs font-bold uppercase tracking-wider hover:bg-violet-500 transition-all shadow-lg shadow-violet-600/10"
-                            >
-                              Install <ArrowUpRight size={14} />
-                            </button>
-                          )}
-                        </div>
-                    </motion.div>
-                  ))}
+                          </div>
+
+                          <h3 className="text-lg font-bold text-zinc-100 mb-2 group-hover:text-violet-400 transition-colors">
+                            {agent.name}
+                          </h3>
+                          <p className="text-sm text-zinc-500 leading-relaxed mb-6 h-10 line-clamp-2">
+                            {agent.description}
+                          </p>
+
+                          <div className="flex items-center justify-between mt-auto">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-zinc-600">
+                              {agent.category}
+                            </span>
+                            {agent.installed ? (
+                              <div className="flex items-center gap-1.5 text-emerald-400 font-bold text-xs uppercase tracking-wider">
+                                <CheckCircle2 size={14} />
+                                Installed
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => installAgent(agent.id)}
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-600 text-white text-xs font-bold uppercase tracking-wider hover:bg-violet-500 transition-all shadow-lg shadow-violet-600/10"
+                              >
+                                Install <ArrowUpRight size={14} />
+                              </button>
+                            )}
+                          </div>
+                      </motion.div>
+                    ))
+                  )}
                 </div>
+                )}
               </div>
             </div>
           </div>

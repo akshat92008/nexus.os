@@ -11,6 +11,14 @@ import { create } from 'zustand';
 import { subscribeWithSelector, persist } from 'zustand/middleware';
 import { NexusStore, UserStateSnapshot } from './types';
 import { API_BASE } from '../lib/constants';
+import { WaveState } from './types';
+import { createClient } from '../lib/supabase';
+
+export const selectIsRunning = (state: NexusStore) => 
+  state.session.status === 'running' || 
+  state.session.status === 'routing' || 
+  state.session.status === 'synthesizing' ||
+  state.waves.waveStatus === 'running';
 
 // Slice Imports
 import { createAgentSlice } from './slices/agentSlice';
@@ -73,10 +81,14 @@ export const useNexusStore = create<NexusStore>()(
       ...createEcosystemSlice(set, get, store),
       ...createEventSlice(set, get, store),
 
-      // Global Persistence & Hydration
       hydrateFromServer: async (userId) => {
         try {
-          const response = await fetch(`${API_BASE}/api/state/${userId}`);
+          const supabase = createClient();
+          const { data: { session } } = await supabase.auth.getSession();
+          const headers: Record<string, string> = {};
+          if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
+
+          const response = await fetch(`${API_BASE}/api/state/${userId}`, { headers });
           if (!response.ok) throw new Error(`Hydration failed (${response.status})`);
           const snapshot = await response.json() as UserStateSnapshot;
           applyServerSnapshot(set, snapshot);
@@ -89,9 +101,14 @@ export const useNexusStore = create<NexusStore>()(
         const snapshot = buildServerSnapshot(get());
         if (!snapshot.userId) return;
         try {
+          const supabase = createClient();
+          const { data: { session } } = await supabase.auth.getSession();
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+          if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
+
           const response = await fetch(`${API_BASE}/api/state/${snapshot.userId}`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify(snapshot),
           });
           if (!response.ok) throw new Error(`Persistence failed (${response.status})`);
@@ -101,15 +118,20 @@ export const useNexusStore = create<NexusStore>()(
       },
     })),
     {
-      name: 'nexus-os-v2.6-storage',
-      // only persist core UI prefs. Never persist 'running' states which can lead to UI deadlocks.
+      name: 'nexus-os-v2.7-storage', // bumped to purge old corrupt state
       partialize: (state) => ({
         ui: state.ui,
         activeWorkspaceId: state.activeWorkspaceId,
-        session: { 
-          ...state.session, 
-          status: 'idle', // Always boot to idle
-          id: state.session.id 
+        session: {
+          id: '',
+          goal: '',
+          userId: state.session.userId,
+          startedAt: null,
+          completedAt: null,
+          durationMs: null,
+          status: 'idle',
+          systemPauseUntil: null,
+          successCriteria: [],
         },
       }),
     }

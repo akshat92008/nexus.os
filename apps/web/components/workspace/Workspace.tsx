@@ -23,6 +23,8 @@ const CommandCenter = dynamic(() => import('./CommandCenter').then(mod => mod.Co
 
 import { useNexusStore, selectIsRunning } from '../../store/nexusStore';
 
+import { Sidebar } from './Sidebar';
+
 export function Workspace() {
   const session = useNexusStore((s) => s.session);
   const waves = useNexusStore((s) => s.waves);
@@ -58,7 +60,7 @@ export function Workspace() {
   if (ui.showAuth) return <Auth />;
 
   return (
-    <div className="h-screen w-screen overflow-hidden flex flex-col bg-[#0F1115] text-zinc-100 font-sans relative selection:bg-violet-500/30">
+    <div className="h-screen w-screen overflow-hidden flex bg-[#0F1115] text-zinc-100 font-sans relative selection:bg-violet-500/30">
       <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-[#0F1115] via-black to-[#0F1115]" />
         <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] bg-violet-900/10 blur-[150px] rounded-full animate-pulse" />
@@ -66,17 +68,17 @@ export function Workspace() {
         <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)', backgroundSize: '32px 32px' }} />
       </div>
 
-      <div className="fixed top-8 left-1/2 -translate-x-1/2 z-[200] w-full max-w-2xl px-6 pointer-events-none">
-        {!activeWorkspaceId && <UniversalCommandBar />}
-      </div>
+      <Sidebar />
 
-      <div className="flex-1 flex overflow-hidden relative z-10 w-full pt-20">
-        <CommandCenter />
-      </div>
+      <main className="flex-1 flex flex-col overflow-hidden relative z-10">
+        <div className="flex-1 flex overflow-hidden relative">
+          <CommandCenter />
+        </div>
+      </main>
 
       <div className="fixed bottom-8 left-8 z-[300] flex flex-col gap-3 pointer-events-none w-full max-w-md">
         <AnimatePresence mode="popLayout">
-          {toasts.map((toast) => (
+          {(toasts || []).map((toast) => (
             <ToastItem key={toast.id} toast={toast} onRemove={removeToast} />
           ))}
         </AnimatePresence>

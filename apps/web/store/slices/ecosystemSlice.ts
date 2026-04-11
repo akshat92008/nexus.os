@@ -1,6 +1,7 @@
 import { StateCreator } from 'zustand';
 import { NexusStore, InboxEntry, MemorySystems } from '../types';
 import { FinancialState, TimeTrackingState } from '@nexus-os/types';
+import { API_BASE } from '../../lib/constants';
 
 export interface EcosystemSlice {
   inbox: InboxEntry[];
@@ -22,6 +23,12 @@ export interface EcosystemSlice {
   memorySystems: MemorySystems;
   availableAgents: any[];
   installedAgentIds: string[];
+  globalRisks: any[];
+  globalOpportunities: any[];
+  globalActions: any[];
+  neuralInterrupts: any[];
+  fsItems: any[];
+  isFsLoading: boolean;
 
   addInboxEntry: (entry: Omit<InboxEntry, 'id' | 'timestamp' | 'read'>) => void;
   markInboxRead: (id: string) => void;
@@ -40,6 +47,10 @@ export interface EcosystemSlice {
 
   addCalendarEvent: (event: any) => void;
   deleteCalendarEvent: (id: string) => void;
+
+  fetchFsItems: (parentId?: string) => Promise<void>;
+  uploadFsFile: (name: string, content: string, parentId?: string) => Promise<void>;
+  searchFs: (query: string) => Promise<void>;
 }
 
 const initialMemorySystems: MemorySystems = {
@@ -66,6 +77,12 @@ export const createEcosystemSlice: StateCreator<
   memorySystems: initialMemorySystems,
   availableAgents: [],
   installedAgentIds: [],
+  globalRisks: [],
+  globalOpportunities: [],
+  globalActions: [],
+  neuralInterrupts: [],
+  fsItems: [],
+  isFsLoading: false,
 
   addInboxEntry: (entry) => set((s) => ({
     inbox: [{ ...entry, id: crypto.randomUUID(), timestamp: Date.now(), read: false }, ...s.inbox]
@@ -139,6 +156,48 @@ export const createEcosystemSlice: StateCreator<
       }));
     } catch (err) {
       console.error('[Store] Failed to install agent:', err);
+    }
+  },
+
+  fetchFsItems: async (parentId = 'root') => {
+    set({ isFsLoading: true });
+    try {
+      const response = await fetch(`${API_BASE}/api/fs/list?parentId=${parentId}`);
+      if (!response.ok) throw new Error('Failed to fetch FS items');
+      const items = await response.json();
+      set({ fsItems: items, isFsLoading: false });
+    } catch (err) {
+      set({ isFsLoading: false });
+      get().addToast('Error indexing NexusFS.');
+    }
+  },
+
+  uploadFsFile: async (name, content, parentId = 'root') => {
+    try {
+      const response = await fetch(`${API_BASE}/api/fs/upload`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, content, parentId }),
+      });
+      if (!response.ok) throw new Error('Upload failed');
+      const file = await response.json();
+      set((s) => ({ fsItems: [file, ...s.fsItems] }));
+      get().addToast(`File "${name}" synchronized to NexusFS.`);
+    } catch (err) {
+      get().addToast('Failed to upload file.');
+    }
+  },
+
+  searchFs: async (query) => {
+    if (!query) return get().fetchFsItems();
+    set({ isFsLoading: true });
+    try {
+      const response = await fetch(`${API_BASE}/api/fs/search?q=${query}`);
+      if (!response.ok) throw new Error('Search failed');
+      const items = await response.json();
+      set({ fsItems: items, isFsLoading: false });
+    } catch (err) {
+      set({ isFsLoading: false });
     }
   },
 });

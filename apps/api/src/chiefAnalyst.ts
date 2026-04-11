@@ -77,9 +77,11 @@ async function deepSemanticAuditor(
 ): Promise<DeepSemanticAuditResult> {
   console.log('[ChiefAnalyst] 🧠 Performing Deep Semantic Audit...');
 
-  const missionContext = entries.map((e) => {
-    const { rawContent: _r, ...data } = e.data as any;
-    return `[${e.agentType.toUpperCase()} — ${e.taskId}]\n${JSON.stringify(data, null, 2)}`;
+  const safeEntries = Array.isArray(entries) ? entries : [];
+  const missionContext = safeEntries.map((e) => {
+    const data = (e.data || {}) as any;
+    const { rawContent: _r, ...cleanData } = data;
+    return `[${(e.agentType || 'UNKNOWN').toUpperCase()} — ${e.taskId}]\n${JSON.stringify(cleanData, null, 2)}`;
   }).join('\n\n────────────────────────\n\n');
 
   const prompt = `
@@ -144,10 +146,11 @@ function extractNumericValue(text: string): number | null {
 
 function detectConflicts(entries: MemoryEntry[]): ConflictCandidate[] {
   const conflicts: ConflictCandidate[] = [];
+  const safeEntries = Array.isArray(entries) ? entries : [];
 
   // Check market size estimates across researcher and analyst artifacts
   const marketSizes: Array<{ agent: string; value: number; raw: string }> = [];
-  for (const entry of entries) {
+  for (const entry of safeEntries) {
     const art = entry.data;
     let sizeStr = '';
     if (art.agentType === 'researcher') sizeStr = (art as ResearchArtifact).marketSize ?? '';
@@ -184,7 +187,7 @@ function detectConflicts(entries: MemoryEntry[]): ConflictCandidate[] {
   };
 
   const sentiments: Array<{ agent: string; direction: 'positive' | 'negative' }> = [];
-  for (const entry of entries) {
+  for (const entry of safeEntries) {
     const text = entry.data.rawContent?.toLowerCase() ?? '';
     const posScore = sentimentKeywords.positive.filter((w) => text.includes(w)).length;
     const negScore = sentimentKeywords.negative.filter((w) => text.includes(w)).length;

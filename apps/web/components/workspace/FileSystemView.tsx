@@ -79,7 +79,7 @@ export function FileSystemView() {
                 <div className="flex items-center gap-2 text-xs font-bold text-zinc-500 uppercase tracking-widest">
                   <span>Intelligent storage</span>
                   <span className="w-1 h-1 rounded-full bg-zinc-700" />
-                  <span>{fsItems.length} Elements</span>
+                  <span>{(fsItems || []).length} Elements</span>
                 </div>
               </div>
             </div>

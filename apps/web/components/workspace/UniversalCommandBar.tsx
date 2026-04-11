@@ -51,7 +51,14 @@ export function UniversalCommandBar({ isEmbedded = false }: { isEmbedded?: boole
     await startOrchestration(goal, session.userId, currentMode);
   }, [draft, isRunning, session.userId, startOrchestration, currentMode]);
 
-  const handleAbort = () => { abort(); resetWS(); };
+  const handleAbort = async () => { 
+    resetWS(); // Force local state reset immediately
+    try {
+      await abort(); // Attempt server-side cancellation
+    } catch (e) {
+      console.warn('[UI] Background abort attempt failed, but local state was reset.', e);
+    }
+  };
 
   const isTrulyRunning = isRunning || (session.status !== 'idle' && session.goal && session.id);
 

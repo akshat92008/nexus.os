@@ -9,8 +9,8 @@
  *
  * All routes are fully typed. CORS is open in dev; lock it down in prod.
  */
-import dotenv from 'dotenv';
-dotenv.config();
+import 'dotenv/config';
+import { logger } from './logger.js';
 
 import express, { type Request, type Response } from 'express';
 import cors from 'cors';
@@ -21,11 +21,11 @@ import { rateLimit } from 'express-rate-limit';
 const REQUIRED_ENV = [
   'SUPABASE_URL',
   'SUPABASE_SERVICE_KEY',
-  'REDIS_URL',
   'GROQ_API_KEY'
 ];
 
 const RECOMMENDED_ENV = [
+  'REDIS_URL',
   'JWT_SECRET',
   'CORS_ALLOW_ORIGINS',
   'OPENROUTER_API_KEY'
@@ -59,7 +59,7 @@ if (!process.env.CORS_ALLOW_ORIGINS) {
 }
 
 // Validate PORT format
-const PORT = parseInt(process.env.PORT || '4000', 10);
+const PORT = parseInt(process.env.PORT || '3005', 10);
 if (isNaN(PORT) || PORT < 1 || PORT > 65535) {
   logger.warn({ port: process.env.PORT }, 'Invalid PORT configuration, defaulting to 4000');
 }
@@ -69,10 +69,7 @@ const FINAL_PORT = isNaN(PORT) ? 4000 : PORT;
 const URL_PATTERN = /^https?:\/\/.+/i;
 if (!process.env.SUPABASE_URL || !URL_PATTERN.test(process.env.SUPABASE_URL)) {
   logger.fatal({ url: process.env.SUPABASE_URL }, 'Invalid SUPABASE_URL format. Persistence may fail.');
-  console.error(`\n⚠️  WARNING: Invalid SUPABASE_URL: ${process.env.SUPABASE_URL}`);
-  console.error('Falling back to "http://placeholder-supabase-fix-me.com" to allow server boot.\n');
-  process.env.SUPABASE_URL = 'http://placeholder-supabase-fix-me.com';
-  // Note: We DO NOT exit(1) here anymore to achieve first successful boot (Issue #15)
+  process.exit(1);
 }
 
 logger.info('✅ All environment variables validated successfully');
@@ -93,7 +90,6 @@ import type { OrchestrateRequest } from '@nexus-os/types';
 import { requireAuth } from './middleware/auth.js';
 import { getSupabase } from './storage/supabaseClient.js';
 import { rateLimitMonitor } from './llm/RateLimitMonitor.js';
-import { logger } from './logger.js';
 import { attachSSEHeartbeat, attachSSETimeout } from './events/eventBus.js';
 import { getRedis } from './storage/redisClient.js';
 import { checkAndConsume } from './rateLimitGovernor.js';
@@ -129,7 +125,7 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'", 'https:'],
+      styleSrc: ["'self'", "'unsafe-inline'", 'https:'], // TODO: replace unsafe-inline with nonce for better CSP security
       scriptSrc: ["'self'"],
       imgSrc: ["'self'", 'data:', 'https:'],
       connectSrc: ["'self'", 'https://*', 'wss://*'],
@@ -169,11 +165,24 @@ app.use('/api/master', masterBrainRouter);
 const ALLOWED_ORIGINS = (process.env.CORS_ALLOW_ORIGINS ?? 'http://localhost:3000').split(',').map(s => s.trim());
 function isOriginAllowed(origin: string | undefined) {
   if (!origin) return true;
-  if (process.env.NODE_ENV === 'production') {
+  if (process.env.NODE_ENV === 'production' && process.env.CORS_ALLOW_ORIGINS !== '*') {
     return ALLOWED_ORIGINS.includes(origin);
   }
   return true;
 }
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (isOriginAllowed(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Request-ID'],
+}));
 
 // --- Health Check (Liveness) ---
 app.get('/api/health', async (req, res) => {
@@ -259,17 +268,33 @@ app.get('/api/models/health', async (req, res) => {
 /**
  * Marketplace Agents (Public — No Auth Required)
  */
-const MARKETPLACE_AGENTS = [
-  { id: 'gtm-strategist', name: 'GTM Strategist', description: 'Go-to-market planning for B2B SaaS in India', persona: 'founder', capabilities: ['market sizing', 'channel strategy', 'ICP definition'], installCount: 142 },
-  { id: 'lead-hunter', name: 'Lead Hunter', description: 'Finds and qualifies B2B leads in Indian markets', persona: 'founder', capabilities: ['lead research', 'email personalisation', 'LinkedIn prospecting'], installCount: 98 },
-  { id: 'code-reviewer', name: 'Code Reviewer', description: 'Reviews PRs, finds bugs, suggests refactors', persona: 'developer', capabilities: ['TypeScript', 'React', 'Node.js', 'security audit'], installCount: 215 },
-  { id: 'api-architect', name: 'API Architect', description: 'Designs REST and GraphQL APIs with full documentation', persona: 'developer', capabilities: ['API design', 'OpenAPI spec', 'schema validation'], installCount: 87 },
-  { id: 'essay-coach', name: 'Essay Coach', description: 'Structures and improves academic essays and reports', persona: 'student', capabilities: ['argument structure', 'citations', 'grammar'], installCount: 174 },
-  { id: 'exam-prep', name: 'Exam Prep', description: 'Creates revision plans, flashcards and mock questions', persona: 'student', capabilities: ['flashcards', 'practice questions', 'study schedule'], installCount: 63 },
-];
+app.get('/api/marketplace/agents', async (req, res) => {
+  try {
+    const redis = getRedis();
+    const CACHE_KEY = 'nexus:marketplace:catalog';
+    
+    if (redis) {
+      const cached = await redis.get(CACHE_KEY);
+      if (cached) return res.json(JSON.parse(cached));
+    }
 
-app.get('/api/marketplace/agents', (req, res) => {
-  res.json(MARKETPLACE_AGENTS);
+    const supabase = await getSupabase();
+    const { data: agents, error } = await supabase
+      .from('marketplace_agents')
+      .select('*')
+      .eq('is_active', true);
+
+    if (error) throw error;
+
+    if (redis && agents) {
+      await redis.set(CACHE_KEY, JSON.stringify(agents), 'EX', 60);
+    }
+
+    res.json(agents || []);
+  } catch (err: any) {
+    logger.error({ err: err.message }, '[API] Failed to fetch marketplace agents');
+    res.status(500).json({ error: 'Failed to fetch agent marketplace' });
+  }
 });
 
 
@@ -359,6 +384,47 @@ app.post('/api/marketplace/agents/:id/install', async (req, res) => {
     }
   }
   res.json({ success: true, agentId: req.params.id, message: `${agent.name} installed successfully` });
+});
+
+/**
+ * NexusFS — Intelligent Storage API
+ */
+import { nexusFS } from './storage/nexusFS.js';
+
+app.get('/api/fs/list', async (req, res) => {
+  const parentId = (req.query.parentId as string) || 'root';
+  const userId = req.user!.id;
+  try {
+    const [folders, files] = await Promise.all([
+      nexusFS.getFolders(parentId === 'root' ? null : parentId, userId),
+      nexusFS.getFiles(parentId === 'root' ? null : parentId, userId)
+    ]);
+    res.json([...folders, ...files]);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/fs/upload', async (req, res) => {
+  const { name, content, parentId } = req.body;
+  const userId = req.user!.id;
+  try {
+    const file = await nexusFS.uploadFile(name, content, parentId || 'root', userId, 'text/plain');
+    res.json(file);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/fs/search', async (req, res) => {
+  const query = (req.query.q as string) || '';
+  const userId = req.user!.id;
+  try {
+    const files = await nexusFS.searchFiles(query, userId);
+    res.json(files);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 /**
@@ -482,13 +548,152 @@ app.post('/api/orchestrate', orchestrateLimiter, async (req: Request<{}, {}, Orc
     }
 
     const dag = await planMission(goal, archModeFinal);
-    // ...
+    
+    // Persist mission via direct insert (no RPC — create_mission_atomic not deployed)
+    await nexusStateStore.createMission({
+      id: dag.missionId,
+      userId,
+      workspaceId,
+      goal,
+      goalType: dag.goalType,
+      dagData: dag,
+      // tasks omitted — orchestrator creates them during execution
+    });
+
+    logger.info({ userId, missionId: dag.missionId }, '🚀 Mission persisted and queued');
     res.json({ missionId: dag.missionId, status: 'queued' });
+
+  // 🚀 Start durable execution in background using the SAME dag (no re-planning)
+  setImmediate(async () => {
+    try {
+      const { missionStore } = await import('./storage/missionStore.js');
+      const { MissionMemory } = await import('./missionMemory.js');
+      const { TaskRegistry } = await import('./taskRegistry.js');
+      const { orchestrateDAG } = await import('./orchestrator.js');
+
+      // Double check mission exists in DB before starting
+      // If the direct insert failed, we should know here
+      try {
+        await missionStore.getMissionById(dag.missionId);
+      } catch (dbErr: any) {
+        logger.error({ dbErr: dbErr.message, missionId: dag.missionId }, '[Background] Mission row missing! Did you run the SQL DDL?');
+        await eventBus.publish(dag.missionId, { 
+          type: 'error', 
+          message: 'Database error: Mission record not found. Please ensure Supabase tables are created.' 
+        } as any);
+        return;
+      }
+
+      const memory   = new MissionMemory(dag.missionId, goal);
+      const registry = new TaskRegistry(dag.missionId);
+      const abortedRef = { value: false };
+
+      const fakeRes = {
+        writableEnded: false,
+        write: (data: string) => {
+          const line = data.replace(/^data:\s*/, '').trim();
+          if (!line || line === '') return;
+          try {
+            const event = JSON.parse(line);
+            eventBus.publish(dag.missionId, event).catch(() => {});
+          } catch { /* skip malformed lines */ }
+        },
+        end: () => { fakeRes.writableEnded = true; },
+      } as any;
+
+      await orchestrateDAG({
+        dag,
+        memory,
+        registry,
+        userId,
+        sessionId: dag.missionId,
+        workspaceId,
+        res: fakeRes,
+        isAborted: () => abortedRef.value,
+      });
+    } catch (err: any) {
+      logger.error({ err: err.message, missionId: dag.missionId }, '[Background] Mission execution failed');
+      eventBus.publish(dag.missionId, { type: 'error', message: err.message } as any).catch(() => {});
+    }
+  });
   } catch (err: any) {
     logger.error({ userId, err: err.message }, 'Orchestration route failure');
     if (!res.headersSent) {
       res.status(500).json({ error: "Internal Server Error" });
     }
+  }
+});
+
+/**
+ * SSE Stream — Frontend subscribes here after mission is queued
+ * GET /api/events/stream?missionId=<id>
+ */
+app.get('/api/events/stream', async (req: Request, res: Response) => {
+  const missionId = req.query.missionId as string;
+  if (!missionId) return res.status(400).json({ error: 'missionId is required' });
+
+  // 🚀 NUCLEAR STABILITY HEADERS
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
+    'Content-Encoding': 'none' // Crucial to prevent ERR_INCOMPLETE_CHUNKED_ENCODING
+  });
+
+  // Force first byte send to establish stream
+  res.write(': connected\n\n');
+  if ((res as any).flush) (res as any).flush();
+
+  const cleanupHeartbeat = attachSSEHeartbeat(res);
+  const cleanupTimeout   = attachSSETimeout(res);
+
+  const handler = (event: any) => {
+    try {
+      if (!res.writableEnded) {
+        res.write(`data: ${JSON.stringify(event)}\n\n`);
+        if ((res as any).flush) (res as any).flush();
+      }
+    } catch (err) {
+      logger.warn({ missionId, err }, '[SSE] Write failed');
+    }
+  };
+
+  await eventBus.subscribe(missionId, handler, req.headers['last-event-id'] as string);
+
+  req.on('close', async () => {
+    cleanupHeartbeat();
+    cleanupTimeout();
+    await eventBus.unsubscribe(missionId, handler);
+    logger.info({ missionId }, '[SSE] Stream closed by client');
+  });
+});
+
+
+/**
+ * List User Missions (Task 12)
+ */
+app.get('/api/missions', async (req, res) => {
+  const userId = req.user!.id;
+  const limit = Math.min(parseInt(req.query.limit as string || '20'), 100);
+  const offset = parseInt(req.query.offset as string || '0');
+
+  try {
+    const supabase = await getSupabase();
+    const { data: missions, error, count } = await supabase
+      .from('nexus_missions')
+      .select('*', { count: 'exact' })
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (error) throw error;
+    res.json({ missions, count, limit, offset });
+  } catch (err: any) {
+    logger.error({ err: err.message, userId }, '[API] Failed to list missions');
+    res.status(500).json({ error: 'Failed to fetch missions' });
   }
 });
 
@@ -550,6 +755,18 @@ app.get('/api/artifacts/:id', async (req, res) => {
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
+});
+
+/**
+ * Health Check API
+ */
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'healthy', 
+    timestamp: new Date().toISOString(),
+    service: 'nexus-api',
+    node_version: process.version
+  });
 });
 
 /**
@@ -750,7 +967,7 @@ app.post('/api/state', async (req, res) => {
  * GET /api/metrics
  * Exposes: active_missions, queue_depth, tasks_completed_today, llm_errors_last_hour
  */
-app.get('/api/metrics', async (req, res) => {
+app.get('/api/metrics', requireAuth, async (req, res) => {
   try {
     const redis   = getRedis();
     const cacheKey = 'api:metrics';
@@ -798,24 +1015,35 @@ app.get('/api/metrics', async (req, res) => {
 });
 
 if (!process.env.VERCEL) {
-  app.listen(FINAL_PORT, '0.0.0.0', () => {
+const server = app.listen(FINAL_PORT, '0.0.0.0', () => {
     logger.info({ port: FINAL_PORT }, 'Nexus OS API running');
     logger.info({ allowedOrigins: ALLOWED_ORIGINS }, 'CORS origins configured');
   });
+
+  // --- Clean Shutdown Logic (Ticket 21) ---
+  const handleShutdown = (signal: string) => {
+    logger.info(`[API] ${signal} received. Closing server...`);
+    server.close(() => {
+      logger.info('[API] Server closed gracefully.');
+      process.exit(0);
+    });
+    // Force exit after 5s
+    setTimeout(() => process.exit(1), 5000);
+  };
+
+  process.on('SIGTERM', () => handleShutdown('SIGTERM'));
+  process.on('SIGINT', () => handleShutdown('SIGINT'));
+  process.on('SIGUSR2', () => handleShutdown('SIGUSR2'));
 }
 
 /**
  * 🚨 Global Express Error Handler (Issue 14a)
- * Catches unhandled promise rejections and sync throws to prevent process crashes.
  */
 app.use((err: any, req: Request, res: Response, next: express.NextFunction) => {
   const requestId = (req as any).requestId || 'unknown';
   logger.fatal({ err: err.message, stack: err.stack, requestId, path: req.path }, 'Unhandled API Exception');
 
-  // If headers already sent, we must delegate to default handler
-  if (res.headersSent) {
-    return next(err);
-  }
+  if (res.headersSent) return next(err);
 
   res.status(500).json({
     error: 'Internal Server Error',

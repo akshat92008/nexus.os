@@ -20,93 +20,53 @@ import {
 } from 'lucide-react';
 
 export function CommandCenter() {
-  const { ui, session, execution, activeWorkspaceId, setLayoutMode } = useNexusStore();
-  const { currentMode } = useModeStore();
-  const [hoveredZone, setHoveredZone] = useState<string | null>(null);
-
-  // Auto-morph triggers
-  useEffect(() => {
-    if (ui.activeArtifactId) {
-      setLayoutMode('focus-workspace');
-    } else if (execution.isExecuting) {
-       // Optional: keep it in command-center or switch to graph?
-       // Let's stay in command-center for multi-view visibility by default
-    }
-  }, [ui.activeArtifactId, execution.isExecuting, setLayoutMode]);
-
-  // Layout logic for morphing
-  const layoutMode = ui.layoutMode;
+  const { ui, session, execution, activeWorkspaceId } = useNexusStore();
   
-  const getGridTemplate = () => {
-    switch (layoutMode) {
-      case 'focus-graph': return '2fr 1fr / 2fr 1fr';
-      case 'focus-workspace': return '1fr 2fr / 1fr 2fr';
-      case 'focus-telemetry': return '1fr 1fr / 1fr 2fr';
-      default: return '1fr 1fr / 1fr 1fr';
-    }
-  };
+  if (activeWorkspaceId || execution.isExecuting) {
+    // Standard workspace view when a mission is active
+    return (
+      <div className="h-full w-full p-6">
+        <SandboxRouter />
+      </div>
+    );
+  }
 
   return (
-    <div className="h-full w-full bg-[#0F1115] relative p-4 gap-4 grid overflow-hidden transition-all duration-700 ease-in-out"
-         style={{ gridTemplate: getGridTemplate() }}>
+    <div className="h-full w-full flex flex-col items-center justify-center p-8 relative overflow-hidden">
+      {/* Background Glow */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-violet-600/5 blur-[120px] rounded-full pointer-events-none" />
       
-      {/* ZONE 1 (NW): REASONING GRAPH */}
-      <ZoneWrapper 
-        id="graph" 
-        title="Neural Reasoning Graph" 
-        icon={Brain} 
-        color="text-violet-400"
-        onHover={() => setHoveredZone('graph')}
-        isExecuting={execution.isExecuting}
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.8 }}
+        className="w-full max-w-4xl flex flex-col items-center z-10"
       >
-        <GraphCanvas sessionId={session.id || 'initial'} />
-      </ZoneWrapper>
+        <h1 className="text-6xl font-medium tracking-tight text-white mb-12 flex items-center gap-4">
+          What can I <span className="italic font-light text-zinc-400">do for you?</span>
+        </h1>
 
-      {/* ZONE 2 (NE): ACTIVE WORKSPACE */}
-      <ZoneWrapper 
-        id="workspace" 
-        title={activeWorkspaceId ? "Active Mission Workspace" : "System Standby"} 
-        icon={Zap} 
-        color="text-cyan-400"
-        onHover={() => setHoveredZone('workspace')}
-      >
-        <SandboxRouter />
-      </ZoneWrapper>
+        <UniversalCommandBar />
 
-      {/* ZONE 3 (SW): OMNI-CONSOLE */}
-      <ZoneWrapper 
-        id="console" 
-        title="Omni-Command Interface" 
-        icon={CommandIcon} 
-        color="text-zinc-400"
-        padding={false}
-      >
-        <div className="flex flex-col h-full bg-black/40">
-           <div className="flex-1 overflow-hidden p-4">
-              <OmniChatView />
-           </div>
-           <div className="p-4 border-t border-white/5 bg-black/20">
-              <UniversalCommandBar isEmbedded />
-           </div>
+        {/* Action Suggestion Tags */}
+        <div className="mt-8 flex flex-wrap justify-center gap-3">
+          {[
+            { label: 'Create slides', icon: LayoutGrid },
+            { label: 'Build website', icon: Zap },
+            { label: 'Develop desktop apps', icon: LayoutGrid },
+            { label: 'Design', icon: Zap },
+            { label: 'More', icon: null }
+          ].map((action, i) => (
+            <button 
+              key={i}
+              className="px-4 py-2 rounded-xl bg-white/[0.03] border border-white/5 hover:bg-white/[0.08] transition-all text-sm font-medium text-zinc-400 hover:text-white flex items-center gap-2"
+            >
+              {action.icon && <action.icon size={14} />}
+              {action.label}
+            </button>
+          ))}
         </div>
-      </ZoneWrapper>
-
-      {/* ZONE 4 (SE): TELEMETRY FEED */}
-      <ZoneWrapper 
-        id="telemetry" 
-        title="Execution Telemetry" 
-        icon={Activity} 
-        color="text-emerald-400"
-        padding={false}
-      >
-        <TelemetryMonitor />
-      </ZoneWrapper>
-
-      {/* GLOBAL OVERLAY HUD DECORATION */}
-      <div className="absolute inset-0 pointer-events-none z-[100] border border-white/5 rounded-3xl overflow-hidden">
-         <div className="absolute top-0 left-1/2 -translate-x-1/2 h-1 px-32 bg-gradient-to-r from-transparent via-violet-500/20 to-transparent" />
-         <div className="absolute bottom-0 left-1/2 -translate-x-1/2 h-1 px-32 bg-gradient-to-r from-transparent via-cyan-500/20 to-transparent" />
-      </div>
+      </motion.div>
     </div>
   );
 }

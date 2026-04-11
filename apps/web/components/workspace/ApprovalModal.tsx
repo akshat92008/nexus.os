@@ -10,7 +10,7 @@ import { useNexusStore } from '../../store/nexusStore';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ShieldCheck, XCircle, AlertTriangle, ArrowRight, Loader2 } from 'lucide-react';
 import { createClient } from '../../lib/supabase';
-import { API_BASE } from '../../hooks/useNexusSSE';
+import { API_BASE } from '../../lib/constants';
 
 async function postApprovalDecision(approvalId: string, decision: 'approve' | 'reject'): Promise<void> {
   const supabase = createClient();

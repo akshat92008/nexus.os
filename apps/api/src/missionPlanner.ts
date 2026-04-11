@@ -47,9 +47,12 @@ function validateAndRepair(raw: unknown, goal: string): TaskDAG {
   if (!plan || typeof plan !== 'object') throw new Error('Plan is not an object');
   if (!Array.isArray(plan.nodes) || plan.nodes.length === 0) throw new Error('Plan must have at least one node');
 
-  const ids = new Set<string>(plan.nodes.map((n: any) => n.id));
+  // 1. Deduplicate first so we don't map dependencies to nodes that get deleted
+  const uniqueNodes = deduplicateAndScore(plan.nodes, goal);
+  const ids = new Set<string>(uniqueNodes.map((n: any) => n.id));
 
-  for (const node of plan.nodes) {
+  // 2. Repair nodes and filter orphan dependencies
+  for (const node of uniqueNodes) {
     if (!node.id) node.id = `task_${randomUUID().slice(0, 8)}`;
     if (!VALID_AGENT_TYPES.includes(node.agentType)) node.agentType = 'researcher';
     if (!Array.isArray(node.dependencies)) node.dependencies = [];
@@ -60,18 +63,20 @@ function validateAndRepair(raw: unknown, goal: string): TaskDAG {
     const specializedAgent = findBestAgentForType(node.agentType);
     node.agentId = specializedAgent.id;
 
+    // Filter dependencies and context fields to only include existing nodes
     node.dependencies = node.dependencies.filter((dep: string) => ids.has(dep));
     node.contextFields = node.contextFields.filter((f: string) => node.dependencies.includes(f) && ids.has(f));
   }
 
-  if (detectCycles(plan.nodes)) throw new Error('DAG cycle detected');
+  // 3. Cycle Detection on the final set
+  if (detectCycles(uniqueNodes)) throw new Error('DAG cycle detected');
 
   return {
     missionId: crypto.randomUUID(),
     goal,
     goalType: (plan.goalType as GoalType) || 'general',
     successCriteria: Array.isArray(plan.successCriteria) ? plan.successCriteria : [],
-    nodes: deduplicateAndScore(plan.nodes, goal),
+    nodes: uniqueNodes,
     estimatedWaves: 0,
   };
 }

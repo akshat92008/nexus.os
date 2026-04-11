@@ -26,5 +26,14 @@
 - See `/docs/architecture.md` for system overview
 - For major changes, add/update an ADR in `/docs/adr/`
 
+## Marketplace
+### Adding a New Marketplace Agent
+Since v3.0, the marketplace catalog is stored in the database. To add a new agent:
+1. Create a new SQL migration in `apps/api/src/db/migrations/` (e.g., `005_add_my_agent.sql`).
+2. Insert your agent data into the `marketplace_agents` table.
+3. Run the migration script: `pnpm --filter @nexus-os/api migrate`.
+4. The API will pick up the new agent within 60 seconds (due to Redis caching).
+5. Open a PR with your agent's system prompt and tools in `apps/api/src/agents/`.
+
 ## Communication
 - Use GitHub Issues/Discussions for questions and proposals
