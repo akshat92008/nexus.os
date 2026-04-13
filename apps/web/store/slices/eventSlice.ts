@@ -114,14 +114,23 @@ export const createEventSlice: StateCreator<
         // Optional: append to a terminal buffer if visible
         break;
 
-      case 'done':
-        set((s) => ({
-          session: { ...s.session, status: 'complete', completedAt: Date.now() },
-          ledger: { ...s.ledger, totalFeeUsd: (event as any).totalFeeUsd }
-        }));
+      case 'done': {
+        const payload = event as any;
+        set((s) => {
+          const nextState: Partial<NexusStore> = {
+            session: { ...s.session, status: 'complete', completedAt: Date.now() },
+            ledger: { ...s.ledger, totalFeeUsd: payload.totalFeeUsd }
+          };
+          if (payload.workspace) {
+            nextState.workspaces = { ...s.workspaces, [payload.workspace.id]: payload.workspace };
+            nextState.activeWorkspaceId = payload.workspace.id;
+          }
+          return nextState;
+        });
         // Auto-persist on completion
         get().persistServerState();
         break;
+      }
 
       case 'error':
         set((s) => ({ session: { ...s.session, status: 'error' } }));

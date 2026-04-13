@@ -8,7 +8,7 @@ let connection: Redis | undefined;
 
 if (REDIS_URL) {
   try {
-    connection = new Redis(REDIS_URL, { maxRetriesPerRequest: null });
+    connection = new Redis(REDIS_URL, { maxRetriesPerRequest: null, lazyConnect: true });
   } catch (err) {
     console.error('[Worker] Redis connection failed:', err);
   }

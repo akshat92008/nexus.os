@@ -44,7 +44,6 @@ import { RateLimitGovernor } from './rateLimitGovernor.js';
 import { 
   MODEL_POWER 
 } from './agents/agentConfig.js';
-import { orchestrateDAG } from './orchestrator.js';
 
 export interface StrategicDecision {
   recommendation: string;
@@ -326,7 +325,10 @@ export async function runChiefAnalyst(
     };
 
     const correctionMemory = new MissionMemory(`remediation_${dag.missionId}`, dag.goal);
-    const correctionRegistry = new TaskRegistry(`remediation_${dag.missionId}`);
+    const correctionRegistry = new TaskRegistry(dag.missionId);
+
+    // Dynamically import to break circular dependency with orchestrator.ts
+    const { orchestrateDAG } = await import('./orchestrator.js');
 
     // Execute the correction wave
     await orchestrateDAG({

@@ -170,8 +170,7 @@ export function useNexusSSE(): UseNexusSSEReturn {
         const silenceDuration = Date.now() - lastActivityRef.current;
         // Use the store's current state correctly
         const { session } = useNexusStore.getState();
-        
-        if (session.status === 'running' && silenceDuration > 30000) {
+        if (session.status === 'running' && silenceDuration > 120000) {
           console.warn(`[Watchdog] ⚠️ No mission activity for ${silenceDuration}ms. Reconnecting stream...`);
           // Clear current interval before recursing to prevent leaks
           if (watchdogRef.current) clearInterval(watchdogRef.current);

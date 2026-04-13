@@ -89,3 +89,10 @@ export async function fetchWithResilience(
     resilienceOpts
   );
 }
+
+/**
+ * High-level helper meant for general purpose fetch with simple timeout/retry semantics.
+ */
+export async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 10000, retries = 2) {
+  return fetchWithResilience(url, options, { timeout: timeoutMs, retries });
+}

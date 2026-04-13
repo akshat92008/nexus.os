@@ -96,7 +96,7 @@ function buildClient(url: string): Redis {
       return Math.min(times * 100, 30000);
     },
     enableReadyCheck: true,
-    lazyConnect: false,
+    lazyConnect: true,
   });
 }
 

@@ -40,29 +40,24 @@ async function main() {
     `,
   }).maybeSingle();
 
-  // rpc('exec_sql') may not exist — fall back to raw SQL via REST if needed
-  if (tableErr) {
-    // Try the direct approach: if migrations_log already exists this is a no-op
-    const { error: rawErr } = await supabase
-      .from('migrations_log')
-      .select('id')
-      .limit(1);
-
-    if (rawErr && rawErr.code === '42P01') {
-      console.error('[Migrate] ❌ Could not create migrations_log table:', tableErr.message);
-      console.error('          Please run this SQL manually in Supabase SQL editor:');
-      console.error('          CREATE TABLE migrations_log (id SERIAL PRIMARY KEY, filename TEXT NOT NULL UNIQUE, applied_at TIMESTAMPTZ NOT NULL DEFAULT now());');
-      process.exit(1);
-    }
-  }
-
-  // ── Fetch already-applied migrations ────────────────────────────────────────
+  // ── Fetch already-applied migrations (Check if table exists) ───────────────────
   const { data: applied, error: fetchErr } = await supabase
     .from('migrations_log')
     .select('filename');
 
   if (fetchErr) {
-    console.error('[Migrate] ❌ Could not read migrations_log:', fetchErr.message);
+    if (fetchErr.message.includes('not found') || fetchErr.code === '42P01') {
+      console.error('\n[Migrate] ❌ Database infrastructure not initialized.');
+      console.error('──────────────────────────────────────────────────');
+      console.error('To fix this, please run the following SQL in your Supabase SQL Editor:');
+      console.error('\n-- 1. Create tracking table');
+      console.error('CREATE TABLE IF NOT EXISTS migrations_log (id SERIAL PRIMARY KEY, filename TEXT NOT NULL UNIQUE, applied_at TIMESTAMPTZ NOT NULL DEFAULT now());');
+      console.error('\n-- 2. Create RPC helper');
+      console.error('CREATE OR REPLACE FUNCTION exec_sql(sql text) RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$ BEGIN EXECUTE sql; END; $$;');
+      console.error('──────────────────────────────────────────────────\n');
+    } else {
+      console.error('[Migrate] ❌ Unexpected Error Reading migrations_log:', fetchErr.message);
+    }
     process.exit(1);
   }
 

@@ -66,7 +66,7 @@ export const MODEL_VISION = 'MODEL_VISION';
 // Rotation lists for free models (OpenRouter)
 export const FREE_MODELS = { 
   [MODEL_FAST]: [ 
-    'google/gemini-2.0-flash-exp:free',
+    'google/gemini-2.0-flash-lite-preview-02-05:free',
     'meta-llama/llama-3.3-70b-instruct:free', 
     'mistralai/mistral-7b-instruct:free', 
   ], 
@@ -81,7 +81,7 @@ export const FREE_MODELS = {
     'meta-llama/llama-3.3-70b-instruct:free', 
   ], 
   [MODEL_VISION]: [ 
-    'google/gemini-2.0-flash-exp:free',
+    'google/gemini-2.0-flash-lite-preview-02-05:free',
     'meta-llama/llama-3.2-11b-vision-instruct:free', 
   ], 
 };
@@ -260,7 +260,7 @@ export class LLMRouter {
         return 'llama-3.3-70b-versatile';
       case MODEL_FAST:
       default:
-        return 'llama3-8b-8192';
+        return 'llama-3.1-8b-instant';
     }
   }
 

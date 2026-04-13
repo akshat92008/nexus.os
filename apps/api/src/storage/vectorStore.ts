@@ -1,5 +1,4 @@
-import { fetchWithTimeout } from '../index.js';
-import { withRetry } from '../resilience.js';
+import { fetchWithTimeout, withRetry } from '../resilience.js';
 import { getSupabase } from './supabaseClient.js';
 
 const OPENROUTER_EMBED_URL = 'https://openrouter.ai/api/v1/embeddings';

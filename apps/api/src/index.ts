@@ -107,14 +107,7 @@ const CREDIT_PACKS: any[] = [];
 import { z } from 'zod';
 import { withRetry, fetchWithResilience } from './resilience.js';
 
-// --- P0: Upstream Fetch Timeout & Retry Utility ---
-// Use this for all fetch/HTTP calls to external APIs
-/**
- * 🚨 REFACTORED: Now uses centralized resilience logic
- */
-export async function fetchWithTimeout(url: string, options: any = {}, timeoutMs = 10000, retries = 2) {
-  return fetchWithResilience(url, options, { timeout: timeoutMs, retries });
-}
+
 
 
 
@@ -767,6 +760,33 @@ app.get('/api/health', (req, res) => {
     service: 'nexus-api',
     node_version: process.version
   });
+});
+
+/**
+ * Workspace State API
+ * Stores and retrieves UI state (sidebar, open tabs, etc) for a user.
+ */
+app.get('/api/state/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const state = await nexusStateStore.getUserState(userId);
+    res.json(state || {});
+  } catch (err: any) {
+    logger.error({ err: err.message }, '[API] Failed to fetch user state');
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+app.put('/api/state/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const state = req.body;
+    await nexusStateStore.syncUserState(userId, state);
+    res.json({ status: 'synced' });
+  } catch (err: any) {
+    logger.error({ err: err.message }, '[API] Failed to sync user state');
+    res.status(500).json({ error: 'Failed' });
+  }
 });
 
 /**
