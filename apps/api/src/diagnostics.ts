@@ -52,7 +52,8 @@ async function runDiagnostics() {
       system: 'Health check.',
       user: 'Respond with "OK"',
       model: MODEL_FAST,
-      maxTokens: 5
+      maxTokens: 5,
+      temperature: 0.7
     });
     console.log(`   ✅ LLM Router responded: "${response.content.trim()}"`);
   } catch (err: any) {

@@ -1,7 +1,7 @@
 import { Worker, Job } from 'bullmq';
 import { Redis } from 'ioredis';
-import type { TaskJobData } from '../queue/queue';
-import { logger } from '../logger';
+import type { TaskJobData } from '../queue/queue.js';
+import { logger } from '../logger.js';
 
 const REDIS_URL = process.env.REDIS_URL;
 let connection: Redis | undefined;

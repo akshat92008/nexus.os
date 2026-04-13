@@ -10,6 +10,12 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+// ⛔ DEVELOPMENT ONLY — never deploy this server
+if (process.env.NODE_ENV === 'production') {
+  console.error('[server-lite] FATAL: This server must never run in production. Use index.ts.');
+  process.exit(1);
+}
+
 import express from 'express';
 import cors from 'cors';
 

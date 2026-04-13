@@ -14,6 +14,7 @@ export interface LLMCallOpts {
   signal?: AbortSignal;
   enableStreaming?: boolean;
   onStreamChunk?: (chunk: string) => void;
+  preferProvider?: 'cerebras' | 'gemini' | 'openrouter' | 'groq';
 }
 
 export interface LLMResponse {

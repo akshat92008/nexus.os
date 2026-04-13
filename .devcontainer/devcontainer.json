@@ -1,0 +1,32 @@
+{
+  "name": "Nexus OS",
+  "dockerFile": "Dockerfile",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "20"
+    }
+  },
+  "forwardPorts": [3006, 3015],
+  "portsAttributes": {
+    "3006": {
+      "label": "Nexus API",
+      "onAutoForward": "notify"
+    },
+    "3015": {
+      "label": "Nexus Web",
+      "onAutoForward": "openBrowser"
+    }
+  },
+  "postCreateCommand": "npm install -g pnpm && pnpm install",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "bradlc.vscode-tailwindcss",
+        "dsznajder.es7-react-js-snippets"
+      ]
+    }
+  },
+  "remoteUser": "node"
+}

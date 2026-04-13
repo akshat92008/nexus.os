@@ -20,10 +20,12 @@ const ApprovalModal = dynamic(() => import('./ApprovalModal').then(mod => mod.Ap
 const AppLauncher = dynamic(() => import('./AppLauncher').then(mod => mod.AppLauncher), { ssr: false });
 const OnboardingWizard = dynamic(() => import('./OnboardingWizard').then(mod => mod.OnboardingWizard), { ssr: false });
 const CommandCenter = dynamic(() => import('./CommandCenter').then(mod => mod.CommandCenter), { ssr: false });
+const AgentMarketplace = dynamic(() => import('../market/AgentMarketplace').then(mod => mod.AgentMarketplace), { ssr: false });
+const LibraryView = dynamic(() => import('./LibraryView').then(mod => mod.LibraryView), { ssr: false });
+const WorkspaceHistorySidebar = dynamic(() => import('./WorkspaceHistorySidebar').then(mod => mod.WorkspaceHistorySidebar), { ssr: false });
 
 import { useNexusStore, selectIsRunning } from '../../store/nexusStore';
 
-import { Sidebar } from './Sidebar';
 
 export function Workspace() {
   const session = useNexusStore((s) => s.session);
@@ -68,7 +70,7 @@ export function Workspace() {
         <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)', backgroundSize: '32px 32px' }} />
       </div>
 
-      <Sidebar />
+      <WorkspaceHistorySidebar />
 
       <main className="flex-1 flex flex-col overflow-hidden relative z-10">
         <div className="flex-1 flex overflow-hidden relative">
@@ -89,6 +91,8 @@ export function Workspace() {
       <FileSystemView />
       <ApprovalModal />
       <ConnectionStatus />
+      <LibraryView />
+      <AgentMarketplace />
       {!ui.isOnboardingComplete && <OnboardingWizard />}
     </div>
   );

@@ -21,6 +21,8 @@ interface ProviderStatus {
   totalRateLimits: number;
   successCount: number;
   failureCount: number;
+  healthScore: number; // 0-100, starts at 100
+  consecutiveFailures: number;
 }
 
 export class RateLimitMonitor {
@@ -57,6 +59,8 @@ export class RateLimitMonitor {
         totalRateLimits: 0,
         successCount: 0,
         failureCount: 0,
+        healthScore: 70, // Start lower if first hit is a limit
+        consecutiveFailures: 1,
       };
       this.providerStats.set(key, stats);
     }
@@ -65,8 +69,12 @@ export class RateLimitMonitor {
     stats.lastRateLimit = event.timestamp;
     stats.retryAfter = retryAfter || 60;
     stats.isRateLimited = true;
+    stats.consecutiveFailures++;
+    
+    // Hard penalty for rate limit
+    stats.healthScore = Math.max(0, stats.healthScore - 40);
 
-    console.warn(`[RateLimitMonitor] ${provider} ${model} rate limited. Retry after: ${retryAfter}s`);
+    console.warn(`[RateLimitMonitor] ${provider} ${model} rate limited. Health Score: ${stats.healthScore}. Retry after: ${retryAfter}s`);
   }
 
   /**
@@ -84,12 +92,17 @@ export class RateLimitMonitor {
         totalRateLimits: 0,
         successCount: 0,
         failureCount: 0,
+        healthScore: 100,
+        consecutiveFailures: 0,
       };
       this.providerStats.set(key, stats);
     }
 
     stats.successCount++;
+    stats.consecutiveFailures = 0;
     stats.isRateLimited = false;
+    // Gradually recover health
+    stats.healthScore = Math.min(100, stats.healthScore + 2);
   }
 
   /**
@@ -107,11 +120,16 @@ export class RateLimitMonitor {
         totalRateLimits: 0,
         successCount: 0,
         failureCount: 0,
+        healthScore: 90,
+        consecutiveFailures: 1,
       };
       this.providerStats.set(key, stats);
     }
 
     stats.failureCount++;
+    stats.consecutiveFailures++;
+    // Moderate penalty for general failure
+    stats.healthScore = Math.max(0, stats.healthScore - 10);
   }
 
   /**
@@ -132,6 +150,15 @@ export class RateLimitMonitor {
     }
 
     return true;
+  }
+
+  /**
+   * Get current health score for a model (0-100)
+   */
+  getHealthScore(provider: string, model: string): number {
+    const key = `${provider}:${model}`;
+    const stats = this.providerStats.get(key);
+    return stats ? stats.healthScore : 100;
   }
 
   /**

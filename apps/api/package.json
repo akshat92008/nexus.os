@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "NODE_OPTIONS=\"--max-old-space-size=2048\" tsx src/index.ts",
     "bin": "./dist/index.js",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/index.js",
+    "start": "NODE_OPTIONS=\"--max-old-space-size=2048\" node dist/index.js",
     "worker": "node dist/workers/taskWorker.js",
     "mission-worker": "node dist/workers/missionWorker.js",
     "test": "vitest run --coverage",
@@ -43,6 +43,7 @@
     "tsx": "^4.16.2",
     "typescript": "^5.5.3",
     "@types/opossum": "^8.1.0",
+    "ts-node-dev": "^2.0.0",
     "vitest": "^2.0.0"
   }
 }

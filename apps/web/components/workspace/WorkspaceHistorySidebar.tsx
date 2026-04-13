@@ -64,7 +64,11 @@ export function WorkspaceHistorySidebar() {
       {/* 2. Top Actions (Manus Style) */}
       <div className="px-2 pt-2 space-y-0.5">
         <button 
-          onClick={toggleAppLauncher}
+          onClick={() => {
+            setActiveWorkspace(null);
+            useNexusStore.getState().closeAllModals();
+            useNexusStore.getState().setCommandBarFocused(true);
+          }}
           className="flex items-center gap-3 w-full px-3 py-2 rounded-lg text-sm text-zinc-300 font-medium hover:bg-zinc-900 border border-zinc-800/40 transition-all hover:scale-[1.02] active:scale-[0.98]"
         >
           <Plus size={14} className="text-zinc-500" />

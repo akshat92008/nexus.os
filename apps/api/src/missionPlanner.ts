@@ -108,6 +108,7 @@ export async function planMission(goal: string, archMode: ArchitectureMode = 'le
         model: MODEL_POWER,
         maxTokens: 1800,
         temperature: 0.15,
+        preferProvider: 'cerebras',
       });
 
       const parsed = extractJSON(result.content);

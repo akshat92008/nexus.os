@@ -231,7 +231,7 @@ export const masterBrain = new MasterBrainV2();
 
 // --- Health Endpoint for Master Brain ---
 import express from 'express';
-export const masterBrainRouter = express.Router();
+export const masterBrainRouter: express.Router = express.Router();
 masterBrainRouter.get('/health', async (req, res) => {
   // Optionally check Redis/Supabase connectivity
   let supabaseOk = false;

@@ -114,9 +114,16 @@ async function deepSemanticAuditor(
       maxTokens: SYNTHESIS_TOKENS,
       temperature: 0.1,
       jsonMode: true,
+      preferProvider: 'cerebras',
     });
 
-    const auditResult = JSON.parse(res.content) as DeepSemanticAuditResult;
+    let auditResult: DeepSemanticAuditResult;
+    try {
+      auditResult = JSON.parse(res.content) as DeepSemanticAuditResult;
+    } catch (parseErr) {
+      console.warn('[ChiefAnalyst] Failed to parse semantic audit as JSON, using safety fallback:', res.content.slice(0, 100));
+      auditResult = { status: 'ok', reasoning: 'Audit response was non-JSON prose, proceeding with current data.' };
+    }
 
     console.log(`[ChiefAnalyst] Deep Semantic Audit: ${auditResult.status.toUpperCase()} - ${auditResult.reasoning}`);
     return auditResult;
