@@ -23,15 +23,23 @@ import { startDurableMission } from '../orchestrator.js';
 import { planMission } from '../missionPlanner.js';
 import { masterBrain } from '../masterBrain.js';
 
-const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
-const connection = new Redis(REDIS_URL, { maxRetriesPerRequest: null });
+const REDIS_URL = process.env.REDIS_URL;
+let connection: Redis | undefined;
+
+if (REDIS_URL) {
+  try {
+    connection = new Redis(REDIS_URL, { maxRetriesPerRequest: null });
+  } catch (err) {
+    console.error('[SystemWorker] Redis connection failed:', err);
+  }
+}
 
 // ── Circuit Breaker Config ──────────────────────────────────────────────────
 const MAX_ITERATIONS = 15;      // Max steps in a single mission
 const MAX_RUNTIME_MS = 600_000; // 10 minutes max per job
 const TOKEN_LIMIT    = 50_000;  // 50k tokens max per mission
 
-export const systemWorker = new Worker(
+export const systemWorker = connection ? new Worker(
   'system',
   async (job: Job) => {
     const { type, userId, workspaceId, goal, missionId } = job.data;
@@ -87,7 +95,7 @@ export const systemWorker = new Worker(
     }
   },
   { connection }
-);
+) : null;
 
 async function handleScheduledMission(userId: string, workspaceId: string, goal: string) {
   console.log(`[SystemWorker] ⏰ Triggering scheduled mission for user ${userId}: "${goal}"`);

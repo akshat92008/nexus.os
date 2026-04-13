@@ -35,8 +35,16 @@ import { ledger } from '../ledger.js';
 import { logger } from '../logger.js';
 import type { NexusEvent } from '../db/models.js';
 
-const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
-const connection = new Redis(REDIS_URL, { maxRetriesPerRequest: null, lazyConnect: true });
+const REDIS_URL = process.env.REDIS_URL;
+let connection: Redis | undefined;
+
+if (REDIS_URL) {
+  try {
+    connection = new Redis(REDIS_URL, { maxRetriesPerRequest: null, lazyConnect: true });
+  } catch (err) {
+    logger.error({ err }, '[MissionWorker] Redis connection failed');
+  }
+}
 
 // ── Map-Reduce Helpers ────────────────────────────────────────────────────
 
@@ -282,7 +290,7 @@ export function startMissionEventListener(): void {
 // The worker no longer polls. It runs once to validate the mission is set up,
 // then event-driven orchestration takes over via onTaskCompleted.
 
-export const missionWorker = new Worker<MissionJobData>(
+export const missionWorker = connection ? new Worker<MissionJobData>(
   'missions',
   async (job: Job<MissionJobData>) => {
     const { missionId, userId, type, taskId } = job.data;
@@ -334,4 +342,4 @@ export const missionWorker = new Worker<MissionJobData>(
     });
   },
   { connection }
-);
+) : null;
