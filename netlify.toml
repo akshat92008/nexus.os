@@ -1,15 +1,11 @@
 [build]
-  command = "pnpm build --filter @nexus-os/web"
-  publish = "apps/web/.next"
-  base = "/"
+  base = "apps/web"
+  command = "pnpm build"
+  publish = ".next"
 
 [build.environment]
   NODE_VERSION = "20"
-  PNPM_FLAGS = "--shamefully-hoist"
+  PNPM_FLAGS = "--no-frozen-lockfile"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
-
-[functions]
-  node_wrapper = "esbuild"
-  external_node_modules = ["@nexus-os/types"]

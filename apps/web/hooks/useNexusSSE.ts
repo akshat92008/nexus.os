@@ -73,7 +73,7 @@ export async function runActionOrchestration(
   signal?: AbortSignal
 ) {
   await streamSSE(
-    `${API_BASE}/api/execute-action`,
+    `/api/execute-action`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -137,7 +137,7 @@ export function useNexusSSE(): UseNexusSSEReturn {
         if (session?.access_token) {
           headers['Authorization'] = `Bearer ${session.access_token}`;
         }
-        await fetch(`${API_BASE}/api/missions/${missionId}/cancel`, { 
+        await fetch(`/api/missions/${missionId}/cancel`, { 
           method: 'POST',
           headers
         });
@@ -180,7 +180,7 @@ export function useNexusSSE(): UseNexusSSEReturn {
 
       try {
         await streamSSE(
-          `${API_BASE}/api/events/stream?missionId=${missionId}`,
+          `/api/events/stream?missionId=${missionId}`,
           { signal: controller.signal },
           (event) => {
             lastActivityRef.current = Date.now();
@@ -253,7 +253,7 @@ export function useNexusSSE(): UseNexusSSEReturn {
           headers['Authorization'] = `Bearer ${session.access_token}`;
         }
 
-        const response = await fetch(`${API_BASE}/api/orchestrate`, {
+        const response = await fetch(`/api/orchestrate`, {
           method: 'POST',
           headers,
           body: JSON.stringify({ goal: goal.trim(), mode }),

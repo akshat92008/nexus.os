@@ -138,7 +138,7 @@ export const createEcosystemSlice: StateCreator<
 
   fetchAvailableAgents: async () => {
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/marketplace/agents`);
+      const res = await fetch(`/api/marketplace/agents`);
       const agents = await res.json();
       set({ availableAgents: agents });
     } catch (err) {
@@ -148,7 +148,7 @@ export const createEcosystemSlice: StateCreator<
 
   installAgent: async (agentId: string) => {
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/marketplace/agents/${agentId}/install`, {
+      await fetch(`/api/marketplace/agents/${agentId}/install`, {
         method: 'POST',
       });
       set((state: any) => ({

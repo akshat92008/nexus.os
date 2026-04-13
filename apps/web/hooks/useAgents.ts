@@ -39,7 +39,7 @@ export function useAgents(activeCategory: string, searchQuery: string) {
       const token = session?.access_token;
       if (!token) throw new Error('Authentication required');
 
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/agents`, {
+      const response = await fetch('/api/agents', {
         headers: { Authorization: `Bearer ${token}` }
       });
 

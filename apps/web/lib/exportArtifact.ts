@@ -14,7 +14,7 @@ export async function exportArtifact(sessionId: string, format: ExportFormat): P
     throw new Error('Mission context (sessionId) is missing. Start a mission first.');
   }
 
-  const url = `${API_BASE}/api/export/${sessionId}?format=${format}`;
+  const url = `/api/export/${sessionId}?format=${format}`;
 
   const response = await fetch(url);
 
