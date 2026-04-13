@@ -2,11 +2,11 @@
 # see: https://developers.google.com/idx/guides/customize-idx-env
 { pkgs, ... }: {
   # Which nixpkgs channel to use.
-  channel = "stable-23.11"; # or "unstable"
+  channel = "stable-24.05"; # Updated to latest stable for pnpm support
   # Use https://search.nixos.org/packages to find packages
   packages = [
     pkgs.nodejs_20
-    pkgs.pnpm
+    pkgs.nodePackages.pnpm
   ];
   # Sets environment variables in the workspace
   env = {

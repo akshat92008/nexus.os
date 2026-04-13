@@ -1,11 +1,6 @@
 {
   "name": "Nexus OS",
-  "dockerFile": "Dockerfile",
-  "features": {
-    "ghcr.io/devcontainers/features/node:1": {
-      "version": "20"
-    }
-  },
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:20",
   "forwardPorts": [3006, 3015],
   "portsAttributes": {
     "3006": {
