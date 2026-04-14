@@ -255,11 +255,11 @@ export function useNexusSSE(): UseNexusSSEReturn {
           headers['Authorization'] = `Bearer ${session.access_token}`;
         }
 
-        const response = await fetch(`/nexus-remote/orchestrate`, {
-          method: 'POST',
+        const params = new URLSearchParams({ goal: goal.trim(), mode });
+        const response = await fetch(`/nexus-remote/orchestrate?${params.toString()}`, {
+          method: 'GET',
           credentials: 'include',
           headers,
-          body: JSON.stringify({ goal: goal.trim(), mode }),
         });
 
         if (!response.ok) {

@@ -100,8 +100,8 @@ async function bootstrap() {
         // --- AUTH PROTECTED ROUTES ---
         app.use(requireAuth);
 
-        app.post('/api/orchestrate', async (req: any, res: any) => {
-            const { goal, archMode } = req.body;
+        app.get('/api/orchestrate', async (req: any, res: any) => {
+            const { goal, archMode } = req.query;
             const dag = await planMission(goal, archMode || 'legacy');
             await nexusStateStore.createMission({
                 id: dag.missionId, userId: req.user.id, goal, dagData: dag, goalType: dag.goalType
