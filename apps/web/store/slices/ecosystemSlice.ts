@@ -150,6 +150,7 @@ export const createEcosystemSlice: StateCreator<
     try {
       await fetch(`/api/marketplace/agents/${agentId}/install`, {
         method: 'POST',
+        credentials: 'include',
       });
       set((state: any) => ({
         installedAgentIds: [...state.installedAgentIds, agentId],

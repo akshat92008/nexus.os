@@ -76,6 +76,7 @@ export async function runActionOrchestration(
     `/api/execute-action`,
     {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ actionId, workspaceId, userId }),
       signal,
@@ -139,6 +140,7 @@ export function useNexusSSE(): UseNexusSSEReturn {
         }
         await fetch(`/api/missions/${missionId}/cancel`, { 
           method: 'POST',
+          credentials: 'include',
           headers
         });
       } catch (err) {
@@ -255,6 +257,7 @@ export function useNexusSSE(): UseNexusSSEReturn {
 
         const response = await fetch(`/api/orchestrate`, {
           method: 'POST',
+          credentials: 'include',
           headers,
           body: JSON.stringify({ goal: goal.trim(), mode }),
         });
