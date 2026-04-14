@@ -21,8 +21,9 @@ export function SchedulerPanel({ workspaceId, isOpen, onClose }: SchedulerPanelP
     setIsSubmitting(true);
 
     try {
-      const response = await fetch(`${API_BASE}/api/schedule`, {
+      const response = await fetch(`/nexus-remote/schedule`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           workspaceId,

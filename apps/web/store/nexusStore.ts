@@ -88,7 +88,7 @@ export const useNexusStore = create<NexusStore>()(
           const headers: Record<string, string> = {};
           if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
 
-          const response = await fetch(`${API_BASE}/api/state/${userId}`, { headers });
+          const response = await fetch(`/nexus-remote/state/${userId}`, { headers, credentials: 'include' });
           if (!response.ok) throw new Error(`Hydration failed (${response.status})`);
           const snapshot = await response.json() as UserStateSnapshot;
           applyServerSnapshot(set, snapshot);
@@ -106,9 +106,10 @@ export const useNexusStore = create<NexusStore>()(
           const headers: Record<string, string> = { 'Content-Type': 'application/json' };
           if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
 
-          const response = await fetch(`${API_BASE}/api/state/${snapshot.userId}`, {
+          const response = await fetch(`/nexus-remote/state/${snapshot.userId}`, {
             method: 'PUT',
             headers,
+            credentials: 'include',
             body: JSON.stringify(snapshot),
           });
           if (!response.ok) throw new Error(`Persistence failed (${response.status})`);

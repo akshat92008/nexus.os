@@ -202,9 +202,8 @@ export const createWorkspaceSlice: StateCreator<
   },
 
   syncMissionStatus: async (missionId: string) => {
-    const { API_BASE } = await import('../../hooks/useNexusSSE');
     try {
-      const response = await fetch(`${API_BASE}/api/missions/${missionId}/status`);
+      const response = await fetch(`/nexus-remote/missions/${missionId}/status`, { credentials: 'include' });
       if (!response.ok) throw new Error('Status sync failed');
       const { mission, tasks } = await response.json();
       

@@ -8,15 +8,13 @@
 import type { ExportFormat } from '@nexus-os/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
-
 export async function exportArtifact(sessionId: string, format: ExportFormat): Promise<void> {
   if (!sessionId) {
     throw new Error('Mission context (sessionId) is missing. Start a mission first.');
   }
 
-  const url = `/api/export/${sessionId}?format=${format}`;
-
-  const response = await fetch(url);
+  const url = `/nexus-remote/export/${sessionId}?format=${format}`;
+  const response = await fetch(url, { credentials: 'include' });
 
   if (!response.ok) {
     const err = await response.json().catch(() => ({ error: 'Export failed' }));

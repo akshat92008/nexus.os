@@ -26,8 +26,9 @@ export default function BillingPage() {
     setError(null);
 
     try {
-      const res = await fetch('/api/billing/checkout', {
+      const res = await fetch('/nexus-remote/billing/checkout', {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${session?.access_token ?? ''}`,
