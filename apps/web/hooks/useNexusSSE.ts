@@ -29,7 +29,7 @@ async function streamSSE(
     headers.set('Authorization', `Bearer ${session.access_token}`);
   }
 
-  const response = await fetch(input, { ...init, headers });
+  const response = await fetch(input, { ...init, headers, credentials: 'include' });
 
   if (!response.ok || !response.body) {
     const err = await response.json().catch(() => ({ error: 'Connection failed' }));

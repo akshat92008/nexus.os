@@ -138,7 +138,7 @@ export const createEcosystemSlice: StateCreator<
 
   fetchAvailableAgents: async () => {
     try {
-      const res = await fetch(`/api/marketplace/agents`);
+      const res = await fetch(`/api/marketplace/agents`, { credentials: 'include' });
       const agents = await res.json();
       set({ availableAgents: agents });
     } catch (err) {
@@ -163,7 +163,7 @@ export const createEcosystemSlice: StateCreator<
   fetchFsItems: async (parentId = 'root') => {
     set({ isFsLoading: true });
     try {
-      const response = await fetch(`${API_BASE}/api/fs/list?parentId=${parentId}`);
+      const response = await fetch(`/api/fs/list?parentId=${parentId}`, { credentials: 'include' });
       if (!response.ok) throw new Error('Failed to fetch FS items');
       const items = await response.json();
       set({ fsItems: items, isFsLoading: false });
@@ -175,8 +175,9 @@ export const createEcosystemSlice: StateCreator<
 
   uploadFsFile: async (name, content, parentId = 'root') => {
     try {
-      const response = await fetch(`${API_BASE}/api/fs/upload`, {
+      const response = await fetch(`/api/fs/upload`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, content, parentId }),
       });
@@ -193,7 +194,7 @@ export const createEcosystemSlice: StateCreator<
     if (!query) return get().fetchFsItems();
     set({ isFsLoading: true });
     try {
-      const response = await fetch(`${API_BASE}/api/fs/search?q=${query}`);
+      const response = await fetch(`/api/fs/search?q=${query}`, { credentials: 'include' });
       if (!response.ok) throw new Error('Search failed');
       const items = await response.json();
       set({ fsItems: items, isFsLoading: false });
