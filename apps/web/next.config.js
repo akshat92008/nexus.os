@@ -19,8 +19,8 @@ const nextConfig = {
   async rewrites() {
     return [
       {
-        source: '/api/:path*',
-        destination: 'http://localhost:3006/api/:path*',
+        source: '/nexus-remote/:path*',
+        destination: 'http://127.0.0.1:3006/api/:path*',
       },
     ];
   },

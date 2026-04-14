@@ -73,7 +73,7 @@ export async function runActionOrchestration(
   signal?: AbortSignal
 ) {
   await streamSSE(
-    `/api/execute-action`,
+    `/nexus-remote/execute-action`,
     {
       method: 'POST',
       credentials: 'include',
@@ -138,7 +138,7 @@ export function useNexusSSE(): UseNexusSSEReturn {
         if (session?.access_token) {
           headers['Authorization'] = `Bearer ${session.access_token}`;
         }
-        await fetch(`/api/missions/${missionId}/cancel`, { 
+        await fetch(`/nexus-remote/missions/${missionId}/cancel`, { 
           method: 'POST',
           credentials: 'include',
           headers
@@ -182,7 +182,7 @@ export function useNexusSSE(): UseNexusSSEReturn {
 
       try {
         await streamSSE(
-          `/api/events/stream?missionId=${missionId}`,
+          `/nexus-remote/events/stream?missionId=${missionId}`,
           { signal: controller.signal },
           (event) => {
             lastActivityRef.current = Date.now();
@@ -255,7 +255,7 @@ export function useNexusSSE(): UseNexusSSEReturn {
           headers['Authorization'] = `Bearer ${session.access_token}`;
         }
 
-        const response = await fetch(`/api/orchestrate`, {
+        const response = await fetch(`/nexus-remote/orchestrate`, {
           method: 'POST',
           credentials: 'include',
           headers,

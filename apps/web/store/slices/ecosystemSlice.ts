@@ -138,7 +138,7 @@ export const createEcosystemSlice: StateCreator<
 
   fetchAvailableAgents: async () => {
     try {
-      const res = await fetch(`/api/marketplace/agents`, { credentials: 'include' });
+      const res = await fetch(`/nexus-remote/marketplace/agents`, { credentials: 'include' });
       const agents = await res.json();
       set({ availableAgents: agents });
     } catch (err) {
@@ -148,7 +148,7 @@ export const createEcosystemSlice: StateCreator<
 
   installAgent: async (agentId: string) => {
     try {
-      await fetch(`/api/marketplace/agents/${agentId}/install`, {
+      await fetch(`/nexus-remote/marketplace/agents/${agentId}/install`, {
         method: 'POST',
         credentials: 'include',
       });
@@ -163,7 +163,7 @@ export const createEcosystemSlice: StateCreator<
   fetchFsItems: async (parentId = 'root') => {
     set({ isFsLoading: true });
     try {
-      const response = await fetch(`/api/fs/list?parentId=${parentId}`, { credentials: 'include' });
+      const response = await fetch(`/nexus-remote/fs/list?parentId=${parentId}`, { credentials: 'include' });
       if (!response.ok) throw new Error('Failed to fetch FS items');
       const items = await response.json();
       set({ fsItems: items, isFsLoading: false });
@@ -175,7 +175,7 @@ export const createEcosystemSlice: StateCreator<
 
   uploadFsFile: async (name, content, parentId = 'root') => {
     try {
-      const response = await fetch(`/api/fs/upload`, {
+      const response = await fetch(`/nexus-remote/fs/upload`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -194,7 +194,7 @@ export const createEcosystemSlice: StateCreator<
     if (!query) return get().fetchFsItems();
     set({ isFsLoading: true });
     try {
-      const response = await fetch(`/api/fs/search?q=${query}`, { credentials: 'include' });
+      const response = await fetch(`/nexus-remote/fs/search?q=${query}`, { credentials: 'include' });
       if (!response.ok) throw new Error('Search failed');
       const items = await response.json();
       set({ fsItems: items, isFsLoading: false });
