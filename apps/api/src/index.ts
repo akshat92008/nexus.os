@@ -148,13 +148,19 @@ async function initHeavyServices() {
             }
 
             try {
-                // EXECUTE THE INVERSE ACTION VIA THE OS ENGINE
-                await toolExecutor.undoAction(lastAction);
+                // TRIGGER ACTUAL EXECUTION in the native engine
+                const rollbackResult = await toolExecutor.undoAction(lastAction);
                 
+                // Clear the log after successful undo
                 await sagaManager.clearAction(lastAction.id);
-                res.json({ status: 'rolled_back', action: lastAction.tool_id });
+
+                res.json({ 
+                    status: 'success', 
+                    message: `Rolled back: ${lastAction.tool_id}`,
+                    detail: rollbackResult
+                });
             } catch (err: any) {
-                console.error(`[Saga] ❌ Rollback Failed:`, err);
+                console.error(`[Saga] ❌ Rollback Failed:`, err.message);
                 res.status(500).json({ error: `Rollback failed: ${err.message}` });
             }
         });

@@ -97,45 +97,56 @@ class ToolExecutor {
   /**
    * Reverses a previously logged action.
    */
+  /**
+   * Reverses a previously logged action by executing the inverse tool.
+   */
   async undoAction(action: { tool_id: string, undo_params: any, goal_id: string }): Promise<any> {
-    console.log(`[ToolExecutor] ⏪ Undoing: ${action.tool_id} ...`);
+    console.log(`[ToolExecutor] ⏪ Undoing: ${action.tool_id} (Mission: ${action.goal_id})`);
     
     if (!action.undo_params) {
-      throw new Error(`Action ${action.tool_id} has no undo parameters.`);
+      throw new Error(`Action "${action.tool_id}" has no registered undo parameters.`);
     }
 
-    // Map undo_params to a secondary tool call
     let undoTool: string;
     let undoArgs: any;
 
+    // Mapping tool IDs to their inverse operations
     switch (action.tool_id) {
       case 'create_folder':
-        undoTool = 'shell_execute'; // We use a shell command to remove it
-        undoArgs = { command: `rm -rf ${action.undo_params.path}` };
+        // Inverse of create_folder is a recursive delete (use shell_execute for simplicity)
+        undoTool = 'shell_execute'; 
+        undoArgs = { command: `rm -rf "${action.undo_params.path}"` };
         break;
       case 'write_file':
+        // Inverse of write_file is restoring previous content
+        if (action.undo_params.original_content === '...') {
+            throw new Error(`Restoration failed: Previous file content was not snapshotted.`);
+        }
         undoTool = 'write_file';
         undoArgs = { path: action.undo_params.path, content: action.undo_params.original_content };
         break;
       default:
-        throw new Error(`Undo logic not implemented for tool: ${action.tool_id}`);
+        throw new Error(`Critical: Undo logic not yet implemented for tool "${action.tool_id}"`);
     }
 
-    // Execute the undo tool without logging it to Saga (prevent loops)
     const tool = toolRegistry.getTool(undoTool);
-    if (!tool) throw new Error(`Undo tool ${undoTool} not found.`);
+    if (!tool) throw new Error(`Inverse tool "${undoTool}" not found in registry.`);
     
     return await tool.handler(undoArgs, { userId: 'system' });
   }
 
   /**
-   * Simple logic to determine how to reverse an action.
+   * Calculates the parameters required to reverse an action.
    */
   private calculateUndoParams(tool: string, params: any): any {
     switch (tool) {
-      case 'create_folder': return { path: params.path, action: 'delete' };
-      case 'write_file': return { path: params.path, action: 'restore', original_content: '...' }; // Snapshot logic would go here
-      default: return null;
+      case 'create_folder': 
+        return { path: params.path, action: 'delete' };
+      case 'write_file': 
+        // Note: Real-time snapshotting logic would capture the actual content here
+        return { path: params.path, action: 'restore', original_content: '...' }; 
+      default: 
+        return null;
     }
   }
 }
