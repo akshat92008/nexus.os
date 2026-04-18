@@ -48,3 +48,5 @@ scratch/
 *.log
 
 .aider*nexus-state.json
+__pycache__/
+*.pyc

@@ -1,18 +1,30 @@
+"""
+Nexus OS Cyber-Shell v5.0 — Hardened Agentic TUI.
+
+Features:
+- Agent-aware UI (shows which persona is "thinking")
+- Structured tool dispatching via executor.Dispatcher
+- Safety interception with CEO override prompt
+- Rollback capability on failure
+- Autonomous agentic loop with safety valve
+"""
+
 import os
+import json
 import asyncio
 from textual.app import App, ComposeResult
 from textual.widgets import Header, Footer, Input, Log, Static
 from textual.containers import Container
 import requests
-import subprocess
+
+from executor.dispatcher import Dispatcher
 
 # --- CLOUD CONFIGURATION ---
 BRAIN_URL = "https://nexus-intelligence-370736307795.us-east1.run.app"
 AGENT_URL = f"{BRAIN_URL}/agent"
-THINK_URL = f"{BRAIN_URL}/think"
 
-MAX_AGENT_LOOPS = 10          # Safety valve: max autonomous iterations
-WORKING_DIR = os.getcwd()     # Root directory for file operations
+MAX_AGENT_LOOPS = 10
+WORKING_DIR = os.getcwd()
 
 
 class NexusOS(App):
@@ -22,24 +34,50 @@ class NexusOS(App):
     #log_window { height: 1fr; border: solid #333; margin: 1; background: #000; color: #0f0; }
     #input_window { height: auto; margin: 1; }
     Input { background: #1a1a1a; color: #fff; border: solid #444; }
-    .status_bar { background: #111; color: #aaa; padding: 1; }
+    .status_bar { background: #111; color: #0ff; padding: 1; }
+    .agent_bar { background: #1a0a2e; color: #b388ff; padding: 1; }
+    .safety_bar { background: #3a0a0a; color: #ff4444; padding: 1; }
     """
+
+    BINDINGS = [
+        ("y", "approve_action", "Approve"),
+        ("n", "deny_action", "Deny"),
+        ("ctrl+z", "trigger_rollback", "Rollback"),
+    ]
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         with Container(id="main_container"):
-            yield Static("🌟 NEXUS OS v3.0 — AGENTIC MODE | Status: ONLINE", classes="status_bar")
+            yield Static(
+                "🌟 NEXUS OS v5.0 — HARDENED AGENTIC | Status: ONLINE",
+                classes="status_bar"
+            )
+            yield Static(
+                "🤖 Active Agent: Awaiting Mission...",
+                id="agent_indicator",
+                classes="agent_bar"
+            )
             yield Log(id="log_window")
             yield Input(placeholder="Enter your mission, CEO...", id="input_window")
         yield Footer()
 
     def on_mount(self) -> None:
         self.history = []
+        self.dispatcher = Dispatcher(working_dir=WORKING_DIR)
+        self._pending_override = None  # For CEO confirmation flow
+        self._override_event = asyncio.Event()
+
         log = self.query_one("#log_window")
-        log.write_line("🚀 Nexus OS v3.0 Booted — Agentic Core Active.")
-        log.write_line("💡 Try: 'Create a FastAPI project called nexus-api'")
-        log.write_line("💡 Try: 'Read brain.py and tell me what model we use'")
-        log.write_line("💡 Try: 'Check my git status and commit everything'")
+        log.write_line("🚀 Nexus OS v5.0 Booted — Hardened Agentic Core Active.")
+        log.write_line("   🔮 DevAgent  — git, code, debug, scaffold")
+        log.write_line("   🖥️  SysAgent  — apps, settings, file org")
+        log.write_line("   💬 LifeAgent — messages, calendar, email")
+        log.write_line("")
+        log.write_line("🛡️  Safety Layer ACTIVE — Destructive commands require CEO override")
+        log.write_line("⏪ Press Ctrl+Z to rollback the last action")
+        log.write_line("")
+        log.write_line("💡 Try: 'Create a folder called test-nexus and a hello.txt inside it'")
+        log.write_line("💡 Try: 'Delete my root directory' (safety test)")
         log.write_line("")
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
@@ -53,25 +91,37 @@ class NexusOS(App):
         input_widget.value = ""
         log.write_line(f"\nCEO > {user_input}")
 
-        # Run the agentic loop in a background thread to keep TUI responsive
         self.run_worker(self._run_agent_loop(user_input, log))
 
+    def action_approve_action(self) -> None:
+        """CEO presses Y to approve a blocked action."""
+        if self._pending_override:
+            self._pending_override = "approved"
+            self._override_event.set()
+
+    def action_deny_action(self) -> None:
+        """CEO presses N to deny a blocked action."""
+        if self._pending_override:
+            self._pending_override = "denied"
+            self._override_event.set()
+
+    def action_trigger_rollback(self) -> None:
+        """CEO presses Ctrl+Z to rollback last action."""
+        log = self.query_one("#log_window")
+        result = self.dispatcher.rollback()
+        log.write_line(f"   {result}")
+
     async def _run_agent_loop(self, user_input: str, log: Log) -> None:
-        """
-        The core agentic loop. Sends the user's mission to the Cloud Brain,
-        then autonomously executes read/write/shell actions and feeds
-        results back until the Brain signals 'done'.
-        """
-        # Build the initial conversation thread
-        thread = [
-            {"role": "user", "content": user_input}
-        ]
+        """The core agentic loop with safety interception and structured dispatching."""
+        thread = [{"role": "user", "content": user_input}]
+        agent_indicator = self.query_one("#agent_indicator")
+        current_agent = "unknown"
 
         for iteration in range(MAX_AGENT_LOOPS):
-            log.write_line(f"   ⚙️  Agent Loop [{iteration + 1}/{MAX_AGENT_LOOPS}]")
+            log.write_line(f"   ⚙️  Loop [{iteration + 1}/{MAX_AGENT_LOOPS}]")
 
             try:
-                # Call the Cloud Brain's /agent endpoint
+                # Call the Cloud Brain
                 payload = {"messages": thread}
                 resp = await asyncio.to_thread(
                     requests.post, AGENT_URL, json=payload, timeout=30
@@ -81,17 +131,27 @@ class NexusOS(App):
                     log.write_line(f"   ❌ Brain Error: {resp.text[:200]}")
                     break
 
-                brain_response = resp.json()
-                action = brain_response.get("action", "done")
-                command = brain_response.get("command", "")
-                explanation = brain_response.get("explanation", "")
+                brain = resp.json()
+                action = brain.get("action", "done")
+                tool = brain.get("tool", "none")
+                params = brain.get("params", {})
+                explanation = brain.get("explanation", "")
+                agent_name = brain.get("agent_name", "Agent")
+                agent_icon = brain.get("agent_icon", "🤖")
 
-                log.write_line(f"   🧠 {explanation}")
+                # Update the agent indicator bar
+                if agent_name != current_agent:
+                    current_agent = agent_name
+                    agent_indicator.update(
+                        f"{agent_icon} Active Agent: {agent_name} — Thinking..."
+                    )
 
-                # Append the Brain's response to the conversation thread
+                log.write_line(f"   {agent_icon} [{agent_name}] {explanation}")
+
+                # Append Brain's response to thread
                 thread.append({
                     "role": "assistant",
-                    "content": json.dumps(brain_response)
+                    "content": json.dumps(brain)
                 })
 
                 # ==========================================
@@ -99,130 +159,154 @@ class NexusOS(App):
                 # ==========================================
 
                 if action == "done":
-                    log.write_line("   ✅ Mission Complete.")
+                    agent_indicator.update(f"✅ Mission Complete — {agent_name}")
+                    log.write_line(f"   ✅ Mission Complete.")
                     break
 
-                elif action == "read":
-                    result = await self._action_read(command, log)
-                    thread.append({
-                        "role": "tool_result",
-                        "content": f"[FILE CONTENTS of {command}]:\n{result}"
-                    })
+                elif action == "tool":
+                    # Structured tool dispatch with safety
+                    result = await asyncio.to_thread(
+                        self.dispatcher.dispatch, tool, params
+                    )
 
-                elif action == "write":
-                    result = await self._action_write(command, log)
+                    # Handle safety blocks
+                    if result.get("blocked"):
+                        log.write_line(f"   ⛔ SAFETY BLOCK: {result['output']}")
+                        log.write_line(f"   🔒 CEO OVERRIDE: Press [Y] to force, [N] to deny")
+
+                        # Wait for CEO decision
+                        self._pending_override = "waiting"
+                        self._override_event.clear()
+
+                        try:
+                            await asyncio.wait_for(self._override_event.wait(), timeout=15.0)
+                        except asyncio.TimeoutError:
+                            self._pending_override = None
+                            log.write_line(f"   ⏰ Override timeout — action denied.")
+                            thread.append({
+                                "role": "tool_result",
+                                "content": "Action blocked by CEO safety policy (timeout)."
+                            })
+                            continue
+
+                        if self._pending_override == "approved":
+                            log.write_line(f"   ✅ CEO Override GRANTED — executing with force...")
+                            result = await asyncio.to_thread(
+                                self.dispatcher.dispatch, tool, params, True
+                            )
+                            log.write_line(f"   🔧 [{tool}] {result['output'][:200]}")
+                            thread.append({
+                                "role": "tool_result",
+                                "content": f"[TOOL {tool} (CEO OVERRIDE)]:\n{result['output']}"
+                            })
+                        else:
+                            log.write_line(f"   🚫 CEO denied the action.")
+                            thread.append({
+                                "role": "tool_result",
+                                "content": "Action blocked by CEO safety policy."
+                            })
+
+                        self._pending_override = None
+                        continue
+
+                    # Normal tool result
+                    log.write_line(f"   🔧 [{tool}] {result['output'][:200]}")
                     thread.append({
                         "role": "tool_result",
-                        "content": result
+                        "content": f"[TOOL {tool}]:\n{result['output']}"
                     })
 
                 elif action == "shell":
-                    result = await self._action_shell(command, log)
+                    cmd = params.get("command", brain.get("command", ""))
+
+                    # Route shell through the dispatcher (which checks safety)
+                    result = await asyncio.to_thread(
+                        self.dispatcher.dispatch, "shell", {"command": cmd}
+                    )
+
+                    # Handle safety blocks for shell
+                    if result.get("blocked"):
+                        log.write_line(f"   ⛔ SAFETY BLOCK: {result['output']}")
+                        log.write_line(f"   🔒 CEO OVERRIDE: Press [Y] to force, [N] to deny")
+
+                        self._pending_override = "waiting"
+                        self._override_event.clear()
+
+                        try:
+                            await asyncio.wait_for(self._override_event.wait(), timeout=15.0)
+                        except asyncio.TimeoutError:
+                            self._pending_override = None
+                            log.write_line(f"   ⏰ Override timeout — action denied.")
+                            thread.append({
+                                "role": "tool_result",
+                                "content": "Shell command blocked by CEO safety policy (timeout)."
+                            })
+                            continue
+
+                        if self._pending_override == "approved":
+                            log.write_line(f"   ✅ CEO Override GRANTED — executing with force...")
+                            result = await asyncio.to_thread(
+                                self.dispatcher.dispatch, "shell", {"command": cmd}, True
+                            )
+                            log.write_line(f"   📟 {result['output'][:200]}")
+                            thread.append({
+                                "role": "tool_result",
+                                "content": f"[SHELL (CEO OVERRIDE) `{cmd}`]:\n{result['output']}"
+                            })
+                        else:
+                            log.write_line(f"   🚫 CEO denied the shell command.")
+                            thread.append({
+                                "role": "tool_result",
+                                "content": "Shell command blocked by CEO safety policy."
+                            })
+
+                        self._pending_override = None
+                        continue
+
+                    log.write_line(f"   📟 {result['output'][:200]}")
                     thread.append({
                         "role": "tool_result",
-                        "content": f"[SHELL OUTPUT of `{command}`]:\n{result}"
+                        "content": f"[SHELL `{cmd}`]:\n{result['output']}"
+                    })
+
+                elif action == "read":
+                    # Backward compat
+                    path = brain.get("command", params.get("path", ""))
+                    result = self.dispatcher.dispatch("read_file", {"path": path})
+                    log.write_line(f"   📖 Read {path} ({len(result['output'])} chars)")
+                    thread.append({
+                        "role": "tool_result",
+                        "content": f"[FILE CONTENTS of {path}]:\n{result['output']}"
+                    })
+
+                elif action == "write":
+                    # Backward compat
+                    path = params.get("path", "")
+                    content = params.get("content", "")
+                    result = self.dispatcher.dispatch("write_file", {"path": path, "content": content})
+                    log.write_line(f"   ✍️  {result['output']}")
+                    thread.append({
+                        "role": "tool_result",
+                        "content": result["output"]
                     })
 
                 else:
-                    log.write_line(f"   ⚠️ Unknown action: {action}. Stopping.")
+                    log.write_line(f"   ⚠️ Unknown action: {action}")
                     break
 
             except Exception as e:
                 log.write_line(f"   ❌ Loop Error: {e}")
+                # Auto-rollback on failure
+                if self.dispatcher.undo_count > 0:
+                    rollback_msg = self.dispatcher.rollback()
+                    log.write_line(f"   {rollback_msg}")
                 break
 
-        # Update session memory with a summary
-        self.history.append({"u": user_input, "a": f"[Agent completed in {iteration + 1} steps]"})
+        # Update memory
+        self.history.append({"u": user_input, "a": f"[{current_agent}: {iteration+1} steps]"})
         if len(self.history) > 10:
             self.history.pop(0)
 
-    # ============================================================
-    # ACTION HANDLERS
-    # ============================================================
-
-    async def _action_read(self, filepath: str, log: Log) -> str:
-        """Read a local file and return its contents."""
-        filepath = filepath.strip()
-        full_path = os.path.join(WORKING_DIR, filepath) if not os.path.isabs(filepath) else filepath
-
-        log.write_line(f"   📖 Reading: {full_path}")
-
-        try:
-            with open(full_path, "r", encoding="utf-8", errors="replace") as f:
-                content = f.read()
-            # Truncate massive files to avoid token limits
-            if len(content) > 8000:
-                content = content[:8000] + "\n\n... [TRUNCATED — file too large, showing first 8000 chars]"
-            log.write_line(f"   📄 Read {len(content)} characters.")
-            return content
-        except FileNotFoundError:
-            msg = f"ERROR: File not found: {full_path}"
-            log.write_line(f"   ❌ {msg}")
-            return msg
-        except Exception as e:
-            msg = f"ERROR: Could not read file: {e}"
-            log.write_line(f"   ❌ {msg}")
-            return msg
-
-    async def _action_write(self, command: str, log: Log) -> str:
-        """Write content to a local file. Command format: 'path/to/file | content'."""
-        if "|" not in command:
-            msg = "ERROR: Write command must use format: path/to/file | content"
-            log.write_line(f"   ❌ {msg}")
-            return msg
-
-        filepath, content = command.split("|", 1)
-        filepath = filepath.strip()
-        content = content.strip()
-        full_path = os.path.join(WORKING_DIR, filepath) if not os.path.isabs(filepath) else filepath
-
-        log.write_line(f"   ✍️  Writing: {full_path}")
-
-        try:
-            # Create parent directories if needed
-            os.makedirs(os.path.dirname(full_path), exist_ok=True) if os.path.dirname(full_path) else None
-            with open(full_path, "w", encoding="utf-8") as f:
-                f.write(content)
-            msg = f"SUCCESS: Wrote {len(content)} characters to {filepath}"
-            log.write_line(f"   ✅ {msg}")
-            return msg
-        except Exception as e:
-            msg = f"ERROR: Could not write file: {e}"
-            log.write_line(f"   ❌ {msg}")
-            return msg
-
-    async def _action_shell(self, command: str, log: Log) -> str:
-        """Execute a shell command and return its output."""
-        log.write_line(f"   🔧 Executing: {command}")
-
-        try:
-            result = await asyncio.to_thread(
-                subprocess.run,
-                command, shell=True, capture_output=True, text=True,
-                timeout=30, cwd=WORKING_DIR
-            )
-            output = result.stdout if result.stdout else result.stderr
-            if not output:
-                output = "(no output)"
-
-            # Truncate massive outputs
-            if len(output) > 4000:
-                output = output[:4000] + "\n... [TRUNCATED]"
-
-            log.write_line(f"   📟 Output: {output[:200]}{'...' if len(output) > 200 else ''}")
-            return output
-        except subprocess.TimeoutExpired:
-            msg = "ERROR: Command timed out after 30 seconds."
-            log.write_line(f"   ❌ {msg}")
-            return msg
-        except Exception as e:
-            msg = f"ERROR: {e}"
-            log.write_line(f"   ❌ {msg}")
-            return msg
-
-
-# Need json import for thread serialization
-import json
 
 if __name__ == "__main__":
     NexusOS().run()
