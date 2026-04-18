@@ -8,6 +8,7 @@
 import { toolRegistry } from './toolRegistry.js';
 import { eventBus } from '../events/eventBus.js';
 import { nexusStateStore } from '../storage/nexusStateStore.js';
+import { sagaManager } from '../services/SagaManager.js';
 import type { TypedArtifact } from '@nexus-os/types';
 
 export interface ToolCall {
@@ -57,7 +58,13 @@ class ToolExecutor {
         message: `Executing tool: ${toolName}...`,
       } as any);
 
-      // 4. Run the handler
+      // 4. Determine Undo Parameters (Saga Pattern)
+      const undoParams = this.calculateUndoParams(toolName, args);
+
+      // 5. Log Action to Saga Store
+      await sagaManager.logAction(missionId, toolName, args, undoParams);
+
+      // 6. Run the handler
       const result = await tool.handler(args, { userId, workspaceId });
 
       const MAX_ARTIFACT_BYTES = 500_000; 
@@ -86,6 +93,15 @@ class ToolExecutor {
     } catch (err: any) {
       console.error(`[ToolExecutor] ❌ Tool execution failed: ${toolName}`, err);
       throw err;
+    }
+  /**
+   * Simple logic to determine how to reverse an action.
+   */
+  private calculateUndoParams(tool: string, params: any): any {
+    switch (tool) {
+      case 'create_folder': return { path: params.path, action: 'delete' };
+      case 'write_file': return { path: params.path, action: 'restore', original_content: '...' }; // Snapshot logic would go here
+      default: return null;
     }
   }
 }

@@ -7,6 +7,8 @@ import 'dotenv/config';
 import { logger } from './logger.js';
 import express, { type Request, type Response } from 'express';
 import { randomUUID } from 'crypto';
+import { sagaManager } from './services/SagaManager.js';
+import { stripeConfig } from './config/stripe.js';
 
 console.log('[Boot] 🛰️  Nexus OS Kernel Initializing (TURBO MODE)...');
 
@@ -136,6 +138,23 @@ async function initHeavyServices() {
             res.json({ missionId: dag.missionId, status: 'queued' });
         });
 
+        app.post('/api/rollback', async (req: any, res: any) => {
+            const { missionId } = req.body;
+            console.log(`[Saga] ⏪ Rollback requested for mission ${missionId}`);
+            
+            const lastAction = await sagaManager.getLastAction(missionId);
+            if (!lastAction) {
+                return res.status(404).json({ error: 'No actions found to rollback.' });
+            }
+
+            // In a real system, we would trigger the 'undo_params' action here
+            // via the toolExecutor or direct Rust bridge.
+            console.log(`[Saga] 🔄 Undoing ${lastAction.tool_id} with params:`, lastAction.undo_params);
+            
+            await sagaManager.clearAction(lastAction.id);
+            res.json({ status: 'rolled_back', action: lastAction.tool_id });
+        });
+
         app.get('/api/events/stream', async (req: any, res: any) => {
             const { missionId } = req.query;
             res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' });
@@ -172,7 +191,12 @@ async function initHeavyServices() {
         app.post('/api/billing/checkout', async (req: any, res: any) => {
             const { priceId } = req.body;
             console.log(`[Billing] 💰 Checkout requested for price ${priceId}`);
-            res.json({ url: process.env.STRIPE_CHECKOUT_URL || 'https://buy.stripe.com/test_nexus_os_refill' });
+            
+            // Map plan to config
+            const plan = Object.values(stripeConfig.plans).find(p => p.priceId === priceId);
+            const sessionUrl = plan ? `https://checkout.stripe.com/pay/${plan.priceId}` : process.env.STRIPE_CHECKOUT_URL;
+            
+            res.json({ url: sessionUrl || 'https://buy.stripe.com/test_nexus_os_refill' });
         });
 
         app.get('/api/fs/list', async (req: any, res: any) => {
