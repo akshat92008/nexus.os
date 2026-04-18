@@ -13,7 +13,7 @@ import shutil
 from collections import deque
 from typing import Optional
 
-from executor.actions import git_manager, file_manager, app_launcher
+from executor.actions import git_manager, file_manager, app_launcher, skill_packs
 from executor import safety
 
 WORKING_DIR = os.getcwd()
@@ -39,12 +39,25 @@ TOOL_REGISTRY = {
     "open_app":       app_launcher.open_app,
     "close_app":      app_launcher.close_app,
     "system_setting": app_launcher.system_setting,
+
+    # Super-Skill-Packs: Developer
+    "project_onboard":   skill_packs.dev_onboard,
+    "auto_document":     skill_packs.dev_auto_doc,
+
+    # Super-Skill-Packs: Founder
+    "digital_janitor":   skill_packs.founder_janitor,
+    "workflow_launcher": skill_packs.founder_launcher,
+
+    # Super-Skill-Packs: System
+    "system_control":    skill_packs.sys_settings,
+    "resource_reaper":   skill_packs.sys_reaper,
 }
 
 # Tools that are READ-ONLY and don't need undo logging
 READ_ONLY_TOOLS = {
     "git_status", "git_diff", "git_log",
     "read_file", "list_dir", "find_files",
+    "project_onboard", "auto_document", "resource_reaper",
 }
 
 

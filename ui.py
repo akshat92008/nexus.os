@@ -79,6 +79,12 @@ class NexusOS(App):
         log.write_line("💡 Try: 'Create a folder called test-nexus and a hello.txt inside it'")
         log.write_line("💡 Try: 'Delete my root directory' (safety test)")
         log.write_line("")
+        log.write_line("🚀 QUICK ACTIONS (Midnight Sprint):")
+        log.write_line("   ✨ 'Clean my desktop'      -> Launches Digital Janitor")
+        log.write_line("   ✨ 'Enter Deep Work mode'  -> Launches Workflow Launcher")
+        log.write_line("   ✨ 'Explain this project'  -> Launches Project Onboard")
+        log.write_line("   ✨ 'Check RAM hogs'        -> Launches Resource Reaper")
+        log.write_line("")
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         user_input = event.value.strip()
