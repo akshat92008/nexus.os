@@ -8,7 +8,7 @@ import { logger } from './logger.js';
 import express, { type Request, type Response } from 'express';
 import { randomUUID } from 'crypto';
 import { sagaManager } from './services/SagaManager.js';
-import { stripeConfig } from './config/stripe.js';
+import { toolExecutor } from './tools/toolExecutor.js';
 
 console.log('[Boot] 🛰️  Nexus OS Kernel Initializing (TURBO MODE)...');
 
@@ -147,12 +147,16 @@ async function initHeavyServices() {
                 return res.status(404).json({ error: 'No actions found to rollback.' });
             }
 
-            // In a real system, we would trigger the 'undo_params' action here
-            // via the toolExecutor or direct Rust bridge.
-            console.log(`[Saga] 🔄 Undoing ${lastAction.tool_id} with params:`, lastAction.undo_params);
-            
-            await sagaManager.clearAction(lastAction.id);
-            res.json({ status: 'rolled_back', action: lastAction.tool_id });
+            try {
+                // EXECUTE THE INVERSE ACTION VIA THE OS ENGINE
+                await toolExecutor.undoAction(lastAction);
+                
+                await sagaManager.clearAction(lastAction.id);
+                res.json({ status: 'rolled_back', action: lastAction.tool_id });
+            } catch (err: any) {
+                console.error(`[Saga] ❌ Rollback Failed:`, err);
+                res.status(500).json({ error: `Rollback failed: ${err.message}` });
+            }
         });
 
         app.get('/api/events/stream', async (req: any, res: any) => {
@@ -188,15 +192,30 @@ async function initHeavyServices() {
             res.json({ status: 'success', spawnId, agentType });
         });
 
-        app.post('/api/billing/checkout', async (req: any, res: any) => {
-            const { priceId } = req.body;
-            console.log(`[Billing] 💰 Checkout requested for price ${priceId}`);
+        app.post('/api/waitlist', async (req: any, res: any) => {
+            const { email } = req.body;
+            console.log(`[Beta] 📝 Waitlist request for email: ${email}`);
             
-            // Map plan to config
-            const plan = Object.values(stripeConfig.plans).find(p => p.priceId === priceId);
-            const sessionUrl = plan ? `https://checkout.stripe.com/pay/${plan.priceId}` : process.env.STRIPE_CHECKOUT_URL;
-            
-            res.json({ url: sessionUrl || 'https://buy.stripe.com/test_nexus_os_refill' });
+            if (!email) {
+                return res.status(400).json({ error: 'Email is required.' });
+            }
+
+            try {
+                const supabase = await getSupabase();
+                const { error } = await supabase
+                    .from('waitlist')
+                    .upsert([{ 
+                        email, 
+                        user_id: req.user?.id, 
+                        created_at: new Date().toISOString() 
+                    }]);
+
+                if (error) throw error;
+                res.json({ status: 'success', message: 'You are on the list!' });
+            } catch (err: any) {
+                console.error('[Beta] ❌ Waitlist Error:', err.message);
+                res.status(500).json({ error: 'Could not add to waitlist.' });
+            }
         });
 
         app.get('/api/fs/list', async (req: any, res: any) => {

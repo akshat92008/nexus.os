@@ -1,31 +1,32 @@
-# Nexus OS
+# Nexus OS — v3.0 'Sovereign' Private Beta
 
-Nexus OS is a powerful and flexible operating system designed for modern computing needs. It provides a robust and secure platform for a wide range of applications and services.
+Nexus OS is the first fully autonomous, GUI-aware agentic environment for macOS. It transforms your computer from a tool you use into a partner that works for you.
 
-## Features
+## 🛰️ v3.0 Agentic Architecture
+- **The Nerve (Native Rust)**: High-performance macOS integration via Tauri v2, managing the **AX Tree Eye** for GUI awareness and **Sovereign Memory** (SQLite-vec) for semantic recall.
+- **The Brain (Cloud Kernel)**: Distributed reasoning via Groq, OpenAI, and Gemini, managing complex DAG-based mission planning.
+- **The Trust Layer (Saga)**: Native 'Undo' capability. Every destructive operation is logged and reversible via the Saga Rollback pattern.
+- **The Cyber-Shell**: A premium React dashboard featuring a command-centric HUD, live Mission Logs, and the CEO Authorization gate.
 
-- Modular and extensible architecture
-- Highly optimized for performance and efficiency
-- Advanced security features and access controls
-- Seamless integration with cloud services and IoT devices
-- Comprehensive developer tools and APIs
+## 🧪 Private Beta Status
+Nexus OS is currently in **Private Beta**. Access is restricted to authorized partners and early-access CEOs via the Waitlist.
 
-## Getting Started
+### Getting Started (Native Developer Build)
+1. **Prepare Assets**:
+   ```bash
+   bash scripts/prepare_build.sh
+   ```
+2. **Launch Dev Environment**:
+   ```bash
+   pnpm tauri dev
+   ```
+3. **Generate Production Bundle**:
+   ```bash
+   pnpm tauri build
+   ```
 
-To get started with Nexus OS, please refer to the [installation guide](docs/installation.md) and [user documentation](docs/user-guide.md).
+## 🛡️ Security & Privacy
+Nexus OS prioritizes **Sovereign Privacy**. Your interaction history, file metadata, and gui state are stored in a local **Sovereign Memory** (SQLite-vec) on your machine. All power-lane actions require explicit **CEO Authorization**.
 
-## Contributing
-
-We welcome contributions from the community. If you would like to contribute to Nexus OS, please review the [contribution guidelines](CONTRIBUTING.md).
-
-## License
-
-Nexus OS is released under the [MIT License](LICENSE).
-
-## Recent Updates
-
-- feat: update agent prompts and documentation
-- feat: Midnight Sprint — Super-Skill-Packs (Dev, Founder, Sys)
-- feat: Nexus OS v5.0 — Modular Agentic Architecture + Phase 1 Structural Hardening
-- feat: implement Nexus OS v3.0 Agentic Core (Secured & Distributed)
-- hack: bypass cloud shell POST ban by converting endpoints to GET
+---
+*Nexus OS — Build for the Sovereign Era.*

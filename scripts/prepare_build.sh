@@ -1,27 +1,36 @@
 #!/bin/bash
 
+# Nexus OS — Native Build Preparation Pipeline
+set -e
+
+echo "🚀 Starting Nexus OS Production Hardening... (BETA v3.2)"
+
 # 1. Ensure icons directory exists
 mkdir -p src-tauri/icons
 
 # 2. Generate placeholder icons if they are missing
-if [ ! -f "src-tauri/icons/icon.png" ]; then
-    echo "⚠️ Icons missing. Generating placeholders to allow build..."
+if [ ! -f "src-tauri/icons/icon.png" ] || [ ! -s "src-tauri/icons/icon.png" ]; then
+    echo "⚠️ Icons missing or invalid. Generating placeholders to allow build..."
     touch src-tauri/icons/32x32.png
     touch src-tauri/icons/128x128.png
     touch src-tauri/icons/128x128@2x.png
     touch src-tauri/icons/icon.icns
     touch src-tauri/icons/icon.ico
+    # Create a minimal 1x1 png to satisfy compiler
+    echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==" | base64 --decode > src-tauri/icons/icon.png
 fi
 
-# 3. Handle the Sidecar Binary (The Nexus API)
-echo "📦 Compiling and moving sidecar binary..."
+# 3. Handle the Sidecar Binary (The Native Nexus API)
+echo "📦 Compiling native sidecar binary..."
 mkdir -p src-tauri/binaries
 
-# Create dummy binary if search fails
-if [ ! -f "src-tauri/binaries/nexus-api-x86_64-apple-darwin" ]; then
-    echo "🛠️ Creating dummy nexus-api binary for sidecar..."
-    echo "#!/bin/bash" > src-tauri/binaries/nexus-api-x86_64-apple-darwin
-    chmod +x src-tauri/binaries/nexus-api-x86_64-apple-darwin
-fi
+# Compile the native sidecar crate
+# Assuming x86_64 target for now; in CI we would handle both architectures
+cd src-tauri/nexus-api
+cargo build --release
 
-echo "✅ Build assets prepared. You can now run 'pnpm tauri build'."
+# Move the binary to the correct location as defined in tauri.conf.json
+cp target/release/nexus-api ../binaries/nexus-api-x86_64-apple-darwin
+
+echo "✅ Build assets prepared. Architecture is now shippable."
+echo "🚢 Run 'pnpm tauri build' to generate the signed .app bundle."

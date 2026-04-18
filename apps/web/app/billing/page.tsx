@@ -1,100 +1,147 @@
 'use client';
 
-import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { CreditCard, Zap, ArrowLeft, CheckCircle } from 'lucide-react';
-import Link from 'next/link';
-import { useNexusStore } from '../../store/nexusStore';
+import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ShieldCheck, Mail, ArrowRight, Zap, Star } from 'lucide-react';
 
-const PACKS = [
-  { priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_5USD  ?? '', label: 'Starter',    usd: 5,  tasks: '500 tasks',   highlight: false },
-  { priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_20USD ?? '', label: 'Builder',    usd: 20, tasks: '2,000 tasks', highlight: true  },
-  { priceId: process.env.NEXT_PUBLIC_STRIPE_PRICE_50USD ?? '', label: 'Pro',        usd: 50, tasks: '5,500 tasks', highlight: false },
-];
+export default function WaitlistPage() {
+  const [email, setEmail] = useState('');
+  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [message, setMessage] = useState('');
 
-export default function BillingPage() {
-  const [loading, setLoading] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const session = useNexusStore((s) => s.session);
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email) return;
 
-  const handleCheckout = async (priceId: string) => {
-    if (!priceId) {
-      setError('Billing is not configured yet. Set STRIPE price IDs in your environment.');
-      return;
-    }
-    setLoading(priceId);
-    setError(null);
-
+    setStatus('loading');
     try {
-      const res = await fetch('/nexus-remote/billing/checkout', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3006'}/api/waitlist`, {
         method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session?.access_token ?? ''}`,
-        },
-        body: JSON.stringify({
-          priceId,
-          successUrl: `${window.location.origin}/?billing=success`,
-          cancelUrl:  `${window.location.origin}/billing`,
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? 'Checkout failed');
-      if (data.url) window.location.href = data.url;
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Submission failed');
+
+      setStatus('success');
+      setMessage(data.message);
     } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(null);
+      setStatus('error');
+      setMessage(err.message);
     }
   };
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-white flex flex-col items-center justify-center p-6">
-      <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-2xl"
-      >
-        <Link href="/" className="inline-flex items-center gap-2 text-zinc-500 hover:text-zinc-300 text-sm mb-8 transition-colors">
-          <ArrowLeft size={14} /> Back to Command
-        </Link>
+    <div className="min-h-screen bg-[#050505] text-white flex flex-col items-center justify-center p-8 relative overflow-hidden">
+      {/* Background Decor */}
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-[500px] bg-blue-600/5 blur-[120px] rounded-full pointer-events-none" />
+      
+      <div className="max-w-2xl w-full z-10 text-center">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-bold uppercase tracking-widest mb-8"
+        >
+          <Star size={12} className="fill-blue-400" />
+          <span>Private Beta v3.2</span>
+        </motion.div>
 
-        <div className="mb-10">
-          <h1 className="text-3xl font-bold text-zinc-100 mb-2">Nexus OS: Public Beta</h1>
-          <p className="text-zinc-500">Currently operating in "Unrestricted Mode" for community feedback.</p>
-        </div>
+        <motion.h1 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="text-5xl md:text-6xl font-bold tracking-tight mb-6 bg-gradient-to-b from-white to-white/60 bg-clip-text text-transparent"
+        >
+          The Sovereign OS Layer.
+        </motion.h1>
 
-        <div className="p-8 rounded-3xl border border-violet-500/30 bg-violet-500/5 backdrop-blur-sm mb-12">
-          <div className="flex items-center gap-3 mb-4">
-            <Zap className="text-amber-400" size={24} />
-            <h2 className="text-xl font-bold text-zinc-100">Unlimited Free Tier</h2>
-          </div>
-          <p className="text-zinc-400 leading-relaxed mb-6">
-            During this deployment phase, all billing gates have been disabled. 
-            You can plan and execute as many proactive agent missions as your infrastructure allows without any credit constraints.
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {[
-              "Unlimited Proactive Missions",
-              "Council of Three Consensus",
-              "Autonomous Tool Usage",
-              "Durable Task Persistence"
-            ].map(feature => (
-              <div key={feature} className="flex items-center gap-2 text-sm text-zinc-300">
-                <CheckCircle size={14} className="text-emerald-500" />
-                {feature}
+        <motion.p 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          className="text-lg text-white/40 mb-12 leading-relaxed"
+        >
+          Nexus OS is currently in high-security private beta. 
+          Request access to be among the first to experience native agentic GUI control and autonomous macOS missions.
+        </motion.p>
+
+        <AnimatePresence mode="wait">
+          {status === 'success' ? (
+            <motion.div
+              key="success"
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="bg-green-500/10 border border-green-500/20 p-8 rounded-3xl"
+            >
+              <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4 text-green-400">
+                <ShieldCheck size={32} />
               </div>
-            ))}
-          </div>
-        </div>
+              <h3 className="text-xl font-bold mb-2">You're on the list!</h3>
+              <p className="text-sm text-green-400/60 leading-relaxed">
+                We've secured your spot. Keep an eye on your inbox for your private access token.
+              </p>
+            </motion.div>
+          ) : (
+            <motion.form
+              key="form"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              transition={{ delay: 0.3 }}
+              onSubmit={handleSubmit}
+              className="relative group max-w-md mx-auto"
+            >
+              <div className="absolute -inset-1 bg-gradient-to-r from-blue-500/20 to-purple-500/20 rounded-2xl blur opacity-0 group-focus-within:opacity-100 transition duration-1000" />
+              <div className="relative flex items-center bg-white/5 border border-white/10 p-1.5 rounded-2xl backdrop-blur-3xl">
+                <div className="pl-4 text-white/30">
+                  <Mail size={20} />
+                </div>
+                <input 
+                  type="email"
+                  required
+                  value={email}
+                  disabled={status === 'loading'}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="Enter your email..."
+                  className="flex-grow bg-transparent border-none focus:ring-0 text-white px-4 py-3 placeholder:text-white/20 text-sm font-medium"
+                />
+                <button 
+                  type="submit"
+                  disabled={status === 'loading'}
+                  className="bg-white hover:bg-white/90 disabled:bg-white/10 text-black px-6 py-3 rounded-xl font-bold text-sm transition-all flex items-center space-x-2"
+                >
+                  <span>{status === 'loading' ? 'Securing...' : 'Request Access'}</span>
+                  {status !== 'loading' && <ArrowRight size={16} />}
+                </button>
+              </div>
+              {status === 'error' && (
+                <p className="mt-4 text-xs text-red-400 font-medium">{message}</p>
+              )}
+            </motion.form>
+          )}
+        </AnimatePresence>
 
-        <div className="flex flex-col gap-2 text-xs text-zinc-600 italic">
-          <p>※ Your deployment is running with STRIPE_DISABLED=true.</p>
-          <p>※ Billing system can be re-enabled once a payment merchant is connected.</p>
-        </div>
-      </motion.div>
+        <motion.div 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.5 }}
+          className="mt-24 grid grid-cols-3 gap-8 border-t border-white/5 pt-12 opacity-50"
+        >
+          <FeatureItem icon={<Zap size={16} />} title="Native Core" />
+          <FeatureItem icon={<ShieldCheck size={16} />} title="Hardened Security" />
+          <FeatureItem icon={<Mail size={16} />} title="Private Access" />
+        </motion.div>
+      </div>
+    </div>
+  );
+}
+
+function FeatureItem({ icon, title }: { icon: React.ReactNode; title: string }) {
+  return (
+    <div className="flex flex-col items-center space-y-2">
+      <div className="text-white/40">{icon}</div>
+      <span className="text-[10px] uppercase font-bold tracking-widest text-white/60">{title}</span>
     </div>
   );
 }

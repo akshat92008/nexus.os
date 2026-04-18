@@ -95,6 +95,40 @@ class ToolExecutor {
       throw err;
     }
   /**
+   * Reverses a previously logged action.
+   */
+  async undoAction(action: { tool_id: string, undo_params: any, goal_id: string }): Promise<any> {
+    console.log(`[ToolExecutor] ⏪ Undoing: ${action.tool_id} ...`);
+    
+    if (!action.undo_params) {
+      throw new Error(`Action ${action.tool_id} has no undo parameters.`);
+    }
+
+    // Map undo_params to a secondary tool call
+    let undoTool: string;
+    let undoArgs: any;
+
+    switch (action.tool_id) {
+      case 'create_folder':
+        undoTool = 'shell_execute'; // We use a shell command to remove it
+        undoArgs = { command: `rm -rf ${action.undo_params.path}` };
+        break;
+      case 'write_file':
+        undoTool = 'write_file';
+        undoArgs = { path: action.undo_params.path, content: action.undo_params.original_content };
+        break;
+      default:
+        throw new Error(`Undo logic not implemented for tool: ${action.tool_id}`);
+    }
+
+    // Execute the undo tool without logging it to Saga (prevent loops)
+    const tool = toolRegistry.getTool(undoTool);
+    if (!tool) throw new Error(`Undo tool ${undoTool} not found.`);
+    
+    return await tool.handler(undoArgs, { userId: 'system' });
+  }
+
+  /**
    * Simple logic to determine how to reverse an action.
    */
   private calculateUndoParams(tool: string, params: any): any {
