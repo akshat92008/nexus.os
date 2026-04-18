@@ -48,6 +48,18 @@ export class SemanticBridge {
     const { working, summarized } = this.windowMemory(artifacts);
     const relevantWorking = working.filter((e) => targetTask.contextFields.includes(e.taskId));
     
+    // FETCH CROSS-MISSION CONTEXT (Long-Term Memory)
+    let longTermMemory = '';
+    try {
+      const { vectorStore } = await import('../../storage/vectorStore.js');
+      const neighbors = await vectorStore.search(goal, 3);
+      if (neighbors.length > 0) {
+        longTermMemory = neighbors.map(n => `(Historical Similarity: ${(n as any).similarity.toFixed(2)}) ${n.content}`).join('\n\n');
+      }
+    } catch (err) {
+      console.warn('[SemanticBridge] Semantic retrieval skipped:', (err as any).message);
+    }
+
     const workingContext = relevantWorking
       .map((e) => {
         const rawData = JSON.stringify(e.data);
@@ -68,20 +80,22 @@ export class SemanticBridge {
       finalWorkingContext = finalWorkingContext.slice(0, this.MAX_TOTAL_CONTEXT * 4) + '... [TOTAL CONTEXT LIMIT REACHED]';
     }
 
-    if (!finalWorkingContext && !archiveSummary) return 'No directly relevant prior context found for this task.';
+    if (!finalWorkingContext && !archiveSummary && !longTermMemory) return 'No directly relevant prior context found for this task.';
 
     const prompt = `
       You are the NexusOS Semantic Bridge. 
       MISSION GOAL: "${goal}"
       TARGET TASK: "${targetTask.label}"
+      --- CROSS-MISSION MEMORY (Historical Semantic Context) ---
+      ${longTermMemory || 'No relevant historical context.'}
       --- ARCHIVED MISSION CONTEXT (Summarized) ---
       ${archiveSummary || 'None.'}
       --- RECENT WORKING MEMORY (Raw) ---
       ${workingContext || 'None.'}
       REASONING TASK:
-      1. Review raw findings.
-      2. Identify core truths.
-      3. Connect dots.
+      1. Review raw findings and historical memory.
+      2. Identify core truths and patterns.
+      3. Connect dots between current and past work.
       4. Synthesize a high-density operational briefing.
       Respond ONLY with the Markdown-formatted briefing text.
     `;
