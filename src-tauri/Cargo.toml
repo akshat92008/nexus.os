@@ -1,20 +1,27 @@
 [package]
 name = "nexus-os"
-version = "2.7.0"
-description = "The OS Layer for Artificial Intelligence"
+version = "3.0.0"
+description = "Nexus OS Nerve — Native AI Operating Layer"
 authors = ["Nexus OS Team"]
 edition = "2021"
-rust-version = "1.60"
+rust-version = "1.77"
 
 [build-dependencies]
-tauri-build = { version = "1.5" }
+tauri-build = { version = "2.0.0" }
 
 [dependencies]
-tauri = { version = "1.5", features = ["shell-open", "shell-sidecar", "system-tray", "window-all"] }
+tauri = { version = "2.0.0", features = ["image-ico", "image-png", "protocol-asset"] }
+tauri-plugin-shell = "2.0.0"
+tauri-plugin-fs = "2.0.0"
+tauri-plugin-dialog = "2.0.0"
+tauri-plugin-http = "2.0.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+reqwest = { version = "0.12", features = ["json"] }
+tokio = { version = "1", features = ["full"] }
+chrono = "0.4"
+sysinfo = "0.30"
+open = "5.0"
 
 [features]
-# this feature is used for production builds or when a dev server is not used, 
-# tauri-build will automatically enable this feature for you in those cases.
 custom-protocol = ["tauri/custom-protocol"]

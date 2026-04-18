@@ -51,6 +51,9 @@ TOOL_REGISTRY = {
     # Super-Skill-Packs: System
     "system_control":    skill_packs.sys_settings,
     "resource_reaper":   skill_packs.sys_reaper,
+
+    # Backward Compatibility / Directive Mapping
+    "shell_execute":     skill_packs._osascript, # Using the safer osascript helper, or fallback
 }
 
 # Tools that are READ-ONLY and don't need undo logging
@@ -136,7 +139,7 @@ class Dispatcher:
         # ========================================
         # GUARDED SHELL FALLBACK
         # ========================================
-        if tool == "shell":
+        if tool in ("shell", "shell_execute"):
             command = params.get("command", "")
             return self._safe_shell(command, params.get("cwd", self.working_dir))
 
