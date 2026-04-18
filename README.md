@@ -21,3 +21,11 @@ We welcome contributions from the community. If you would like to contribute to 
 ## License
 
 Nexus OS is released under the [MIT License](LICENSE).
+
+## Recent Updates
+
+- feat: update agent prompts and documentation
+- feat: Midnight Sprint — Super-Skill-Packs (Dev, Founder, Sys)
+- feat: Nexus OS v5.0 — Modular Agentic Architecture + Phase 1 Structural Hardening
+- feat: implement Nexus OS v3.0 Agentic Core (Secured & Distributed)
+- hack: bypass cloud shell POST ban by converting endpoints to GET
