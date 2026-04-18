@@ -44,6 +44,12 @@ export const StatusHud: React.FC<StatusHudProps> = ({
             status="HARDENED" 
             color="text-cyan-400"
           />
+          <StatusItem 
+            icon={<ShieldCheck size={14} className="opacity-50" />} 
+            label="GUI Observer" 
+            status="FOCUS: ACTIVE" 
+            color="text-yellow-400"
+          />
         </div>
       </div>
 

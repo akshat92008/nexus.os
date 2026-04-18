@@ -1,5 +1,7 @@
 use crate::ai_service::{AIService, ChatMessage};
 use crate::execution_engine::ExecutionEngine;
+use crate::gui_engine::GuiEngine;
+use crate::memory::MemoryManager;
 use serde_json::{json, Value};
 use tauri::State;
 
@@ -9,11 +11,18 @@ pub async fn execute_mission(
     session_id: String,
     history: Vec<ChatMessage>,
     ai: State<'_, AIService>,
+    memory: State<'_, MemoryManager>,
 ) -> Result<Value, String> {
-    // 1. Ask the Brain to think
+    // 1. SAVE to long-term memory
+    let _ = memory.save_interaction("user", &message);
+
+    // 2. RETRIEVE semantic context (Optional for this phase)
+    // let context = memory.search_memory(vec![...], 3);
+
+    // 3. Ask the Brain to think
     let brain_res = ai.think(&message, &session_id, history).await?;
 
-    // 2. Return the intent and tool to the UI for confirmation or auto-exec
+    // 4. Return the intent and tool
     Ok(json!({
         "intent": brain_res.intent,
         "tool": brain_res.tool,
@@ -42,9 +51,23 @@ pub fn run_tool(tool: String, params: Value) -> Result<String, String> {
         },
         "shell_execute" => {
             let cmd = params["command"].as_str().ok_or("Missing command parameter")?;
-            // Safety check logic can be added here too
             ExecutionEngine::shell_execute(cmd)
         },
+        
+        // --- NEW GUI TOOLS ---
+        "read_gui_state" => {
+            GuiEngine::get_ui_hierarchy()
+        },
+        "click_gui_element" => {
+            let label = params["element_id"].as_str().or(params["label"].as_str()).unwrap_or("");
+            GuiEngine::click_element(label)
+        },
+        "type_into_gui" => {
+            let text = params["text"].as_str().unwrap_or("");
+            GuiEngine::set_text_value(text)
+        },
+
+        // --- FILE OPS ---
         "read_file" => {
             let path = params["path"].as_str().ok_or("Missing path parameter")?;
             std::fs::read_to_string(path).map_err(|e| e.to_string())
@@ -55,20 +78,15 @@ pub fn run_tool(tool: String, params: Value) -> Result<String, String> {
             std::fs::write(path, content).map_err(|e| e.to_string())?;
             Ok(format!("File written: {}", path))
         },
-        "create_folder" => {
-            let path = params["path"].as_str().ok_or("Missing path parameter")?;
-            std::fs::create_dir_all(path).map_err(|e| e.to_string())?;
-            Ok(format!("Folder created: {}", path))
-        },
-        "list_dir" => {
-            let path = params["path"].as_str().unwrap_or(".");
-            let entries = std::fs::read_dir(path).map_err(|e| e.to_string())?;
-            let names: Vec<String> = entries
-                .filter_map(|e| e.ok())
-                .map(|e| e.file_name().to_string_lossy().into_owned())
-                .collect();
-            Ok(names.join("\n"))
-        },
         _ => Err(format!("Tool not implemented: {}", tool)),
     }
+}
+
+#[tauri::command]
+pub fn get_memory_status(memory: State<'_, MemoryManager>) -> Result<Value, String> {
+    Ok(json!({
+        "is_active": true,
+        "storage": "Local SQLite-Vec",
+        "location": "app_data_dir/nexus_memory.db"
+    }))
 }

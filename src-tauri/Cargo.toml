@@ -1,26 +1,39 @@
 [package]
 name = "nexus-os"
-version = "3.0.0"
-description = "Nexus OS Nerve — Native AI Operating Layer"
+version = "3.1.0"
+description = "Nexus OS Nerve — Native AI Operating Layer with GUI Control"
 authors = ["Nexus OS Team"]
 edition = "2021"
 rust-version = "1.77"
 
 [build-dependencies]
-tauri-build = { version = "2.0.0", features = [] }
+tauri-build = { version = "2.0.0" }
 
 [dependencies]
-tauri = { version = "2.0.0", features = ["image-ico", "image-png"] }
+tauri = { version = "2.0.0", features = ["image-ico", "image-png", "protocol-asset"] }
 tauri-plugin-shell = "2.0.0"
 tauri-plugin-fs = "2.0.0"
 tauri-plugin-dialog = "2.0.0"
 tauri-plugin-http = "2.0.0"
+
+# Data & Memory
+rusqlite = { version = "0.31.0", features = ["bundled"] }
+sqlite-vec = "0.1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+zerocopy = "0.7"
+anyhow = "1.0"
 reqwest = { version = "0.12", features = ["json"] }
 tokio = { version = "1", features = ["full"] }
-chrono = "0.4"
+
+# System & GUI
+core-foundation = "0.9"
+core-graphics = "0.23"
+objc = "0.2"
+objc_id = "0.1"
+objc-foundation = "0.1"
 sysinfo = "0.30"
+chrono = "0.4"
 open = "5.0"
 
 [features]

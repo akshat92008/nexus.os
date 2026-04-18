@@ -2,7 +2,7 @@
 const nextConfig = {
   reactStrictMode: true,
   // transpilePackages: ['@nexus-os/types'],
-  output: 'standalone',
+  output: 'export',
   images: {
     unoptimized: true,
   },
