@@ -11,6 +11,7 @@ import {
   Sparkles, 
   Globe 
 } from 'lucide-react';
+import { API_BASE } from '../lib/constants';
 
 const ICON_MAP: Record<string, any> = {
   'Search': Search,
@@ -39,7 +40,7 @@ export function useAgents(activeCategory: string, searchQuery: string) {
       const token = session?.access_token;
       if (!token) throw new Error('Authentication required');
 
-      const response = await fetch('/api/agents', {
+      const response = await fetch(`${API_BASE}/api/marketplace/agents`, {
         headers: { Authorization: `Bearer ${token}` }
       });
 

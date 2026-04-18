@@ -1,40 +1,23 @@
 # Nexus OS
 
-The OS Layer for Artificial Intelligence.
+Nexus OS is a powerful and flexible operating system designed for modern computing needs. It provides a robust and secure platform for a wide range of applications and services.
 
-## Setup
-1. Clone the repository.
-2. Install dependencies: `pnpm install`
-3. Build the project: `pnpm build`
-4. Start locally: `pnpm dev`
+## Features
 
-## Required Environment Variables
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_KEY`
-- `OPENROUTER_API_KEY`
-- `REDIS_URL`
-- `PORT` (default 3001)
+- Modular and extensible architecture
+- Highly optimized for performance and efficiency
+- Advanced security features and access controls
+- Seamless integration with cloud services and IoT devices
+- Comprehensive developer tools and APIs
 
-## Deployment
+## Getting Started
 
-### Vercel (Frontend)
-- Framework Preset: Next.js
-- Root Directory: `apps/web` (or root if monorepo detection is on)
+To get started with Nexus OS, please refer to the [installation guide](docs/installation.md) and [user documentation](docs/user-guide.md).
 
-### Render (API & Workers)
-- Environment: Node.js
-- Build Command: `pnpm install && pnpm build`
-- Start Command (API): `node apps/api/dist/index.js`
-- Start Command (Worker): `node apps/api/dist/workers/taskWorker.js`
+## Contributing
 
-## Test API Request
-```bash
-curl -X GET http://localhost:3001/api/ready
-```
+We welcome contributions from the community. If you would like to contribute to Nexus OS, please review the [contribution guidelines](CONTRIBUTING.md).
 
-### Free Infrastructure Setup
-Before running locally, you must set up two free cloud dependencies:
-1. **Upstash Redis:** Create a free database at Upstash. Copy the URL and add it to your `.env` as `REDIS_URL`.
-2. **Supabase:** Create a free project. Copy your connection string and keys to `.env`. 
-3. **Database Migrations:** Run `pnpm migrate` (or your chosen package manager) to apply the 3 required database migrations. Without this, you will get "relation nexus_missions does not exist" errors.
+## License
+
+Nexus OS is released under the [MIT License](LICENSE).

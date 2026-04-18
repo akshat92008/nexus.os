@@ -27,7 +27,7 @@ export const createAgentSlice: StateCreator<
   spawnAgent: async (agentType) => {
     try {
       get().addToast(`Spawning ${agentType} agent...`, 'info' as any);
-      const res = await fetch('/nexus-remote/agents/spawn', {
+      const res = await fetch(`${API_BASE}/api/agents/spawn`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -48,7 +48,7 @@ export const createAgentSlice: StateCreator<
 
   fetchAvailableAgents: async () => {
     try {
-      const res = await fetch('/nexus-remote/marketplace/agents', { credentials: 'include' });
+      const res = await fetch(`${API_BASE}/api/marketplace/agents`, { credentials: 'include' });
       if (!res.ok) throw new Error('Failed to fetch agents');
       const data = await res.json();
       set({ availableAgents: data });

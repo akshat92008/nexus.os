@@ -1,26 +1,13 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React from 'react';
 import { useNexusStore } from '../../store/nexusStore';
-import { useModeStore } from '../../store/modeStore';
-import { GraphCanvas } from './GraphCanvas';
 import { SandboxRouter } from './SandboxRouter';
-import { TelemetryMonitor } from './TelemetryMonitor';
-import { OmniChatView } from './OmniChatView';
-import { UniversalCommandBar } from './UniversalCommandBar';
-import { 
-  Maximize2, 
-  Minimize2, 
-  LayoutGrid, 
-  Activity, 
-  Zap, 
-  Brain, 
-  Command as CommandIcon 
-} from 'lucide-react';
+import { NeuroDashboard } from './dashboard/NeuroDashboard';
+import { HomeLandingView } from './HomeLandingView';
 
 export function CommandCenter() {
-  const { ui, session, execution, activeWorkspaceId } = useNexusStore();
+  const { execution, activeWorkspaceId, ui } = useNexusStore();
   
   if (activeWorkspaceId || execution.isExecuting) {
     // Standard workspace view when a mission is active
@@ -31,44 +18,13 @@ export function CommandCenter() {
     );
   }
 
-  return (
-    <div className="h-full w-full flex flex-col items-center justify-center p-8 relative overflow-hidden">
-      {/* Background Glow */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-violet-600/5 blur-[120px] rounded-full pointer-events-none" />
-      
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.8 }}
-        className="w-full max-w-4xl flex flex-col items-center z-10"
-      >
-        <h1 className="text-6xl font-medium tracking-tight text-white mb-12 flex items-center gap-4">
-          What can I <span className="italic font-light text-zinc-400">do for you?</span>
-        </h1>
+  // If the user clicked "Dashboards" in the sidebar
+  if (ui.dashboardOpen) {
+    return <NeuroDashboard />;
+  }
 
-        <UniversalCommandBar />
-
-        {/* Action Suggestion Tags */}
-        <div className="mt-8 flex flex-wrap justify-center gap-3">
-          {[
-            { label: 'Create slides', icon: LayoutGrid },
-            { label: 'Build website', icon: Zap },
-            { label: 'Develop desktop apps', icon: LayoutGrid },
-            { label: 'Design', icon: Zap },
-            { label: 'More', icon: null }
-          ].map((action, i) => (
-            <button 
-              key={i}
-              className="px-4 py-2 rounded-xl bg-white/[0.03] border border-white/5 hover:bg-white/[0.08] transition-all text-sm font-medium text-zinc-400 hover:text-white flex items-center gap-2"
-            >
-              {action.icon && <action.icon size={14} />}
-              {action.label}
-            </button>
-          ))}
-        </div>
-      </motion.div>
-    </div>
-  );
+  // Default state: Immersive input box (Manus-style)
+  return <HomeLandingView />;
 }
 
 interface ZoneProps {

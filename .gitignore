@@ -43,5 +43,8 @@ files (3)/
 node_modules/
 .DS_Store
 nexus-state.json
+*.pid
+scratch/
+*.log
 
 .aider*nexus-state.json

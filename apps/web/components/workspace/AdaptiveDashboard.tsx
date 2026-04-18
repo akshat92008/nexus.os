@@ -32,20 +32,14 @@ const item = {
   show: { opacity: 1, y: 0 }
 };
 
-export function AdaptiveDashboard() {
-  const { currentMode } = useModeStore();
-  const { 
-    workspaces, 
-    toggleAgentsView, 
-    toggleSidebar, 
-    toggleLibraryView,
-    toggleDashboard,
-    setActiveWorkspace,
-    addInboxEntry
-  } = useNexusStore();
-  
+  const { brainStats, fetchBrainStats } = useNexusStore();
   const workspacesList = Object.values(workspaces).sort((a, b) => b.createdAt - a.createdAt);
   const isStudent = currentMode === 'student';
+  const reflection = (brainStats as any).reflection || {};
+
+  useEffect(() => {
+    fetchBrainStats();
+  }, [fetchBrainStats]);
 
   const handleShortcut = (label: string) => {
     switch (label) {
@@ -100,9 +94,9 @@ export function AdaptiveDashboard() {
               {isStudent ? 'Your Learning Workspace' : 'Strategic Overview'}
             </h2>
             <p className="text-zinc-400 leading-relaxed max-w-xl mb-8">
-              {isStudent 
+              {reflection.overview || (isStudent 
                 ? 'Welcome back. You have 3 active research missions and an upcoming exam in Economics. Would you like to resume your last deep-dive?'
-                : 'Nexus has identified 12 new high-intent leads in the SaaS sector. Your competitor, Acme Corp, just released a new feature update.'}
+                : 'Nexus has identified 12 new high-intent leads in the SaaS sector. Your competitor, Acme Corp, just released a new feature update.')}
             </p>
             
             <div className="flex flex-wrap gap-4">
@@ -180,18 +174,18 @@ export function AdaptiveDashboard() {
             <Activity className="text-emerald-500" size={16} />
           </div>
           <div className="flex items-end gap-2 mb-4">
-            <span className="text-4xl font-black text-zinc-100 tracking-tighter">92</span>
-            <span className="text-sm font-bold text-emerald-500 mb-1">+4%</span>
+            <span className="text-4xl font-black text-zinc-100 tracking-tighter">{brainStats.totalMissions > 0 ? Math.min(100, 75 + (brainStats.totalMissions * 2)) : 0}</span>
+            <span className="text-sm font-bold text-emerald-500 mb-1">+{brainStats.totalMissions}%</span>
           </div>
           <div className="space-y-2">
             <div className="flex justify-between text-[11px] font-bold text-zinc-500 uppercase">
               <span>Goal Alignment</span>
-              <span className="text-zinc-300">High</span>
+              <span className="text-zinc-300">{(brainStats as any).reflection?.overview ? 'High' : 'Calculating...'}</span>
             </div>
             <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
                <motion.div 
                  initial={{ width: 0 }}
-                 animate={{ width: '92%' }}
+                 animate={{ width: `${brainStats.totalMissions > 0 ? Math.min(100, 75 + (brainStats.totalMissions * 2)) : 0}%` }}
                  className="h-full bg-gradient-to-r from-emerald-500 to-cyan-500" 
                />
             </div>
@@ -211,9 +205,11 @@ export function AdaptiveDashboard() {
               className="p-4 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-violet-500/30 transition-all cursor-pointer group"
             >
               <p className="text-xs font-medium text-zinc-300 leading-relaxed mb-3">
-                {isStudent 
-                  ? "I've drafted a study schedule for your Economics final based on your calendar."
-                  : "I found a relevant event for your startup in SF next week. Shall I book tickets?"}
+                {((brainStats as any).reflection?.risks?.[0]?.title) 
+                  ? `Risk Identified: ${(brainStats as any).reflection.risks[0].title}. Shall I develop a mitigation plan?`
+                  : (isStudent 
+                    ? "I've drafted a study schedule for your Economics final based on your calendar."
+                    : "I found a relevant event for your startup in SF next week. Shall I book tickets?")}
               </p>
               <button className="text-[10px] font-bold text-violet-400 uppercase tracking-widest group-hover:text-violet-300 transition-colors">
                 Take Action

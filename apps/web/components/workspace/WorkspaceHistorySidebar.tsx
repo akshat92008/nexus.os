@@ -1,203 +1,145 @@
 'use client';
 
+import React, { useEffect, useState } from 'react';
 import { useNexusStore } from '../../store/nexusStore';
 import { 
-  Plus, Search, Library, User, Settings, Layout, 
-  Trash2, Briefcase, FileText, Zap, Target, Hexagon, Network, Database, BrainCircuit, Code, PenTool, LayoutTemplate, X
+  LayoutGrid, User, Zap, FileText, Briefcase, 
+  Settings, HelpCircle, Moon, LogOut, Search,
+  Plus, Hexagon, Database, BarChart3, Image as ImageIcon
 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { createClient } from '../../lib/supabase';
+import type { User as SupabaseUser } from '@supabase/supabase-js';
 
 export function WorkspaceHistorySidebar() {
-  const workspaces = useNexusStore(s => s.workspaces);
-  const appWindows = useNexusStore(s => s.appWindows);
+  const [user, setUser] = useState<SupabaseUser | null>(null);
   const activeId = useNexusStore(s => s.activeWorkspaceId);
   const setActiveWorkspace = useNexusStore(s => s.setActiveWorkspace);
-  const deleteWorkspace = useNexusStore(s => s.deleteWorkspace);
-  const toggleAppLauncher = useNexusStore(s => s.toggleAppLauncher);
   const toggleAgentsView = useNexusStore(s => s.toggleAgentsView);
-  const toggleSearchView = useNexusStore(s => s.toggleSearchView);
-  const toggleLibraryView = useNexusStore(s => s.toggleLibraryView);
-  const closeWindow = useNexusStore(s => s.closeWindow);
+  const toggleDashboard = useNexusStore(s => s.toggleDashboard);
+  const ui = useNexusStore(s => s.ui);
+  
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user) setUser(data.user);
+    });
+  }, []);
 
-  const entries = Object.values(workspaces).sort((a, b) => b.createdAt - a.createdAt);
-  const openApps = Object.values(appWindows).sort((a, b) => b.openedAt - a.openedAt);
-
-  // Helper to resolve mission icons based on windowType
-  const getAppIcon = (windowType: string) => {
-    switch (windowType) {
-      case 'lead_engine': return <Network size={14} className="text-cyan-400" />;
-      case 'research_lab': return <Database size={14} className="text-purple-400" />;
-      case 'strategy_board': return <BrainCircuit size={14} className="text-teal-400" />;
-      case 'code_studio': return <Code size={14} className="text-orange-400" />;
-      case 'content_engine': return <PenTool size={14} className="text-pink-400" />;
-      default: return <LayoutTemplate size={14} className="text-slate-400" />;
-    }
+  const handleSignOut = async () => {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    window.location.reload();
   };
 
-  // Helper to resolve mission icons based on goalType
-  const getMissionIcon = (goalType: string) => {
-    switch (goalType) {
-      case 'lead_gen': return <Target size={14} className="text-emerald-400" />;
-      case 'research': return <Search size={14} className="text-cyan-400" />;
-      case 'strategy': return <Zap size={14} className="text-violet-400" />;
-      default: return <FileText size={14} className="text-zinc-500" />;
-    }
+  const getInitials = () => {
+    if (!user?.email) return 'FE';
+    return user.email.substring(0, 2).toUpperCase();
   };
 
   return (
-    <div className="w-64 border-r border-zinc-800/80 bg-zinc-950/80 backdrop-blur-xl shrink-0 h-full flex flex-col z-20 relative">
+    <div className="w-72 bg-[#161616] border-r border-white/5 flex flex-col h-full z-20 relative font-sans">
       
-      {/* 1. Brand Header */}
-      <div className="px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Hexagon size={16} className="text-white bg-gradient-to-br from-violet-600 to-cyan-600 rounded p-0.5 shadow-[0_0_10px_rgba(139,92,246,0.3)]" />
-          <span className="text-sm font-black tracking-tighter text-white uppercase italic">Agentic OS</span>
-        </div>
-        <button 
-          onClick={() => useNexusStore.getState().toggleDashboard()}
-          className="p-1.5 rounded hover:bg-zinc-800 text-zinc-500 transition-colors"
-        >
-          <Layout size={14} />
-        </button>
-      </div>
-
-      {/* 2. Top Actions (Manus Style) */}
-      <div className="px-2 pt-2 space-y-0.5">
-        <button 
-          onClick={() => {
-            setActiveWorkspace(null);
-            useNexusStore.getState().closeAllModals();
-            useNexusStore.getState().setCommandBarFocused(true);
-          }}
-          className="flex items-center gap-3 w-full px-3 py-2 rounded-lg text-sm text-zinc-300 font-medium hover:bg-zinc-900 border border-zinc-800/40 transition-all hover:scale-[1.02] active:scale-[0.98]"
-        >
-          <Plus size={14} className="text-zinc-500" />
-          Deploy Environment
-        </button>
-        <button 
-          onClick={toggleAgentsView}
-          className="flex items-center justify-between w-full px-3 py-2 rounded-lg text-sm text-zinc-400 hover:bg-zinc-900 transition-all border border-transparent hover:border-white/5"
-        >
-          <div className="flex items-center gap-3">
-            <User size={14} className="text-zinc-600" />
-            Agents
+      {/* Brand Header */}
+      <div className="p-8 pb-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center">
+            <Hexagon size={24} className="text-black" fill="currentColor" />
           </div>
-          <span className="text-[10px] bg-violet-600/20 text-violet-400 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">New</span>
-        </button>
-        <button 
-          onClick={toggleSearchView}
-          className="flex items-center gap-3 w-full px-3 py-2 rounded-lg text-sm text-zinc-400 hover:bg-zinc-900 transition-all border border-transparent hover:border-white/5"
-        >
-          <Search size={14} className="text-zinc-600" />
-          Search
-        </button>
-        <button 
-          onClick={toggleLibraryView}
-          className="flex items-center gap-3 w-full px-3 py-2 rounded-lg text-sm text-zinc-400 hover:bg-zinc-900 transition-all border border-transparent hover:border-white/5"
-        >
-          <Library size={14} className="text-zinc-600" />
-          Library
-        </button>
+          <span className="text-xl font-bold text-white tracking-tight">NeuroNest</span>
+        </div>
       </div>
 
-      {/* 3. Open OS Windows */}
-      <div className="mt-6 px-4">
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-[10px] font-bold text-violet-400 uppercase tracking-widest">Active Windows</h3>
-          <span className="text-[10px] bg-violet-600 text-white px-1.5 rounded">{openApps.length}</span>
-        </div>
+      <div className="flex-1 overflow-y-auto custom-scrollbar px-4 pt-4 space-y-8">
         
-        <div className="space-y-1 mt-3">
-          {openApps.length === 0 ? (
-            <div className="p-3 text-center text-[10px] text-zinc-600 border border-zinc-900/50 rounded-lg border-dashed">
-              No windows open.
+        {/* General Section */}
+        <section className="space-y-1">
+          <SectionHeader label="GENERAL" />
+          <SidebarTab 
+            icon={LayoutGrid} 
+            label="Dashboards" 
+            active={ui.dashboardOpen} 
+            onClick={() => { setActiveWorkspace(null); toggleDashboard(); }} 
+          />
+          <SidebarTab icon={User} label="AI Agents" onClick={toggleAgentsView} />
+          <SidebarTab icon={Zap} label="Workflows" />
+          <SidebarTab icon={FileText} label="Documents" />
+        </section>
+
+        {/* Tools Section */}
+        <section className="space-y-1">
+          <SectionHeader label="TOOLS/RESOURCES" />
+          <SidebarTab icon={ImageIcon} label="Assets" />
+          <SidebarTab icon={Settings} label="Generator" />
+          <SidebarTab icon={BarChart3} label="Analytics" />
+        </section>
+
+        {/* Settings Section */}
+        <section className="space-y-1">
+          <SectionHeader label="SETTINGS" />
+          <SidebarTab icon={HelpCircle} label="Help Center" />
+          <div className="flex items-center justify-between px-4 py-3 text-zinc-400">
+            <div className="flex items-center gap-3 text-sm font-medium">
+                <Moon size={18} />
+                <span>Dark Mode</span>
             </div>
-          ) : (
-            openApps.map(app => (
-              <div
-                key={app.workspaceId}
-                onClick={() => setActiveWorkspace(app.workspaceId)}
-                className={`group flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer transition-all border border-transparent ${
-                  activeId === app.workspaceId 
-                    ? 'bg-zinc-900 border-zinc-800 shadow-sm' 
-                    : 'hover:bg-zinc-900/50'
-                }`}
-              >
-                <div className="flex items-center gap-3 flex-1 overflow-hidden">
-                  <div className="relative shrink-0 flex items-center justify-center">
-                    {app.isBackground && (
-                      <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    )}
-                    {getAppIcon(app.windowType)}
-                  </div>
-                  <div className="text-xs font-medium truncate text-zinc-300">
-                    {app.title}
-                  </div>
-                </div>
-                <button
-                  onClick={(e) => { e.stopPropagation(); closeWindow(app.workspaceId); }}
-                  className="opacity-0 group-hover:opacity-100 p-1 hover:bg-rose-500/20 hover:text-rose-400 text-zinc-600 rounded transition-all shrink-0"
-                >
-                  <X size={12} />
-                </button>
-              </div>
-            ))
-          )}
-        </div>
+            <div className="w-10 h-5 bg-emerald-500 rounded-full relative flex items-center px-1">
+                <div className="w-3 h-3 bg-white rounded-full absolute right-1" />
+            </div>
+          </div>
+          <SidebarTab icon={Settings} label="Settings" />
+        </section>
+
       </div>
 
-      {/* 4. All Tasks History (Manus Iconic Style) */}
-      <div className="mt-6 flex-1 overflow-y-auto px-2 pb-4 space-y-0.5 custom-scrollbar border-t border-zinc-900 pt-4">
-        <div className="px-2 mb-2 flex items-center justify-between">
-          <h3 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">All tasks</h3>
-          <Settings size={12} className="text-zinc-600" />
+      {/* User Profile Footer */}
+      <div className="p-6 border-t border-white/5 space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 overflow-hidden border border-white/10">
+             <div className="w-full h-full bg-zinc-800 flex items-center justify-center text-xs font-bold text-white uppercase">
+               {getInitials()}
+             </div>
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-bold text-white truncate">
+               {user?.email?.split('@')[0] || 'Neuro User'}
+            </div>
+            <div className="text-[10px] text-zinc-500 truncate">{user?.email || 'Loading...'}</div>
+          </div>
         </div>
 
-        {entries.length === 0 ? (
-          <div className="p-4 text-center text-[11px] text-zinc-600 border border-zinc-900/50 rounded-lg border-dashed">No saved tasks yet.</div>
-        ) : (
-          entries.map(ws => (
-            <div
-              key={ws.id}
-              onClick={() => setActiveWorkspace(ws.id)}
-              className={`group flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-all border-l-2 ${
-                activeId === ws.id 
-                  ? 'bg-violet-500/10 border-violet-500 shadow-[inset_10px_0_20px_-10px_rgba(139,92,246,0.2)]' 
-                  : 'hover:bg-zinc-900/40 border-transparent'
-              }`}
-            >
-
-              <div className="shrink-0 w-6 h-6 rounded flex items-center justify-center bg-zinc-900 border border-zinc-800/60 group-hover:bg-zinc-800 transition-colors">
-                 {getMissionIcon(ws.goalType)}
-              </div>
-              <div className="overflow-hidden flex-1">
-                <div className={`text-[13px] truncate pr-2 ${activeId === ws.id ? 'font-medium text-zinc-100' : 'text-zinc-400 group-hover:text-zinc-300'}`}>
-                  {ws.goal}
-                </div>
-              </div>
-              <button 
-                onClick={(e) => { e.stopPropagation(); deleteWorkspace(ws.id); }}
-                className="opacity-0 group-hover:opacity-100 p-1 hover:bg-rose-500/20 hover:text-rose-400 text-zinc-600 rounded transition-all shrink-0"
-              >
-                <Trash2 size={12} />
-              </button>
-            </div>
-          ))
-        )}
-      </div>
-
-      {/* 5. Sidebar Footer */}
-      <div className="p-4 border-t border-zinc-800/80">
-         <div className="flex items-center justify-between text-[10px] text-zinc-600 font-medium">
-            <div className="flex items-center gap-2">
-               <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.5)]" />
-               Agentic OS v2.0
-            </div>
-            <div className="flex items-center gap-1 opacity-50">
-               Founder Edition
-            </div>
-         </div>
+        <button 
+           onClick={handleSignOut}
+           className="flex items-center gap-3 text-rose-500 hover:text-rose-400 transition-colors px-2 py-1 text-sm font-bold group"
+        >
+          <LogOut size={16} className="group-hover:-translate-x-1 transition-transform" />
+          <span>Sign Out</span>
+        </button>
       </div>
     </div>
+  );
+}
+
+function SectionHeader({ label }: { label: string }) {
+  return (
+    <h3 className="text-[10px] font-bold text-zinc-600 tracking-[0.15em] px-4 mb-2 uppercase">
+      {label}
+    </h3>
+  );
+}
+
+function SidebarTab({ icon: Icon, label, active, onClick }: { icon: any; label: string; active?: boolean; onClick?: () => void }) {
+  return (
+    <button 
+      onClick={onClick}
+      className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all group ${
+        active 
+          ? 'bg-white/5 border border-white/10 text-white shadow-xl' 
+          : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.02]'
+      }`}
+    >
+      <Icon size={18} className={active ? 'text-white' : 'text-zinc-600 group-hover:text-zinc-400'} />
+      <span className="text-sm font-medium">{label}</span>
+    </button>
   );
 }

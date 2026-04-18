@@ -15,7 +15,7 @@
       "http": {
         "all": true,
         "request": true,
-        "scope": ["http://localhost:3001/*"]
+        "scope": ["http://localhost:3006/*"]
       },
       "shell": {
         "all": false,
@@ -63,7 +63,7 @@
       }
     },
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' http://localhost:3001 tauri://localhost https://tauri.localhost"
+      "csp": "default-src 'self'; connect-src 'self' http://localhost:3006 tauri://localhost https://tauri.localhost"
     },
     "updater": {
       "active": false

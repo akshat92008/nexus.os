@@ -1,5 +1,5 @@
 # Stage 1: Build
-FROM node:18-slim AS builder
+FROM node:20-slim AS builder
 
 # Install pnpm
 ENV PNPM_HOME="/pnpm"
@@ -16,16 +16,25 @@ COPY apps/web/package.json ./apps/web/
 COPY packages/types/package.json ./packages/types/
 
 # Install dependencies
-RUN pnpm install --frozen-lockfile
+RUN pnpm install
 
 # Copy source code
 COPY . .
+
+# Build-time environment variables for Next.js prerendering
+ARG NEXT_PUBLIC_SUPABASE_URL
+ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
+ARG NEXT_PUBLIC_API_URL
+
+ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
+ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 
 # Build the web app
 RUN pnpm --filter @nexus-os/web build
 
 # Stage 2: Production
-FROM node:18-slim AS runner
+FROM node:20-slim AS runner
 
 WORKDIR /app
 
@@ -34,7 +43,7 @@ RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
 # Copy the built application
-COPY --from=builder /app/apps/web/public ./apps/web/public
+# Next.js standalone output maps files relative to the standalone directory
 COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/static ./apps/web/.next/static
 
@@ -45,4 +54,5 @@ EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
+# Note: standalone server.js is located at the root of the standalone folder
 CMD ["node", "apps/web/server.js"]

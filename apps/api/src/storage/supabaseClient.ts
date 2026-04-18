@@ -11,9 +11,20 @@ export async function getSupabase() {
 
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_KEY;
+  const strategy = process.env.STORAGE_STRATEGY || 'supabase';
 
-  if (!url || !key) {
-    throw new Error('[SupabaseClient] Credentials missing (SUPABASE_URL / SUPABASE_SERVICE_KEY)');
+  if (strategy !== 'local' && (!url || !key)) {
+    throw new Error('[SupabaseClient] Credentials missing (SUPABASE_URL / SUPABASE_SERVICE_KEY). Set STORAGE_STRATEGY=local to skip cloud dependency.');
+  }
+
+  // If in local mode without credentials, return a proxy that throws if someone tries to use it in local mode
+  if (strategy === 'local' && (!url || !key)) {
+    console.log('[SupabaseClient] 🛡️  Running in LOCAL-ONLY mode (Bypassing cloud handshake)');
+    return new Proxy({}, {
+      get: () => {
+        throw new Error('[SupabaseClient] Attempted cloud access in LOCAL mode. Check your PersistenceProvider logic.');
+      }
+    });
   }
 
   try {

@@ -1,0 +1,27 @@
+# 🛑 EXCLUDE HEAVY LOCAL DIRECTORIES FROM CLOUD UPLOAD 🛑
+.git
+.gitignore
+.gcloudignore
+
+# Local Environments
+nexus_env/
+node_modules/
+__pycache__/
+*.pyc
+
+# Local Logs & PIDs
+*.log
+*.pid
+
+# Other Workspace Folders
+apps/
+packages/
+migrations/
+docker/
+docs/
+scripts/
+scratch/
+nexusislive/
+.idx/
+.gemini/
+.devcontainer/

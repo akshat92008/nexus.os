@@ -62,18 +62,14 @@ export function Workspace() {
   if (ui.showAuth) return <Auth />;
 
   return (
-    <div className="h-screen w-screen overflow-hidden flex bg-[#0F1115] text-zinc-100 font-sans relative selection:bg-violet-500/30">
-      <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-[#0F1115] via-black to-[#0F1115]" />
-        <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] bg-violet-900/10 blur-[150px] rounded-full animate-pulse" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-cyan-900/5 blur-[150px] rounded-full animate-pulse" />
-        <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)', backgroundSize: '32px 32px' }} />
-      </div>
+    <div className="h-screen w-screen overflow-hidden flex bg-[#0D0D0D] text-zinc-100 font-sans relative selection:bg-violet-500/30">
+      {/* Background Grid */}
+      <div className="fixed inset-0 z-0 pointer-events-none opacity-[0.03]" style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)', backgroundSize: '32px 32px' }} />
 
       <WorkspaceHistorySidebar />
 
-      <main className="flex-1 flex flex-col overflow-hidden relative z-10">
-        <div className="flex-1 flex overflow-hidden relative">
+      <main className="flex-1 flex flex-col overflow-hidden relative z-10 p-4 pl-0">
+        <div className="flex-1 flex flex-col bg-[#121212] rounded-[40px] border border-white/5 overflow-hidden relative shadow-2xl">
           <CommandCenter />
         </div>
       </main>

@@ -2,11 +2,12 @@
  * Nexus OS — User State Store
  *
  * Manages the high-level UI and workspace configuration snapshots for users.
+ * 
+ * Refactored to delegate to a PersistenceProvider (Supabase or Local FS).
  */
 
 import type { UserStateSnapshot, Workspace } from '@nexus-os/types';
-import { getSupabase } from './supabaseClient.js';
-import { withRetry } from '../resilience.js';
+import { getPersistenceProvider } from './persistenceFactory.js';
 
 export function createDefaultUserState(userId: string): UserStateSnapshot {
   return {
@@ -17,7 +18,7 @@ export function createDefaultUserState(userId: string): UserStateSnapshot {
     schedules: [],
     ongoingMissions: [],
     inbox: [],
-    installedAgentIds: ['researcher-standard', 'analyst-standard'],
+    installedAgentIds: ['researcher-standard', 'analyst-standard', 'strategist-standard'],
     finances: {
       revenue: 125450,
       expenses: 45230,
@@ -61,23 +62,18 @@ export function ensureWorkspaceDefaults(workspace: Workspace): Workspace {
 }
 
 export class UserStateStore {
-  async getUserState(userId: string): Promise<UserStateSnapshot> {
-    const client = await getSupabase();
-    const { data, error } = await withRetry(async (_signal) => {
-      const result = await client
-        .from('nexus_state')
-        .select('state')
-        .eq('id', userId)
-        .single();
-      if (result.error && result.error.code !== 'PGRST116') throw result.error;
-      return result;
-    }, `DB:getUserState:${userId}`, { retries: 2, timeout: 5000 });
+  private get provider() {
+    return getPersistenceProvider();
+  }
 
-    if (error || !data?.state) {
+  async getUserState(userId: string): Promise<UserStateSnapshot> {
+    const data = await this.provider.getUserState(userId);
+
+    if (!data) {
       return createDefaultUserState(userId);
     }
 
-    const current = data.state as UserStateSnapshot;
+    const current = data as UserStateSnapshot;
     return {
       ...createDefaultUserState(userId),
       ...current,
@@ -87,7 +83,6 @@ export class UserStateStore {
   }
 
   async syncUserState(userId: string, patch: Partial<UserStateSnapshot>): Promise<UserStateSnapshot> {
-    const client = await getSupabase();
     const currentState = await this.getUserState(userId);
 
     const nextState: UserStateSnapshot = {
@@ -96,15 +91,7 @@ export class UserStateStore {
       updatedAt: Date.now(),
     };
 
-    const { error } = await withRetry(async (_signal) => {
-      const result = await client
-        .from('nexus_state')
-        .upsert({ id: userId, state: nextState, updated_at: new Date().toISOString() });
-      if (result.error) throw result.error;
-      return result;
-    }, `DB:syncUserState:${userId}`, { retries: 2, timeout: 5000 });
-
-    if (error) throw new Error(`[UserStateStore] syncUserState failed: ${error.message}`);
+    await this.provider.upsertUserState(userId, nextState);
     return nextState;
   }
 

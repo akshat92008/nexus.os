@@ -25,6 +25,7 @@
  * falls back to an in-memory store so local dev works without a DB.
  */
 
+import { randomUUID } from 'crypto';
 import type { Response } from 'express';
 import type {
   LedgerRow,
@@ -42,7 +43,7 @@ class InMemoryLedger {
   insert(row: Omit<LedgerRow, 'id' | 'created_at'>): LedgerRow {
     const full: LedgerRow = {
       ...row,
-      id: crypto.randomUUID(),
+      id: randomUUID(),
       created_at: new Date().toISOString(),
     };
     this.rows.push(full);
@@ -198,24 +199,38 @@ class TransactionLedger {
       sseRes.write(`data: ${JSON.stringify(event)}\n\n`);
     }
 
-    // ── STRIPE REMOVAL BYPASS ────────────────────────────────────────────────
-    // if (client) {
-    //   const { data: deducted, error: deductError } = await (client as any).rpc('deduct_user_credits', {
-    //     p_user_id: userId,
-    //     p_amount: PLATFORM_FEE_USD,
-    //   });
-    //   ...
-    // }
+    if (client) {
+      const { data: deducted, error: deductError } = await (client as any).rpc('deduct_user_credits', {
+        p_user_id: userId,
+        p_amount: PLATFORM_FEE_USD,
+      });
+      if (deductError) {
+        console.error('[Ledger] Credit deduction failed:', deductError);
+        // We throw here because in v29+ we must enforce billing
+        throw new Error(`Insufficient credits or deduction failed: ${deductError.message}`);
+      }
+    }
 
     return row;
   }
 
   /**
    * Checks if a user has enough balance to run at least one task.
-   * STRIPE REMOVAL: Now always returns true to unblock missions.
    */
-  async hasSufficientBalance(_userId: string): Promise<boolean> {
-    return true; // Unblock all users (Nexus OS Free Tier)
+  async hasSufficientBalance(userId: string): Promise<boolean> {
+    const client = await getSupabase();
+    if (!client) return true; // Fallback for local dev
+
+    const { data: balance, error } = await (client as any).rpc('get_user_credits', {
+      p_user_id: userId
+    });
+
+    if (error) {
+      console.warn('[Ledger] Balance check failed, defaulting to optimistic true:', error);
+      return true;
+    }
+
+    return (balance || 0) >= PLATFORM_FEE_USD;
   }
 
   getByUser(userId: string): LedgerRow[] {
