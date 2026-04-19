@@ -94,8 +94,22 @@ async def agent(request: AgentRequest):
         agent_prompt = agent_info["prompt"]
 
         # Inject memory context into the prompt
-        history_context = memory.get_context()
-        enriched_prompt = f"{agent_prompt}\n\nSESSION HISTORY:\n{history_context}"
+        try:
+            from executor.memory_store import local_memory
+            cognitive_history = local_memory.retrieve_relevant_context(user_input)
+        except Exception as memory_err:
+            cognitive_history = f"(Memory module offline: {memory_err})"
+
+        # Add GUI Tools to the system prompt
+        GUI_TOOLS_REGISTRY = """
+        -- NATIVE GUI TOOLS --
+        You have direct control over the native OS GUI. Use these if 'shell' is inefficient:
+        - read_gui_state: Returns the structural map of the active window.
+        - gui_click: Clicks a specific element. Params: {"element_id": "value"}
+        - gui_type: Types text into the active field. Params: {"text": "value"}
+        """
+
+        enriched_prompt = f"{agent_prompt}\n{GUI_TOOLS_REGISTRY}\n\nSESSION HISTORY:\n{memory.get_context()}\n\nCOGNITIVE MEMORY:\n{cognitive_history}"
 
         # Build the OpenRouter message thread
         messages = []
