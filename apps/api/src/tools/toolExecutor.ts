@@ -94,6 +94,8 @@ class ToolExecutor {
       console.error(`[ToolExecutor] ❌ Tool execution failed: ${toolName}`, err);
       throw err;
     }
+  }
+
   /**
    * Reverses a previously logged action.
    */

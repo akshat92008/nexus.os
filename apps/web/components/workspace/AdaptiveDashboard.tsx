@@ -14,6 +14,7 @@ import {
   Plus,
   Activity
 } from 'lucide-react';
+import { useEffect } from 'react';
 import { useNexusStore } from '../../store/nexusStore';
 import { useModeStore } from '../../store/modeStore';
 
@@ -32,7 +33,20 @@ const item = {
   show: { opacity: 1, y: 0 }
 };
 
-  const { brainStats, fetchBrainStats } = useNexusStore();
+export function AdaptiveDashboard() {
+  const {
+    workspaces,
+    setActiveWorkspace,
+    toggleDashboard,
+    toggleSidebar,
+    toggleAgentsView,
+    toggleLibraryView,
+    addInboxEntry,
+    brainStats,
+    fetchBrainStats
+  } = useNexusStore();
+  const { currentMode } = useModeStore();
+
   const workspacesList = Object.values(workspaces).sort((a, b) => b.createdAt - a.createdAt);
   const isStudent = currentMode === 'student';
   const reflection = (brainStats as any).reflection || {};
