@@ -77,9 +77,9 @@ export default function WaitlistPage() {
               <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4 text-green-400">
                 <ShieldCheck size={32} />
               </div>
-              <h3 className="text-xl font-bold mb-2">You're on the list!</h3>
+              <h3 className="text-xl font-bold mb-2">You&apos;re on the list!</h3>
               <p className="text-sm text-green-400/60 leading-relaxed">
-                We've secured your spot. Keep an eye on your inbox for your private access token.
+                We&apos;ve secured your spot. Keep an eye on your inbox for your private access token.
               </p>
             </motion.div>
           ) : (

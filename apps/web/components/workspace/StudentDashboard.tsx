@@ -85,7 +85,7 @@ export function StudentDashboard({ displayTopics, displayTasks }: StudentDashboa
             <div className="flex flex-col gap-4">
                {displayTasks.length === 0 ? (
                   <div className="p-6 rounded-2xl border border-zinc-800 border-dashed text-zinc-600 text-sm italic">
-                     No pending tasks. You're all caught up!
+                     No pending tasks. You&apos;re all caught up!
                   </div>
                ) : (
                   displayTasks.map(task => (
