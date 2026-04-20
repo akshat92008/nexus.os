@@ -14,29 +14,15 @@ import datetime
 import os
 from typing import List, Dict, Any, Tuple
 
-try:
-    # If the user has sentence_transformers installed, use it for genuine AI embeddings
-    from sentence_transformers import SentenceTransformer
-    embedder = SentenceTransformer('all-MiniLM-L6-v2')
-    HAS_EMBEDDER = True
-except ImportError:
-    # Fallback to pseudo-vectors if no heavy ML libs exist (Privacy friendly and 0 config)
-    HAS_EMBEDDER = False
+# Strictly enforce real SentenceTransformer embeddings for biological intelligence weighting
+from sentence_transformers import SentenceTransformer
+embedder = SentenceTransformer('all-MiniLM-L6-v2')
 
 DB_PATH = "nexus_cognitive_memory.db"
 
-def _pseudo_embed(text: str) -> List[float]:
-    """Generates a deterministic 128-d pseudo-vector using string hashing."""
-    import hashlib
-    h = hashlib.sha256(text.encode('utf-8')).digest()
-    # Convert bytes to floats [-1.0, 1.0]
-    return [(b / 127.5) - 1.0 for b in h[:128]]
-
 def get_embedding(text: str) -> List[float]:
-    if HAS_EMBEDDER:
-        return embedder.encode(text).tolist()
-    else:
-        return _pseudo_embed(text)
+    """Return genuine AI 384-d semantic memory mappings."""
+    return embedder.encode(text).tolist()
 
 def cosine_similarity(v1: List[float], v2: List[float]) -> float:
     """Computes cosine similarity between two vectors."""

@@ -1,19 +1,16 @@
 """
-Nexus OS OAV Dispatcher
+Nexus OS Central Executor
 
-Enforces the Observation-Action-Verification (OAV) loop.
-Every action must return a Result object containing:
-- status (Success/Fail)
-- output (text/logs)
-- current_state (a snapshot of the AX Tree or file list)
+Enforces the new structured Action Schema.
+Processes atomic tasks sequentially, injecting outputs into the next task.
 """
 
 import os
 import traceback
-from typing import Dict, Any
+from typing import Dict, Any, List
 from executor.state_manager import interim_state
+from executor.schema import ActionSchema
 
-# We may fallback to importing gui_engine if it exists and is needed.
 try:
     from executor import gui_engine
     HAS_GUI = True
@@ -26,10 +23,9 @@ try:
 except ImportError:
     HAS_ACTIONS = False
 
-class Dispatcher:
+class CentralExecutor:
     def __init__(self, working_dir: str = None):
         self.working_dir = working_dir or os.getcwd()
-        self.undo_count = 0
 
     def _get_current_state(self, is_gui: bool) -> str:
         """Captures a snapshot for self-verification."""
@@ -46,75 +42,65 @@ class Dispatcher:
             except Exception as e:
                 return f"Error capturing File state: {e}"
 
-    def dispatch(self, action_type: str, params: Dict[str, Any], override: bool = False) -> Dict[str, Any]:
-        """
-        Executes the tool and wraps the payload in the OAV Result format.
-        """
-        status = "Success"
-        output = ""
+    def execute_task(self, task: Dict[str, Any], previous_output: str = "") -> ActionSchema:
+        """Executes a single atomic task wrapped in the strict Action Schema."""
+        action_type = task.get("type", task.get("tool", "none"))
+        params = task.get("params", {})
+        
+        action = ActionSchema(action_type, params)
+        action.status = "executing"
+        
+        # Feed previous output into the next task
+        if previous_output and "previous_output" not in action.params:
+             action.params["previous_output"] = previous_output
+             
+        status_val = "Success"
+        output_val = ""
         is_gui = False
 
         try:
-            # 1. Check the dynamic Tool Registry first (Engineer-Grade Tools)
+            # 1. Check Omni-Tools
             if HAS_ACTIONS and action_type in TOOL_MAP:
-                output = TOOL_MAP[action_type](params)
+                output_val = TOOL_MAP[action_type](action.params)
             
-            # 2. Fallback to built-in legacy handlers
+            # 2. Legacy handlers fallback
             elif action_type == "set_context":
-                key = params.get("key", "")
-                val = params.get("value", "")
-                output = interim_state.set_context(key, val)
+                key = action.params.get("key", "")
+                val = action.params.get("value", "")
+                output_val = interim_state.set_context(key, val)
                 
             elif action_type == "get_context":
-                key = params.get("key", "")
-                output = str(interim_state.get_context(key))
+                key = action.params.get("key", "")
+                output_val = str(interim_state.get_context(key))
                 
-            elif action_type == "read_gui_state":
+            elif action_type in ["read_gui_state", "gui_click", "gui_type"]:
                 is_gui = True
                 if HAS_GUI:
-                    output = "Captured GUI State."
+                    if action_type == "read_gui_state":
+                        output_val = "Captured GUI State."
+                    elif action_type == "gui_click":
+                        output_val = gui_engine.perform_action(action.params.get("element_id", ""), "click")
+                    elif action_type == "gui_type":
+                        output_val = gui_engine.perform_action("", "type", action.params.get("text", ""))
                 else:
-                    status = "Fail"
-                    output = "GUI Engine unavailable."
-                    
-            elif action_type == "gui_click":
-                is_gui = True
-                if HAS_GUI:
-                    element_id = params.get("element_id", "")
-                    output = gui_engine.perform_action(element_id, "click")
-                else:
-                    status = "Fail"
-                    output = "GUI Engine unavailable."
-                    
-            elif action_type == "gui_type":
-                is_gui = True
-                if HAS_GUI:
-                    text = params.get("text", "")
-                    output = gui_engine.perform_action("", "type", text)
-                else:
-                    status = "Fail"
-                    output = "GUI Engine unavailable."
+                    status_val = "Fail"
+                    output_val = "GUI Engine unavailable."
 
             elif action_type == "shell":
-                # Explicitly route to session manager
-                output = TOOL_MAP["shell"](params)
+                output_val = TOOL_MAP["shell"](action.params)
                 
             else:
-                status = "Fail"
-                output = f"Unknown action: {action_type}"
+                status_val = "Fail"
+                output_val = f"Unknown action: {action_type}"
 
         except Exception as e:
-            status = "Fail"
-            output = f"Exception during execution: {traceback.format_exc()}"
+            status_val = "Fail"
+            output_val = f"Exception during execution: {traceback.format_exc()}"
 
-        current_state = self._get_current_state(is_gui)
+        action.status = "completed" if status_val == "Success" else "failed"
+        action.output = output_val
 
-        return {
-            "status": status,
-            "output": output,
-            "current_state": current_state
-        }
+        return action
 
     def rollback(self) -> str:
-        self.undo_count = 0
-        return "Rollback executed."
+        return "Rollback implemented in persistence layer."

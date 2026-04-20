@@ -17,7 +17,7 @@ from textual.widgets import Header, Footer, Input, Log, Static, TabbedContent, T
 from textual.containers import Container, Horizontal
 import requests
 
-from executor.dispatcher import Dispatcher
+from executor.dispatcher import CentralExecutor
 
 # --- CLOUD CONFIGURATION ---
 BRAIN_URL = "https://nexus-intelligence-370736307795.us-east1.run.app"
@@ -75,7 +75,7 @@ class NexusOS(App):
 
     def on_mount(self) -> None:
         self.history = []
-        self.dispatcher = Dispatcher(working_dir=WORKING_DIR)
+        self.dispatcher = CentralExecutor(working_dir=WORKING_DIR)
         self._pending_override = None  # For CEO confirmation flow
         self._override_event = asyncio.Event()
 
@@ -216,8 +216,40 @@ class NexusOS(App):
                 })
 
                 # ==========================================
-                # ACTION ROUTER
+                # MULTI-STEP TASK EXECUTOR (The Action Schema)
                 # ==========================================
+                tasks = brain.get("tasks", [])
+                
+                if tasks:
+                    goal = brain.get("goal", "Execute plan")
+                    log.write_line(f"   📋 [PLAN GENERATED]: {goal}")
+                    
+                    prev_out = ""
+                    for t in tasks:
+                        step_num = t.get('step', '?')
+                        tool = t.get('type', t.get('tool', 'shell'))
+                        log.write_line(f"   [ ] Task {step_num}: {tool}")
+                        
+                        # Execute Task via Central Executor
+                        action_ret = await asyncio.to_thread(
+                            self.dispatcher.execute_task, t, prev_out
+                        )
+                        
+                        icon = "[green]✅[/green]" if action_ret.status == "completed" else "[red]❌[/red]"
+                        log.write_line(f"   {icon} Task {step_num} Finished: {action_ret.output[:200]}")
+                        
+                        prev_out = action_ret.output
+                        
+                        # Tell Brain what happened
+                        thread.append({
+                            "role": "tool_result",
+                            "content": f"[TASK {step_num} RESULT]:\n{action_ret.output}"
+                        })
+
+                        if action_ret.status == "failed":
+                            break
+                    continue
+
 
                 if action == "done":
                     agent_indicator.update(f"✅ Mission Complete — Tree: {self.agent_chain}")

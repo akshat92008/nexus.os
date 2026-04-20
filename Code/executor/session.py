@@ -37,15 +37,19 @@ class NexusSession:
         self.output_buffer = "" # Flush buffer for new command context
         print(f"🐚 Persistent Shell Executing: {command}")
         
-        self.process.stdin.write(command + "\n")
+        # Append unique delimiter to ensure synchronous completion
+        delim = "__NEXUS_DONE__"
+        full_command = f"{command}; echo '{delim}'\n"
+        
+        self.process.stdin.write(full_command)
         self.process.stdin.flush()
         
-        # Fixed latency for output stabilization
-        # In future iterations, we could use a specific delimiter (EOF token)
-        time.sleep(1.0) 
-        
-        result = self.output_buffer
-        return result if result.strip() else "✅ Command executed successfully (no output)."
+        # Wait blockingly until the shell prints the terminator
+        while delim not in self.output_buffer:
+            time.sleep(0.05)
+            
+        result = self.output_buffer.replace(f"{delim}\n", "").replace(delim, "").strip()
+        return result if result else "✅ Command executed successfully (no output)."
 
 # Global singleton session for the platform
 session = NexusSession()

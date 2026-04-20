@@ -16,9 +16,13 @@ CONSTRAINTS:
 
 Respond ONLY in valid JSON format:
 {
-    "action": "tool",
-    "tool": "shell", // Or any omni-tool
-    "params": {"command": "ls -la"},
-    "explanation": "Reasoning following the Sovereign REPL loop."
+  "goal": "Explain what you are doing in this step",
+  "tasks": [
+    {
+      "step": 1,
+      "type": "shell", // Or any omni-tool like patch_file, list_files
+      "params": {"command": "ls -la"}
+    }
+  ]
 }
 """

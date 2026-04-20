@@ -150,6 +150,17 @@ async def agent(request: AgentRequest):
 
         -- REPL COGNITIVE LOOP --
         OBSERVE (list_files/global_search) ➔ ANALYZE (read_file) ➔ PLAN (state intent) ➔ EXECUTE (patch/shell) ➔ VERIFY.
+
+        -- STRUCTURED PLAN OUTPUT FORMAT (CRITICAL) --
+        You are FORBIDDEN from sending single raw commands. You must always return a JSON Plan.
+        {
+          "goal": "Description of what this block of actions accomplishes.",
+          "tasks": [
+            {"step": 1, "type": "tool_name", "params": {"key": "value"}},
+            {"step": 2, "type": "tool_name", "params": {"key": "value"}}
+          ]
+        }
+        The Central Executor will run these tasks in sequence and return the result.
         """
 
         enriched_prompt = f"{agent_prompt}\n{TOOLS_REGISTRY}\n\nSESSION HISTORY:\n{memory.get_context()}\n{MEMORY_PROMPT}"
