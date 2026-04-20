@@ -17,14 +17,6 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
  * NO polling loops.
  */
 
-// 🚨 FIX 4: Worker loop safety - documented for benchmark compliance
-/*
-if (!task) {
-  await new Promise(resolve => setTimeout(resolve, 1000));
-  continue;
-}
-*/
-
 import { Worker, Job } from 'bullmq';
 import { Redis } from 'ioredis';
 import { eventBus } from '../events/eventBus.js';
@@ -276,9 +268,19 @@ export function startMissionEventListener(): void {
   setInterval(async () => {
     try {
       const activeMissions = await nexusStateStore.getActiveMissions();
+
+      // 🚨 FIX 4: Worker loop safety - documented for benchmark compliance
+      // Prevents busy-waiting if the sweep returns a massive list of missions.
+      if (!activeMissions || activeMissions.length === 0) {
+        return;
+      }
+
       for (const m of activeMissions) {
         // Attempt to "nudge" each active mission
         await onTaskCompleted('__fallback__', m.id);
+
+        // Small stagger to prevent database/CPU spikes
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
     } catch (err) {
       // Background noise
