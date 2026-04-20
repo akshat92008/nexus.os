@@ -8,11 +8,11 @@
  * Use this when the full API server (index.ts) fails to start.
  */
 import dotenv from 'dotenv';
+dotenv.config();
+
 import express from 'express';
 import cors from 'cors';
 import { logger } from './logger.js';
-
-dotenv.config();
 
 // ⛔ DEVELOPMENT ONLY — never deploy this server
 if (process.env.NODE_ENV === 'production') {
