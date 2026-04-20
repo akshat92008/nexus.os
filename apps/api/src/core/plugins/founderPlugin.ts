@@ -1,4 +1,4 @@
-import { TaskDAG, AgentType } from '@nexus-os/types';
+import { TaskDAG } from '@nexus-os/types';
 import { PlanningPlugin } from '../planningPlugin.js';
 import { parseFounderIntent } from '../../intent/founderIntentParser.js';
 import { mapFounderIntentToTasks } from '../../mappers/founderTaskMapper.js';
