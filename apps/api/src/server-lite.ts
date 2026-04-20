@@ -10,14 +10,15 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
-// ⛔ DEVELOPMENT ONLY — never deploy this server
-if (process.env.NODE_ENV === 'production') {
-  console.error('[server-lite] FATAL: This server must never run in production. Use index.ts.');
-  process.exit(1);
-}
-
 import express from 'express';
 import cors from 'cors';
+import { logger } from './logger.js';
+
+// ⛔ DEVELOPMENT ONLY — never deploy this server
+if (process.env.NODE_ENV === 'production') {
+  logger.error('[server-lite] FATAL: This server must never run in production. Use index.ts.');
+  process.exit(1);
+}
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);
@@ -28,7 +29,7 @@ app.use(express.json({ limit: '1mb' }));
 
 // 📝 Request Logger
 app.use((req, res, next) => {
-  console.log(`[Lite] ${req.method} ${req.url}`);
+  logger.info({ method: req.method, url: req.url }, '[Lite] Request');
   next();
 });
 
@@ -136,7 +137,7 @@ app.get('/api/agents', (_req, res) => {
 // ── Orchestrate (stub — returns queued) ────────────────────────────────────
 app.post('/api/orchestrate', (req, res) => {
   const missionId = `mission_lite_${Date.now()}`;
-  console.log(`[Lite] Orchestrate request: "${req.body?.goal}" → ${missionId}`);
+  logger.info({ goal: req.body?.goal, missionId }, '[Lite] Orchestrate request');
   res.json({
     missionId,
     status: 'queued',
@@ -174,7 +175,7 @@ app.get('/api/events/stream', (req, res) => {
 
   req.on('close', () => {
     clearInterval(heartbeat);
-    console.log('[Lite] SSE Stream closed');
+    logger.info('[Lite] SSE Stream closed');
   });
 });
 
@@ -195,7 +196,7 @@ app.use((_req, res) => {
 
 // ── Start ────────────────────────────────────────────────────────────────────
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Nexus OS API (Lite Mode) running on http://localhost:${PORT}`);
-  console.log(`   Mode: lightweight — no Redis/BullMQ/Workers`);
-  console.log(`   Frontend should connect to: http://localhost:${PORT}`);
+  logger.info({ port: PORT }, '🚀 Nexus OS API (Lite Mode) started');
+  logger.info('   Mode: lightweight — no Redis/BullMQ/Workers');
+  logger.info(`   Frontend should connect to: http://localhost:${PORT}`);
 });
