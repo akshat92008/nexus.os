@@ -20,6 +20,12 @@ try:
 except ImportError:
     HAS_GUI = False
 
+try:
+    from executor.actions import TOOL_MAP
+    HAS_ACTIONS = True
+except ImportError:
+    HAS_ACTIONS = False
+
 class Dispatcher:
     def __init__(self, working_dir: str = None):
         self.working_dir = working_dir or os.getcwd()
@@ -30,13 +36,11 @@ class Dispatcher:
         if is_gui and HAS_GUI:
             try:
                 tree = gui_engine.dump_ax_tree()
-                # Return stringified version or specific layout summary
                 return str(tree)
             except Exception as e:
                 return f"Error capturing GUI state: {e}"
         else:
             try:
-                # File list snapshot
                 files = os.listdir(self.working_dir)
                 return f"Files in {self.working_dir}: {', '.join(files[:50])}"
             except Exception as e:
@@ -51,7 +55,12 @@ class Dispatcher:
         is_gui = False
 
         try:
-            if action_type == "set_context":
+            # 1. Check the dynamic Tool Registry first (Engineer-Grade Tools)
+            if HAS_ACTIONS and action_type in TOOL_MAP:
+                output = TOOL_MAP[action_type](params)
+            
+            # 2. Fallback to built-in legacy handlers
+            elif action_type == "set_context":
                 key = params.get("key", "")
                 val = params.get("value", "")
                 output = interim_state.set_context(key, val)
@@ -87,8 +96,8 @@ class Dispatcher:
                     output = "GUI Engine unavailable."
 
             elif action_type == "shell":
-                cmd = params.get("command", "")
-                output = f"Simulated execution of: {cmd}" # Fast fallback
+                # Explicitly route to session manager
+                output = TOOL_MAP["shell"](params)
                 
             else:
                 status = "Fail"

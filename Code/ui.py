@@ -327,9 +327,13 @@ class NexusOS(App):
 
                     # Normal tool result
                     log.write_line(f"   🔧 [{tool}] {result['output'][:200]}")
+                    
+                    # Explicitly label as Observation for current_state context
+                    observation_prefix = "[TEST VERIFICATION]" if tool == "run_test" else f"[TOOL {tool}]"
+                    
                     thread.append({
                         "role": "tool_result",
-                        "content": f"[TOOL {tool}]:\n{result['output']}"
+                        "content": f"{observation_prefix}:\n{result['output']}\n\nCURRENT STATE OBSERVATION:\n{result['current_state']}"
                     })
 
                 elif action == "shell":

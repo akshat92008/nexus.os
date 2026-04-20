@@ -138,28 +138,21 @@ async def agent(request: AgentRequest):
         """
 
         # Add GUI Tools to the system prompt
-        GUI_TOOLS_REGISTRY = """
-        -- NATIVE GUI TOOLS --
-        You have direct control over the native OS GUI.
-        - read_gui_state: "Returns a JSON map of the current active window's UI elements. Use this to find buttons or fields."
-        - gui_click: "Clicks a specific element based on the ID provided by read_gui_state." (Params: {"element_id": "value"})
-        - gui_type: "Types a specific string into a text field in the active window." (Params: {"text": "value"})
+        TOOLS_REGISTRY = """
+        -- ACTIVE OMNI-TOOLSET (Persistent Shell) --
+        You have a PERSISTENT SHELL session. Directory changes (cd) and environment variables PERSIST across calls.
+        1. global_search: "Recursive regex search across codebase." (Params: {"query": "str"})
+        2. list_files: "Deep project structure discovery." (Params: {"depth": 3})
+        3. git_manage: "Git lifecycle (diff, commit, branch, status)." (Params: {"action": "str", "message": "str"})
+        4. patch_file: "Precise search-and-replace." (Params: {"path": "str", "search_text": "str", "replace_text": "str"})
+        5. shell: "Execute persistent bash commands." (Params: {"command": "str"})
+        6. read_gui_state / gui_click / gui_type: "Native GUI Control."
 
-        -- MCP PLATFORM TOOLS (Dynamic) --
-        You are connected to an MCP Bridge. If the target requires external data (GitHub, Figma, etc.), use the corresponding MCP tool.
-        - mcp_github_fetch (Params: {"repo": "string", "path": "string"})
-        - mcp_figma_extract (Params: {"document_id": "string"})
-
-        -- AGENT HANDOFF PROTOCOL --
-        If a task requires another persona's specialty (e.g. SysAgent needs DevAgent to fix a script), use the "transfer" action.
-        Format: {"action": "transfer", "transfer_to": "TargetAgent", "state": {"key": "value"}, "requirement": "Prompt for target agent"}
-
-        -- AGENTIC PERFORMANCE LOOP --
-        When interacting with the GUI or MCP tools, follow this exact reasoning flow:
-        User Intent -> Tool Selection -> Execute -> Read State (Observe) -> Verify -> Correct/DONE.
+        -- REPL COGNITIVE LOOP --
+        OBSERVE (list_files/global_search) ➔ ANALYZE (read_file) ➔ PLAN (state intent) ➔ EXECUTE (patch/shell) ➔ VERIFY.
         """
 
-        enriched_prompt = f"{agent_prompt}\n{GUI_TOOLS_REGISTRY}\n\nSESSION HISTORY:\n{memory.get_context()}\n{MEMORY_PROMPT}"
+        enriched_prompt = f"{agent_prompt}\n{TOOLS_REGISTRY}\n\nSESSION HISTORY:\n{memory.get_context()}\n{MEMORY_PROMPT}"
 
         # Build the OpenRouter message thread
         messages = []
