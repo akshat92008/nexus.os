@@ -31,6 +31,10 @@ const item = {
   hidden: { opacity: 0, y: 20 },
   show: { opacity: 1, y: 0 }
 };
+export function AdaptiveDashboard() {
+  const { workspaces } = useNexusStore();
+  const { currentMode } = useModeStore();
+  const { useEffect } = require("react");
 
   const { brainStats, fetchBrainStats } = useNexusStore();
   const workspacesList = Object.values(workspaces).sort((a, b) => b.createdAt - a.createdAt);
