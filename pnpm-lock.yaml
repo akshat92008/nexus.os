@@ -33,9 +33,6 @@ importers:
       '@supabase/supabase-js':
         specifier: ^2.102.1
         version: 2.102.1
-      '@types/ws':
-        specifier: ^8.18.1
-        version: 8.18.1
       bullmq:
         specifier: ^5.73.0
         version: 5.73.0
@@ -72,9 +69,6 @@ importers:
       uuid:
         specifier: ^10.0.0
         version: 10.0.0
-      ws:
-        specifier: ^8.20.0
-        version: 8.20.0
       zod:
         specifier: ^3.22.0
         version: 3.25.76

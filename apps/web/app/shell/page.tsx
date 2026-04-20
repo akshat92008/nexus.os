@@ -141,6 +141,7 @@ export default function CommandPilot() {
            )}
         </AnimatePresence>
 
+      </div>
     </div>
   );
 }

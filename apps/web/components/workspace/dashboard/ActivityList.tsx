@@ -33,7 +33,7 @@ export function ActivityList() {
       
       {activities.length === 0 ? (
         <div className="text-zinc-500 text-sm mt-4">No recent activity. Head to the home page to launch a mission!</div>
-          ) :
+      ) : (
         activities.slice(0, 3).map((activity, i) => (
           <motion.div
            key={i}
