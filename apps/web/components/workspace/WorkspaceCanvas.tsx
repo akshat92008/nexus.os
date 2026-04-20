@@ -9,7 +9,7 @@ import { TaskSection } from './sections/TaskSection';
 import { ProjectBoard } from './ProjectBoard';
 import { 
   Lightbulb, FileText, FileSpreadsheet, Download, FileJson, X, Kanban,
-  Search, Globe, Zap, TrendingUp, Target
+  Search, Globe, Zap, TrendingUp, Target, AlertCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { WorkspaceSection, ExportFormat } from '@nexus-os/types';

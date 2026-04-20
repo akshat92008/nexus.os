@@ -4,7 +4,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { Bookmark, User, FileText, Share2 } from 'lucide-react';
 
-import { useNexusStore } from '../../store/nexusStore';
+import { useNexusStore } from '../../../store/nexusStore';
 
 export function StatsGrid() {
   const fsItems = useNexusStore((s) => s.fsItems || []);

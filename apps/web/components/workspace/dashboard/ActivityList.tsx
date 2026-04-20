@@ -4,7 +4,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { MessageSquare, Tag } from 'lucide-react';
 
-import { useNexusStore } from '../../store/nexusStore';
+import { useNexusStore } from '../../../store/nexusStore';
 
 export function ActivityList() {
   const ongoingMissions = useNexusStore(s => Object.values(s.ongoingMissions || {}).slice().reverse());
@@ -63,7 +63,8 @@ export function ActivityList() {
             {activity.tag}
           </div>
         </motion.div>
-      ))}
+        ))
+      )}
     </div>
   );
 }

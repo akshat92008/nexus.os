@@ -6,6 +6,14 @@ import { Search, X, Command, CornerDownLeft, Target, Database, Zap, FileText } f
 export function SearchView() {
   const { ui, workspaces, toggleSearchView, setActiveWorkspace } = useNexusStore();
   const [query, setQuery] = useState('');
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') toggleSearchView();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [toggleSearchView]);
   
   if (!ui.searchViewOpen) return null;
 
@@ -17,14 +25,6 @@ export function SearchView() {
     setActiveWorkspace(id);
     toggleSearchView();
   };
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') toggleSearchView();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [toggleSearchView]);
 
   const getIcon = (type: string) => {
     switch (type) {
@@ -94,7 +94,7 @@ export function SearchView() {
              ) : query ? (
                <div className="flex flex-col items-center justify-center pt-12 text-slate-500">
                  <Search size={40} className="mb-4 opacity-10" />
-                 <p className="text-sm">No neural matches found for "{query}"</p>
+                <p className="text-sm">No neural matches found for &quot;{query}&quot;</p>
                  <p className="text-xs mt-1 border-stone-800">Try searching for a specific goal or mission type.</p>
                </div>
              ) : (

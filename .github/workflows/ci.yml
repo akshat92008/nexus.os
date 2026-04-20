@@ -12,16 +12,16 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v4
+      with:
+        version: 9.5.0
+
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
         node-version: '20'
         cache: 'pnpm'
-
-    - name: Setup pnpm
-      uses: pnpm/action-setup@v4
-      with:
-        version: 9.5.0
 
     - name: Install dependencies
       run: pnpm install --frozen-lockfile
@@ -53,22 +53,25 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v4
+      with:
+        version: 9.5.0
+
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
         node-version: '20'
         cache: 'pnpm'
 
-    - name: Setup pnpm
-      uses: pnpm/action-setup@v4
-      with:
-        version: 9.5.0
-
     - name: Install dependencies
       run: pnpm install --frozen-lockfile
 
     - name: Build
       run: pnpm run build
+      env:
+        NEXT_PUBLIC_SUPABASE_URL: http://localhost:54321
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRlaGFiaGprbXF4eXZ4bXhzY3JvIiwicm9sZSI6ImFub24iLCJpYXQiOjE2NTU3NzQ1OTMsImV4cCI6MTk3MTM1MDU5M30
 
     - name: Run unit tests
       run: pnpm --filter @nexus-os/api test:coverage
@@ -112,22 +115,25 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v4
+      with:
+        version: 9.5.0
+
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
         node-version: '20'
         cache: 'pnpm'
 
-    - name: Setup pnpm
-      uses: pnpm/action-setup@v4
-      with:
-        version: 9.5.0
-
     - name: Install dependencies
       run: pnpm install --frozen-lockfile
 
     - name: Build
       run: pnpm run build
+      env:
+        NEXT_PUBLIC_SUPABASE_URL: http://localhost:54321
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRlaGFiaGprbXF4eXZ4bXhzY3JvIiwicm9sZSI6ImFub24iLCJpYXQiOjE2NTU3NzQ1OTMsImV4cCI6MTk3MTM1MDU5M30
 
     - name: Run e2e tests
       run: pnpm --filter @nexus-os/api test:e2e
