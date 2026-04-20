@@ -27,7 +27,9 @@ Rules:
  */
 export async function runConsensus(prompt: string, context = '', config?: any): Promise<string> {
   // 🚨 FIX 1: Robust token limit fallback
-  const tokenLimit = config?.token?.limit ?? 1500;
+  const tokenLimit = (typeof config?.token?.limit === 'number' && config.token.limit > 0)
+    ? config.token.limit
+    : 1500;
 
   const systemPrompt = context
     ? `You are a helpful expert assistant.\n\nContext:\n${context}`
