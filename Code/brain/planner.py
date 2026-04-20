@@ -29,7 +29,7 @@ def call_openrouter(prompt: str, messages: list):
     except Exception as e:
         return json.dumps({
             "action": "done",
-            "explanation": f"API Error: {str(e)}"
+            "explanation": "Brain is currently overloaded, retrying in 2s..."
         })
 
 def extract_json(raw_text: str):

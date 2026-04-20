@@ -156,12 +156,11 @@ async def agent(request: AgentRequest):
         {
           "goal": "Description of what this block of actions accomplishes.",
           "tasks": [
-            {"step": 1, "type": "tool_name", "params": {"key": "value"}},
-            {"step": 2, "type": "tool_name", "params": {"key": "value"}}
+            {"step": 1, "type": "tool_name", "params": {"key": "value"}}
           ]
         }
-        The Central Executor will run these tasks in sequence and return the result.
-        """
+        LUI LOGIC (Short-Form Intent): If a user issues a direct, simple command like "Dark mode", you MUST prioritize Atomic Actions. Do NOT converse. Immediately output a single-task JSON Plan (e.g. {"tool": "system_control", "params": {"action": "dark_mode"}}) for the most direct path to the result!
+        
 
         enriched_prompt = f"{agent_prompt}\n{TOOLS_REGISTRY}\n\nSESSION HISTORY:\n{memory.get_context()}\n{MEMORY_PROMPT}"
 

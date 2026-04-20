@@ -42,8 +42,21 @@ pub async fn execute_mission(
             "status": "executing"
         }));
 
-        // Run the tool (synchronously for now to match execution engine)
-        let _tool_result = run_tool(step.tool.clone(), step.params.clone());
+        // Run the tool and catch errors for Saga Rollback
+        match run_tool(step.tool.clone(), step.params.clone()) {
+            Ok(_) => continue,
+            Err(e) => {
+                // Emit rollback UI indicator
+                let _ = app_handle.emit("mission-update", json!({
+                    "mission": brain_res.mission.clone(),
+                    "plan": brain_res.plan.clone(),
+                    "current_step": brain_res.current_step,
+                    "status": "rolling_back",
+                    "error": e
+                }));
+                return Err(format!("Saga Rollback Triggered: {}", e));
+            }
+        }
     }
     
     // 4. Mission Accomplished

@@ -19,6 +19,14 @@ use tauri::{Manager, Emitter};
 use notify::{Watcher, RecursiveMode, event::EventKind};
 use std::path::PathBuf;
 
+#[tauri::command]
+fn toggle_gateway(app_handle: tauri::AppHandle, active: bool) {
+    if let Some(window) = app_handle.get_webview_window("main") {
+        let _ = window.set_ignore_cursor_events(!active);
+    }
+}
+
+
 fn setup_watcher(app_handle: tauri::AppHandle) {
     std::thread::spawn(move || {
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
@@ -56,6 +64,11 @@ fn setup_watcher(app_handle: tauri::AppHandle) {
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
+            // Configure Ghost Window
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_ignore_cursor_events(true);
+            }
+
             // Initialize Memory Module
             let handle = app.handle().clone();
             app.manage(MemoryManager::new(&handle));
@@ -80,7 +93,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             execute_mission,
             run_tool,
-            get_memory_status
+            get_memory_status,
+            toggle_gateway
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
