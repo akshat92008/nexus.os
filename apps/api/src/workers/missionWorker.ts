@@ -276,10 +276,10 @@ export function startMissionEventListener(): void {
   setInterval(async () => {
     try {
       const activeMissions = await nexusStateStore.getActiveMissions();
-      for (const m of activeMissions) {
-        // Attempt to "nudge" each active mission
-        await onTaskCompleted('__fallback__', m.id);
-      }
+      // 🚀 OPTIMIZATION: Wrap onTaskCompleted calls in Promise.allSettled to allow concurrent sweeps
+      await Promise.allSettled(
+        activeMissions.map((m) => onTaskCompleted('__fallback__', m.id))
+      );
     } catch (err) {
       // Background noise
     }
