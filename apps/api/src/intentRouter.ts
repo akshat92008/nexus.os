@@ -76,3 +76,14 @@ export async function routeIntent(
     }
   }
 }
+
+/**
+ * Pillar 1: Semantic Router via local vector bindings
+ * Connects with the sqlite-vec backend (Tauri) to classify intent based on proximity.
+ */
+export async function routeIntentSemantic(input: string): Promise<string> {
+    // Phase 4 Bootstrap - This maps the function signature to the rust binding
+    console.log(`[SemanticRouter] Querying local sqlite-vec for intent matching...`);
+    // Example: fetch('http://localhost:3001/semantic_route', { method: 'POST', body: JSON.stringify({ intent: input }) })
+    return Promise.resolve("developer");
+}

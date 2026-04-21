@@ -9,6 +9,7 @@ mod gui_engine;
 mod memory;
 mod commands;
 mod mcp_client;
+mod router;
 
 use ai_service::AIService;
 use mcp_client::McpClient;
