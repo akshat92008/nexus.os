@@ -92,4 +92,45 @@ impl GuiEngine {
     pub fn set_text_value(_value: &str) -> Result<String, String> {
         Ok(format!("✅ Target logic ready: Simulating text injection of '{}'", _value))
     }
+
+    /// Computes the Levenshtein distance between two strings
+    fn levenshtein(a: &str, b: &str) -> usize {
+        let a_chars: Vec<char> = a.chars().collect();
+        let b_chars: Vec<char> = b.chars().collect();
+        let mut matrix = vec![vec![0; b_chars.len() + 1]; a_chars.len() + 1];
+
+        for i in 0..=a_chars.len() { matrix[i][0] = i; }
+        for j in 0..=b_chars.len() { matrix[0][j] = j; }
+
+        for i in 1..=a_chars.len() {
+            for j in 1..=b_chars.len() {
+                let cost = if a_chars[i - 1] == b_chars[j - 1] { 0 } else { 1 };
+                matrix[i][j] = std::cmp::min(
+                    std::cmp::min(matrix[i - 1][j] + 1, matrix[i][j - 1] + 1),
+                    matrix[i - 1][j - 1] + cost,
+                );
+            }
+        }
+        matrix[a_chars.len()][b_chars.len()]
+    }
+
+    /// Finds an element using Levenshtein distance on title/role and structural validation via AX tree path.
+    pub fn find_element_fuzzy(label: &str, _expected_path_hints: Option<Vec<&str>>) -> Result<String, String> {
+        // Mocking the structural pathing and Levenshtein logic for Phase 4 bootstrap.
+        // We simulate finding a close match.
+        let target = "Save Document";
+        let distance = Self::levenshtein(label, target);
+
+        if distance <= 3 {
+             Ok(format!("Found fuzzy match: '{}' (distance: {})", target, distance))
+        } else {
+             Err(format!("Could not find element matching '{}' within acceptable distance", label))
+        }
+    }
+
+    /// Verifies that a specific element state has changed after an action.
+    pub fn verify_gui_state(_pre_action_tree: &str, _action: &str) -> Result<bool, String> {
+        // Mocks taking a post-action screenshot/tree capture and comparing.
+        Ok(true)
+    }
 }

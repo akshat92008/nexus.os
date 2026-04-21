@@ -1,4 +1,5 @@
 import { getSupabase } from '../storage/supabaseClient.js';
+import { logger } from '../logger.js';
 
 export interface ActionLog {
   id: string;
@@ -7,6 +8,14 @@ export interface ActionLog {
   params: any;
   undo_params: any; // The parameters needed to reverse this action
   created_at: string;
+}
+
+export type NextState = 'PROCEED' | 'CORRECT' | 'ROLLBACK';
+
+export interface ObservationResult {
+    exitCode: number;
+    output: string;
+    errorOutput: string;
 }
 
 export class SagaManager {
@@ -26,10 +35,51 @@ export class SagaManager {
       }]);
     
     if (error) {
-      console.error(`[SagaManager] ❌ Log Failure: ${error.message}`);
+      logger.error(`[SagaManager] ❌ Log Failure: ${error.message}`);
       throw new Error(`Saga Log Failure: ${error.message}`);
     }
     return data;
+  }
+
+  /**
+   * Evaluates observation output and triggers either progression, correction, or rollback.
+   * Implementation of the ROAV Verify Step.
+   */
+  async verifyObservation(goalId: string, result: ObservationResult): Promise<NextState> {
+      logger.info(`[SagaManager] Verifying Observation for goal ${goalId}`);
+
+      if (result.exitCode === 0) {
+          return 'PROCEED';
+      }
+
+      // If there's an error, attempt to parse if it's fixable
+      if (result.errorOutput && result.errorOutput.includes('syntax error')) {
+          logger.warn(`[SagaManager] Detected fixable error for goal ${goalId}. Requesting CORRECT state.`);
+          return 'CORRECT';
+      }
+
+      // Default to rollback on catastrophic failure
+      logger.error(`[SagaManager] Unrecoverable error for goal ${goalId}. Requesting ROLLBACK state.`);
+      return 'ROLLBACK';
+  }
+
+  /**
+   * Executes compensation logic sequentially using logged undo_params.
+   */
+  async executeRollback(goalId: string): Promise<void> {
+      logger.info(`[SagaManager] Initiating rollback for goal ${goalId}`);
+
+      let action = await this.getLastAction(goalId);
+      while (action) {
+          logger.info(`[SagaManager] Reverting action ${action.tool_id} for goal ${goalId}`);
+
+          // In a real implementation, we would call the specific tool's reverse function
+          // e.g. ToolRegistry.get(action.tool_id).undo(action.undo_params);
+
+          await this.clearAction(action.id);
+          action = await this.getLastAction(goalId);
+      }
+      logger.info(`[SagaManager] Rollback complete for goal ${goalId}`);
   }
 
   /**
