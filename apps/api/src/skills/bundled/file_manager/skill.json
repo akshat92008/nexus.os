@@ -1,0 +1,124 @@
+{
+  "id": "file_manager",
+  "name": "File Manager",
+  "version": "1.0.0",
+  "description": "Manage files and directories on the local filesystem",
+  "author": "nexus-os",
+  "source": "bundled",
+  "type": "system",
+  "tools": [
+    {
+      "id": "read_file",
+      "name": "read_file",
+      "description": "Read the contents of a file",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to the file"
+          },
+          "encoding": {
+            "type": "string",
+            "description": "File encoding",
+            "default": "utf-8"
+          }
+        },
+        "required": ["path"]
+      },
+      "handler": "handlers/read_file.js",
+      "returnType": "object"
+    },
+    {
+      "id": "write_file",
+      "name": "write_file",
+      "description": "Write content to a file",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to the file"
+          },
+          "content": {
+            "type": "string",
+            "description": "Content to write"
+          },
+          "encoding": {
+            "type": "string",
+            "description": "File encoding",
+            "default": "utf-8"
+          }
+        },
+        "required": ["path", "content"]
+      },
+      "handler": "handlers/write_file.js",
+      "returnType": "object"
+    },
+    {
+      "id": "list_dir",
+      "name": "list_dir",
+      "description": "List files and directories",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Directory path"
+          }
+        },
+        "required": ["path"]
+      },
+      "handler": "handlers/list_dir.js",
+      "returnType": "object"
+    },
+    {
+      "id": "create_folder",
+      "name": "create_folder",
+      "description": "Create a new directory",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Directory path"
+          }
+        },
+        "required": ["path"]
+      },
+      "handler": "handlers/create_folder.js",
+      "returnType": "object"
+    }
+  ],
+  "config": {
+    "schema": {
+      "allowed_paths": {
+        "type": "array",
+        "description": "Allowed paths for file operations",
+        "default": ["./workspace"]
+      }
+    },
+    "defaults": {
+      "allowed_paths": ["./workspace"]
+    }
+  },
+  "runtime": {
+    "language": "javascript",
+    "sandbox": {
+      "enabled": false
+    }
+  },
+  "dependencies": {},
+  "permissions": {
+    "filesystem": ["./workspace/*", "/workspace/*", "/tmp/*"],
+    "network": false,
+    "shell": false,
+    "envVars": []
+  },
+  "metadata": {
+    "tags": ["filesystem", "io", "files"],
+    "category": "system",
+    "icon": "folder",
+    "color": "#f59e0b"
+  }
+}
