@@ -1,0 +1,60 @@
+{
+  "id": "blucli",
+  "name": "Bluetooth Manager",
+  "version": "1.0.0",
+  "description": "Manage Bluetooth connections on macOS via system commands",
+  "author": "nexus-os",
+  "source": "bundled",
+  "type": "system",
+  "tools": [
+    {
+      "id": "bt_status",
+      "name": "blucli_status",
+      "description": "Get Bluetooth power and device status",
+      "parameters": { "type": "object", "properties": {} },
+      "handler": "handlers/status.js",
+      "returnType": "object"
+    },
+    {
+      "id": "bt_devices",
+      "name": "blucli_devices",
+      "description": "List paired Bluetooth devices",
+      "parameters": { "type": "object", "properties": {} },
+      "handler": "handlers/devices.js",
+      "returnType": "object"
+    },
+    {
+      "id": "bt_connect",
+      "name": "blucli_connect",
+      "description": "Connect to a Bluetooth device by name or MAC address",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "device": { "type": "string", "description": "Device name or MAC address" }
+        },
+        "required": ["device"]
+      },
+      "handler": "handlers/connect.js",
+      "returnType": "object"
+    },
+    {
+      "id": "bt_disconnect",
+      "name": "blucli_disconnect",
+      "description": "Disconnect from a Bluetooth device",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "device": { "type": "string", "description": "Device name or MAC address" }
+        },
+        "required": ["device"]
+      },
+      "handler": "handlers/disconnect.js",
+      "returnType": "object"
+    }
+  ],
+  "config": { "schema": {}, "defaults": {} },
+  "runtime": { "language": "javascript", "sandbox": { "enabled": false } },
+  "dependencies": {},
+  "permissions": { "filesystem": [], "network": false, "shell": true, "envVars": [] },
+  "metadata": { "tags": ["macos", "bluetooth", "wireless"], "category": "system", "icon": "bluetooth", "color": "#0082FC" }
+}

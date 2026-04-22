@@ -1,0 +1,38 @@
+{
+  "id": "camsnap",
+  "name": "Camera Snap",
+  "version": "1.0.0",
+  "description": "Capture snapshots from the built-in camera on macOS",
+  "author": "nexus-os",
+  "source": "bundled",
+  "type": "system",
+  "tools": [
+    {
+      "id": "cam_capture",
+      "name": "camsnap_capture",
+      "description": "Take a photo with the built-in camera and save to a file",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "output_path": { "type": "string", "description": "Output file path (default: /tmp/capture-{timestamp}.jpg)" },
+          "device": { "type": "string", "description": "Camera device name (default: FaceTime HD Camera)" }
+        }
+      },
+      "handler": "handlers/capture.js",
+      "returnType": "object"
+    },
+    {
+      "id": "cam_list",
+      "name": "camsnap_list",
+      "description": "List available video devices",
+      "parameters": { "type": "object", "properties": {} },
+      "handler": "handlers/list.js",
+      "returnType": "object"
+    }
+  ],
+  "config": { "schema": {}, "defaults": {} },
+  "runtime": { "language": "javascript", "sandbox": { "enabled": false } },
+  "dependencies": {},
+  "permissions": { "filesystem": ["/tmp/*"], "network": false, "shell": true, "envVars": [] },
+  "metadata": { "tags": ["macos", "camera", "photo"], "category": "system", "icon": "camera", "color": "#FF5722" }
+}

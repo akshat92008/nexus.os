@@ -1,0 +1,34 @@
+# 🚀 NEXUS OS — ULTIMATE CLOUD UPLOAD OPTIMIZATION 🚀
+
+# Essential Configuration
+.git
+.gitignore
+.gcloudignore
+.npmrc
+
+# THE GIANTS (Universal Build Targets & Binaries)
+**/target/
+src-tauri/nexus-api/target/
+**/node_modules/
+**/dist/
+**/.next/
+**/out/
+**/tsconfig.tsbuildinfo
+binaries/
+nexus-api-x86_64-apple-darwin
+
+# Logs & PIDs
+*.log
+*.pid
+scratch/
+
+# Environmental Bloat
+.gemini/
+.idx/
+.devcontainer/
+nexus_env/
+__pycache__/
+*.pyc
+
+# Final Logic: If it isn't source code or necessary config, it goes away.
+# (Do NOT ignore apps/ or packages/ as these contain the source code)

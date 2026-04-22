@@ -1,0 +1,82 @@
+{
+  "id": "sonoscli",
+  "name": "Sonos Speaker Control",
+  "version": "1.0.0",
+  "description": "Control Sonos speakers on the local network",
+  "author": "nexus-os",
+  "source": "bundled",
+  "type": "system",
+  "tools": [
+    {
+      "id": "sonos_discover",
+      "name": "sonoscli_discover",
+      "description": "Discover Sonos speakers on the network",
+      "parameters": { "type": "object", "properties": {} },
+      "handler": "handlers/discover.js",
+      "returnType": "object"
+    },
+    {
+      "id": "sonos_play",
+      "name": "sonoscli_play",
+      "description": "Play on a Sonos speaker",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "room": { "type": "string", "description": "Room name or speaker UUID" },
+          "uri": { "type": "string", "description": "Optional URI to play" }
+        },
+        "required": ["room"]
+      },
+      "handler": "handlers/play.js",
+      "returnType": "object"
+    },
+    {
+      "id": "sonos_pause",
+      "name": "sonoscli_pause",
+      "description": "Pause a Sonos speaker",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "room": { "type": "string", "description": "Room name or speaker UUID" }
+        },
+        "required": ["room"]
+      },
+      "handler": "handlers/pause.js",
+      "returnType": "object"
+    },
+    {
+      "id": "sonos_volume",
+      "name": "sonoscli_volume",
+      "description": "Set volume on a Sonos speaker",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "room": { "type": "string", "description": "Room name or speaker UUID" },
+          "level": { "type": "number", "description": "Volume 0-100" }
+        },
+        "required": ["room", "level"]
+      },
+      "handler": "handlers/volume.js",
+      "returnType": "object"
+    },
+    {
+      "id": "sonos_now_playing",
+      "name": "sonoscli_now_playing",
+      "description": "Get currently playing track on a Sonos speaker",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "room": { "type": "string", "description": "Room name or speaker UUID" }
+        },
+        "required": ["room"]
+      },
+      "handler": "handlers/now_playing.js",
+      "returnType": "object"
+    }
+  ],
+  "config": { "schema": {}, "defaults": {} },
+  "runtime": { "language": "javascript", "sandbox": { "enabled": false } },
+  "dependencies": {},
+  "permissions": { "filesystem": [], "network": true, "shell": false, "envVars": [] },
+  "metadata": { "tags": ["sonos", "audio", "smart-speaker"], "category": "media", "icon": "speaker", "color": "#1A1A1A" }
+}

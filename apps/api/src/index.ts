@@ -168,10 +168,14 @@ async function initHeavyServices() {
         const { EmailAdapter } = await import('./channels/adapters/emailAdapter.js');
         const { WhatsAppAdapter } = await import('./channels/adapters/whatsappAdapter.js');
         const { SmsAdapter } = await import('./channels/adapters/smsAdapter.js');
+        const { SignalAdapter } = await import('./channels/adapters/signalAdapter.js');
+        const { MatrixAdapter } = await import('./channels/adapters/matrixAdapter.js');
         channelManager.registerAdapter('email', new EmailAdapter());
         channelManager.registerAdapter('whatsapp', new WhatsAppAdapter());
         channelManager.registerAdapter('sms', new SmsAdapter());
-        console.log('[Boot] 📧 Email / WhatsApp / SMS adapters registered');
+        channelManager.registerAdapter('signal', new SignalAdapter());
+        channelManager.registerAdapter('matrix', new MatrixAdapter());
+        console.log('[Boot] 📧 Email / WhatsApp / SMS / Signal / Matrix adapters registered');
 
         // ═══════════════════════════════════════════════════════════════
 
