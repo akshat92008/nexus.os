@@ -1,0 +1,107 @@
+{
+  "id": "browser",
+  "name": "Browser Automation",
+  "version": "1.0.0",
+  "description": "Headless browser automation for web scraping, screenshots, and interactions",
+  "author": "nexus-os",
+  "source": "bundled",
+  "type": "system",
+  "tools": [
+    {
+      "id": "browser_navigate",
+      "name": "browser_navigate",
+      "description": "Navigate to a URL and return page content",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": { "type": "string", "description": "URL to navigate to" },
+          "wait_for": { "type": "string", "description": "CSS selector to wait for" },
+          "timeout": { "type": "number", "description": "Navigation timeout in ms", "default": 30000 }
+        },
+        "required": ["url"]
+      },
+      "handler": "handlers/navigate.js",
+      "returnType": "object"
+    },
+    {
+      "id": "browser_screenshot",
+      "name": "browser_screenshot",
+      "description": "Take a screenshot of a webpage",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": { "type": "string", "description": "URL to screenshot" },
+          "selector": { "type": "string", "description": "CSS selector to screenshot specific element" },
+          "full_page": { "type": "boolean", "description": "Capture full page", "default": true },
+          "output_path": { "type": "string", "description": "Path to save screenshot" }
+        },
+        "required": ["url"]
+      },
+      "handler": "handlers/screenshot.js",
+      "returnType": "object"
+    },
+    {
+      "id": "browser_extract",
+      "name": "browser_extract",
+      "description": "Extract structured data from a webpage using selectors",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": { "type": "string", "description": "URL to extract from" },
+          "selectors": {
+            "type": "object",
+            "description": "Named CSS selectors to extract",
+            "additionalProperties": { "type": "string" }
+          },
+          "attributes": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "HTML attributes to extract (text, href, src, etc)"
+          }
+        },
+        "required": ["url", "selectors"]
+      },
+      "handler": "handlers/extract.js",
+      "returnType": "object"
+    }
+  ],
+  "config": {
+    "schema": {
+      "headless": {
+        "type": "boolean",
+        "description": "Run browser in headless mode",
+        "default": true
+      },
+      "user_agent": {
+        "type": "string",
+        "description": "Custom user agent string",
+        "default": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+      }
+    },
+    "defaults": {
+      "headless": true,
+      "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+    }
+  },
+  "runtime": {
+    "language": "javascript",
+    "sandbox": { "enabled": false }
+  },
+  "dependencies": {
+    "npm": {
+      "puppeteer": "^21.0.0"
+    }
+  },
+  "permissions": {
+    "filesystem": ["/tmp/*"],
+    "network": true,
+    "shell": false,
+    "envVars": []
+  },
+  "metadata": {
+    "tags": ["browser", "web", "scraping", "screenshot"],
+    "category": "system",
+    "icon": "globe",
+    "color": "#6366f1"
+  }
+}

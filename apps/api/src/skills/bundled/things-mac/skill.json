@@ -1,0 +1,63 @@
+{
+  "id": "things-mac",
+  "name": "Things 3 (macOS)",
+  "version": "1.0.0",
+  "description": "Create, list, and complete tasks in Things 3 task manager on macOS",
+  "author": "nexus-os",
+  "source": "bundled",
+  "type": "system",
+  "tools": [
+    {
+      "id": "things_create",
+      "name": "things_create",
+      "description": "Create a new task in Things 3",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string", "description": "Task title" },
+          "list": { "type": "string", "description": "List/Area name (e.g. Inbox, Today, Someday, or area name)" },
+          "notes": { "type": "string", "description": "Task notes" },
+          "due_date": { "type": "string", "description": "Due date" },
+          "tag": { "type": "string", "description": "Tag to apply" },
+          "project": { "type": "string", "description": "Project name" }
+        },
+        "required": ["title"]
+      },
+      "handler": "handlers/create.js",
+      "returnType": "object"
+    },
+    {
+      "id": "things_list",
+      "name": "things_list",
+      "description": "List tasks from Things 3",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list": { "type": "string", "description": "List name (Inbox, Today, Upcoming, Someday, Anytime, Logbook)" },
+          "limit": { "type": "number", "description": "Max tasks", "default": 20 }
+        }
+      },
+      "handler": "handlers/list.js",
+      "returnType": "object"
+    },
+    {
+      "id": "things_complete",
+      "name": "things_complete",
+      "description": "Mark a Things 3 task as completed",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string", "description": "Exact task title" }
+        },
+        "required": ["title"]
+      },
+      "handler": "handlers/complete.js",
+      "returnType": "object"
+    }
+  ],
+  "config": { "schema": {}, "defaults": {} },
+  "runtime": { "language": "javascript", "sandbox": { "enabled": false } },
+  "dependencies": {},
+  "permissions": { "filesystem": [], "network": false, "shell": true, "envVars": [] },
+  "metadata": { "tags": ["macos", "things3", "tasks"], "category": "productivity", "icon": "layers", "color": "#007AFF" }
+}

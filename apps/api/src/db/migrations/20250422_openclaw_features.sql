@@ -7,7 +7,7 @@
 
 CREATE TABLE IF NOT EXISTS channel_configs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    type TEXT NOT NULL CHECK (type IN ('slack', 'discord', 'telegram', 'email', 'websocket', 'sms', 'webchat')),
+    type TEXT NOT NULL CHECK (type IN ('slack', 'discord', 'telegram', 'email', 'whatsapp', 'sms', 'webchat', 'matrix', 'signal')),
     name TEXT NOT NULL,
     workspace_id UUID,
     credentials JSONB NOT NULL DEFAULT '{}',
@@ -224,3 +224,106 @@ BEGIN
     NULL;
 END;
 $$;
+
+-- ═══════════════════════════════════════════════════════════════
+-- CANVAS / LIVE DOCUMENT SYSTEM
+-- ═══════════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS canvas_documents (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title TEXT NOT NULL,
+    type TEXT NOT NULL CHECK (type IN ('whiteboard', 'code', 'markdown', 'diagram', 'spreadsheet', 'mixed')),
+    content JSONB NOT NULL DEFAULT '[]',
+    participants UUID[] DEFAULT '{}',
+    created_by UUID,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    version INTEGER DEFAULT 1,
+    metadata JSONB DEFAULT '{}'
+);
+
+CREATE TABLE IF NOT EXISTS canvas_operations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    document_id UUID REFERENCES canvas_documents(id) ON DELETE CASCADE,
+    type TEXT NOT NULL CHECK (type IN ('insert', 'update', 'delete', 'move', 'resize', 'style')),
+    block_id UUID,
+    data JSONB NOT NULL DEFAULT '{}',
+    author UUID,
+    timestamp TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_canvas_documents_created ON canvas_documents(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_canvas_operations_doc ON canvas_operations(document_id);
+
+-- ═══════════════════════════════════════════════════════════════
+-- VOICE / AUDIO PIPELINE
+-- ═══════════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS voice_sessions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    status TEXT NOT NULL CHECK (status IN ('idle', 'listening', 'processing', 'speaking', 'error')),
+    mode TEXT NOT NULL CHECK (mode IN ('push-to-talk', 'continuous', 'wake-word')),
+    wake_word TEXT,
+    language TEXT DEFAULT 'en',
+    model TEXT DEFAULT 'whisper-1',
+    tts_voice TEXT DEFAULT 'alloy',
+    tts_provider TEXT DEFAULT 'openai',
+    auto_reply BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    last_activity_at TIMESTAMPTZ DEFAULT now(),
+    metadata JSONB DEFAULT '{}'
+);
+
+CREATE TABLE IF NOT EXISTS voice_chunks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id UUID REFERENCES voice_sessions(id) ON DELETE CASCADE,
+    type TEXT NOT NULL CHECK (type IN ('audio_in', 'transcript', 'ai_response', 'audio_out')),
+    data JSONB NOT NULL DEFAULT '{}',
+    timestamp TIMESTAMPTZ DEFAULT now(),
+    duration INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_voice_sessions_status ON voice_sessions(status);
+CREATE INDEX IF NOT EXISTS idx_voice_chunks_session ON voice_chunks(session_id);
+
+-- ═══════════════════════════════════════════════════════════════
+-- DAEMON MONITORING
+-- ═══════════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS daemon_status_history (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    pid INTEGER NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('running', 'restarting', 'stopped', 'error')),
+    uptime_seconds INTEGER,
+    memory_rss_mb FLOAT,
+    memory_heap_mb FLOAT,
+    cpu_user_ms FLOAT,
+    cpu_system_ms FLOAT,
+    active_connections INTEGER DEFAULT 0,
+    queued_tasks INTEGER DEFAULT 0,
+    restart_count INTEGER DEFAULT 0,
+    timestamp TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_daemon_status_timestamp ON daemon_status_history(timestamp DESC);
+
+-- ═══════════════════════════════════════════════════════════════
+-- DOCKER SANDBOX INSTANCES
+-- ═══════════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS sandbox_instances (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    image TEXT NOT NULL,
+    container_id TEXT,
+    status TEXT NOT NULL CHECK (status IN ('creating', 'running', 'paused', 'stopped', 'error')),
+    config JSONB NOT NULL DEFAULT '{}',
+    start_time TIMESTAMPTZ,
+    end_time TIMESTAMPTZ,
+    exit_code INTEGER,
+    stdout TEXT,
+    stderr TEXT,
+    logs JSONB DEFAULT '[]',
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_sandbox_status ON sandbox_instances(status);

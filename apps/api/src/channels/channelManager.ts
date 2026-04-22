@@ -8,7 +8,7 @@ import { eventBus } from '../events/eventBus.js';
 import { getSupabase } from '../storage/supabaseClient.js';
 import { randomUUID } from 'crypto';
 
-export type ChannelType = 'slack' | 'discord' | 'telegram' | 'email' | 'websocket' | 'sms' | 'webchat';
+export type ChannelType = 'slack' | 'discord' | 'telegram' | 'email' | 'whatsapp' | 'sms' | 'webchat' | 'websocket' | 'matrix' | 'signal';
 
 export interface ChannelMessage {
   id: string;

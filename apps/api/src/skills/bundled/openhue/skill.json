@@ -1,0 +1,73 @@
+{
+  "id": "openhue",
+  "name": "Philips Hue (OpenHue)",
+  "version": "1.0.0",
+  "description": "Control Philips Hue smart lights on the local network",
+  "author": "nexus-os",
+  "source": "bundled",
+  "type": "system",
+  "tools": [
+    {
+      "id": "hue_discover",
+      "name": "hue_discover",
+      "description": "Discover Hue bridges on the network",
+      "parameters": { "type": "object", "properties": {} },
+      "handler": "handlers/discover.js",
+      "returnType": "object"
+    },
+    {
+      "id": "hue_lights",
+      "name": "hue_lights",
+      "description": "List all connected lights",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bridge_ip": { "type": "string", "description": "Bridge IP address" }
+        }
+      },
+      "handler": "handlers/lights.js",
+      "returnType": "object"
+    },
+    {
+      "id": "hue_set_state",
+      "name": "hue_set_state",
+      "description": "Set light state (on/off, brightness, color, etc.)",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bridge_ip": { "type": "string", "description": "Bridge IP" },
+          "light_id": { "type": "string", "description": "Light ID or 'all'" },
+          "on": { "type": "boolean", "description": "Turn on/off" },
+          "brightness": { "type": "number", "description": "Brightness 0-254" },
+          "hue": { "type": "number", "description": "Hue 0-65535" },
+          "saturation": { "type": "number", "description": "Saturation 0-254" },
+          "ct": { "type": "number", "description": "Color temperature 153-500" },
+          "transitiontime": { "type": "number", "description": "Transition time in deciseconds", "default": 4 }
+        },
+        "required": ["bridge_ip", "light_id"]
+      },
+      "handler": "handlers/set_state.js",
+      "returnType": "object"
+    },
+    {
+      "id": "hue_scene",
+      "name": "hue_scene",
+      "description": "Activate a scene",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bridge_ip": { "type": "string", "description": "Bridge IP" },
+          "scene_id": { "type": "string", "description": "Scene ID" }
+        },
+        "required": ["bridge_ip", "scene_id"]
+      },
+      "handler": "handlers/scene.js",
+      "returnType": "object"
+    }
+  ],
+  "config": { "schema": {}, "defaults": {} },
+  "runtime": { "language": "javascript", "sandbox": { "enabled": false } },
+  "dependencies": {},
+  "permissions": { "filesystem": [], "network": true, "shell": false, "envVars": ["HUE_BRIDGE_IP", "HUE_API_KEY"] },
+  "metadata": { "tags": ["smart-home", "lights", "hue", "iot"], "category": "smart-home", "icon": "lightbulb", "color": "#FFD700" }
+}

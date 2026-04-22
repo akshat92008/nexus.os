@@ -1,0 +1,184 @@
+{
+  "id": "notion",
+  "name": "Notion",
+  "version": "1.0.0",
+  "description": "Notion API for creating and managing pages, databases, and blocks",
+  "author": "nexus-os",
+  "source": "bundled",
+  "type": "system",
+  "tools": [
+    {
+      "id": "notion_search",
+      "name": "notion_search",
+      "description": "Search for pages and databases in Notion",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search query"
+          }
+        },
+        "required": ["query"]
+      },
+      "handler": "handlers/search.js",
+      "returnType": "object"
+    },
+    {
+      "id": "notion_get_page",
+      "name": "notion_get_page",
+      "description": "Get a page by ID",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page ID"
+          }
+        },
+        "required": ["page_id"]
+      },
+      "handler": "handlers/get_page.js",
+      "returnType": "object"
+    },
+    {
+      "id": "notion_get_blocks",
+      "name": "notion_get_blocks",
+      "description": "Get page content (blocks)",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page ID"
+          }
+        },
+        "required": ["page_id"]
+      },
+      "handler": "handlers/get_blocks.js",
+      "returnType": "object"
+    },
+    {
+      "id": "notion_create_page",
+      "name": "notion_create_page",
+      "description": "Create a new page",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "parent_id": {
+            "type": "string",
+            "description": "Parent page or database ID"
+          },
+          "title": {
+            "type": "string",
+            "description": "Page title"
+          },
+          "content": {
+            "type": "string",
+            "description": "Page content"
+          },
+          "properties": {
+            "type": "object",
+            "description": "Database properties (if creating in a database)"
+          }
+        },
+        "required": ["parent_id", "title"]
+      },
+      "handler": "handlers/create_page.js",
+      "returnType": "object"
+    },
+    {
+      "id": "notion_query_database",
+      "name": "notion_query_database",
+      "description": "Query a database",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "database_id": {
+            "type": "string",
+            "description": "Database ID"
+          },
+          "filter": {
+            "type": "object",
+            "description": "Query filter"
+          }
+        },
+        "required": ["database_id"]
+      },
+      "handler": "handlers/query_database.js",
+      "returnType": "object"
+    },
+    {
+      "id": "notion_update_page",
+      "name": "notion_update_page",
+      "description": "Update page properties",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page ID"
+          },
+          "properties": {
+            "type": "object",
+            "description": "Properties to update"
+          }
+        },
+        "required": ["page_id", "properties"]
+      },
+      "handler": "handlers/update_page.js",
+      "returnType": "object"
+    },
+    {
+      "id": "notion_append_blocks",
+      "name": "notion_append_blocks",
+      "description": "Append blocks to a page",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page ID"
+          },
+          "blocks": {
+            "type": "array",
+            "items": { "type": "object" },
+            "description": "Blocks to append"
+          },
+          "content": {
+            "type": "string",
+            "description": "Simple text content (alternative to blocks)"
+          }
+        },
+        "required": ["page_id"]
+      },
+      "handler": "handlers/append_blocks.js",
+      "returnType": "object"
+    }
+  ],
+  "config": {
+    "schema": {},
+    "defaults": {}
+  },
+  "runtime": {
+    "language": "javascript",
+    "sandbox": {
+      "enabled": false
+    }
+  },
+  "dependencies": {
+    "npm": {}
+  },
+  "permissions": {
+    "filesystem": [],
+    "network": true,
+    "shell": false,
+    "envVars": ["NOTION_API_KEY"]
+  },
+  "metadata": {
+    "tags": ["notion", "notes", "wiki", "documents"],
+    "category": "productivity",
+    "icon": "file-text",
+    "color": "#000000"
+  }
+}

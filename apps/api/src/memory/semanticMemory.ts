@@ -484,12 +484,10 @@ class SemanticMemoryManager {
       : `Summarize the following memories concisely:\n\n${content}`;
 
     try {
-      const response = await llmRouter.routeRequest({
-        model: 'llama-3.3-70b',
-        messages: [
-          { role: 'system', content: 'Summarize memories concisely, preserving key facts.' },
-          { role: 'user', content: prompt }
-        ]
+      const response = await llmRouter.call({
+        system: 'Summarize memories concisely, preserving key facts.',
+        user: prompt,
+        model: 'llama-3.3-70b'
       });
 
       return response.content || 'Memories recalled';

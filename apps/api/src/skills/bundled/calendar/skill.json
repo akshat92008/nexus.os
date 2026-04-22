@@ -1,0 +1,94 @@
+{
+  "id": "calendar",
+  "name": "Calendar",
+  "version": "1.0.0",
+  "description": "Create, read, update calendar events using Google Calendar or Apple Calendar",
+  "author": "nexus-os",
+  "source": "bundled",
+  "type": "integration",
+  "tools": [
+    {
+      "id": "cal_create_event",
+      "name": "calendar_create_event",
+      "description": "Create a new calendar event",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string", "description": "Event title" },
+          "start_time": { "type": "string", "description": "Start time in ISO 8601 format" },
+          "end_time": { "type": "string", "description": "End time in ISO 8601 format" },
+          "description": { "type": "string", "description": "Event description" },
+          "attendees": { "type": "array", "items": { "type": "string" }, "description": "List of attendee emails" },
+          "calendar_id": { "type": "string", "description": "Calendar ID (default: primary)", "default": "primary" }
+        },
+        "required": ["title", "start_time", "end_time"]
+      },
+      "handler": "handlers/create_event.js",
+      "returnType": "object"
+    },
+    {
+      "id": "cal_list_events",
+      "name": "calendar_list_events",
+      "description": "List upcoming calendar events",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "calendar_id": { "type": "string", "description": "Calendar ID", "default": "primary" },
+          "max_results": { "type": "number", "description": "Maximum events to return", "default": 10 },
+          "time_min": { "type": "string", "description": "Minimum time in ISO 8601 (default: now)" },
+          "time_max": { "type": "string", "description": "Maximum time in ISO 8601" }
+        },
+        "required": []
+      },
+      "handler": "handlers/list_events.js",
+      "returnType": "object"
+    },
+    {
+      "id": "cal_delete_event",
+      "name": "calendar_delete_event",
+      "description": "Delete a calendar event",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_id": { "type": "string", "description": "Event ID to delete" },
+          "calendar_id": { "type": "string", "description": "Calendar ID", "default": "primary" }
+        },
+        "required": ["event_id"]
+      },
+      "handler": "handlers/delete_event.js",
+      "returnType": "object"
+    }
+  ],
+  "config": {
+    "schema": {
+      "provider": {
+        "type": "string",
+        "description": "Calendar provider",
+        "enum": ["google", "apple", "outlook"],
+        "default": "google"
+      }
+    },
+    "defaults": {
+      "provider": "google"
+    }
+  },
+  "runtime": {
+    "language": "javascript",
+    "sandbox": { "enabled": false }
+  },
+  "dependencies": {
+    "npm": {}
+  },
+  "permissions": {
+    "filesystem": [],
+    "network": true,
+    "shell": false,
+    "envVars": ["GOOGLE_CALENDAR_API_KEY", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"]
+  },
+  "metadata": {
+    "tags": ["calendar", "schedule", "events"],
+    "category": "productivity",
+    "icon": "calendar",
+    "color": "#ea4335"
+  }
+}

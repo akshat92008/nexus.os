@@ -1,0 +1,61 @@
+{
+  "id": "himalaya",
+  "name": "Himalaya Email",
+  "version": "1.0.0",
+  "description": "Read, list, and send emails via the Himalaya CLI email client",
+  "author": "nexus-os",
+  "source": "bundled",
+  "type": "system",
+  "tools": [
+    {
+      "id": "email_list",
+      "name": "himalaya_list",
+      "description": "List emails from inbox",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "folder": { "type": "string", "description": "Folder name (INBOX, Sent, etc.)", "default": "INBOX" },
+          "limit": { "type": "number", "description": "Max emails", "default": 20 }
+        }
+      },
+      "handler": "handlers/list.js",
+      "returnType": "object"
+    },
+    {
+      "id": "email_read",
+      "name": "himalaya_read",
+      "description": "Read a specific email",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Email ID/UID" },
+          "folder": { "type": "string", "description": "Folder", "default": "INBOX" }
+        },
+        "required": ["id"]
+      },
+      "handler": "handlers/read.js",
+      "returnType": "object"
+    },
+    {
+      "id": "email_send",
+      "name": "himalaya_send",
+      "description": "Send an email",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "to": { "type": "string", "description": "Recipient email" },
+          "subject": { "type": "string", "description": "Subject" },
+          "body": { "type": "string", "description": "Email body" }
+        },
+        "required": ["to", "subject", "body"]
+      },
+      "handler": "handlers/send.js",
+      "returnType": "object"
+    }
+  ],
+  "config": { "schema": {}, "defaults": {} },
+  "runtime": { "language": "javascript", "sandbox": { "enabled": false } },
+  "dependencies": {},
+  "permissions": { "filesystem": [], "network": false, "shell": true, "envVars": [] },
+  "metadata": { "tags": ["email", "imap", "mail"], "category": "communication", "icon": "mail", "color": "#3B82F6" }
+}

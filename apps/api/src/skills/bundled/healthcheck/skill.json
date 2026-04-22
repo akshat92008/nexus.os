@@ -1,0 +1,46 @@
+{
+  "id": "healthcheck",
+  "name": "System Health Check",
+  "version": "1.0.0",
+  "description": "Monitor system health: CPU, memory, disk, processes",
+  "author": "nexus-os",
+  "source": "bundled",
+  "type": "system",
+  "tools": [
+    {
+      "id": "health_system",
+      "name": "health_system",
+      "description": "Get system health metrics (CPU, memory, disk, uptime)",
+      "parameters": { "type": "object", "properties": {} },
+      "handler": "handlers/system.js",
+      "returnType": "object"
+    },
+    {
+      "id": "health_processes",
+      "name": "health_processes",
+      "description": "List top processes by CPU or memory",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sort_by": { "type": "string", "enum": ["cpu", "memory"], "default": "cpu" },
+          "limit": { "type": "number", "default": 20 }
+        }
+      },
+      "handler": "handlers/processes.js",
+      "returnType": "object"
+    },
+    {
+      "id": "health_disk",
+      "name": "health_disk",
+      "description": "Get disk usage for all mounted volumes",
+      "parameters": { "type": "object", "properties": {} },
+      "handler": "handlers/disk.js",
+      "returnType": "object"
+    }
+  ],
+  "config": { "schema": {}, "defaults": {} },
+  "runtime": { "language": "javascript", "sandbox": { "enabled": false } },
+  "dependencies": {},
+  "permissions": { "filesystem": [], "network": false, "shell": true, "envVars": [] },
+  "metadata": { "tags": ["system", "monitoring", "health"], "category": "system", "icon": "activity", "color": "#10B981" }
+}

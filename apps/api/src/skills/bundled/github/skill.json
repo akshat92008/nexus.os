@@ -1,0 +1,210 @@
+{
+  "id": "github",
+  "name": "GitHub",
+  "version": "1.0.0",
+  "description": "GitHub operations via gh CLI: issues, PRs, CI runs, code review, API queries",
+  "author": "nexus-os",
+  "source": "bundled",
+  "type": "system",
+  "tools": [
+    {
+      "id": "gh_pr_list",
+      "name": "github_pr_list",
+      "description": "List pull requests for a repository",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Repository in format owner/repo"
+          },
+          "state": {
+            "type": "string",
+            "description": "PR state filter",
+            "enum": ["open", "closed", "merged", "all"],
+            "default": "open"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum number of PRs to return",
+            "default": 10
+          }
+        },
+        "required": ["repo"]
+      },
+      "handler": "handlers/pr_list.js",
+      "returnType": "object"
+    },
+    {
+      "id": "gh_pr_view",
+      "name": "github_pr_view",
+      "description": "View details of a specific pull request",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Repository in format owner/repo"
+          },
+          "number": {
+            "type": "number",
+            "description": "PR number"
+          }
+        },
+        "required": ["repo", "number"]
+      },
+      "handler": "handlers/pr_view.js",
+      "returnType": "object"
+    },
+    {
+      "id": "gh_pr_checks",
+      "name": "github_pr_checks",
+      "description": "Check CI status of a pull request",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Repository in format owner/repo"
+          },
+          "number": {
+            "type": "number",
+            "description": "PR number"
+          }
+        },
+        "required": ["repo", "number"]
+      },
+      "handler": "handlers/pr_checks.js",
+      "returnType": "object"
+    },
+    {
+      "id": "gh_issue_list",
+      "name": "github_issue_list",
+      "description": "List issues for a repository",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Repository in format owner/repo"
+          },
+          "state": {
+            "type": "string",
+            "description": "Issue state filter",
+            "enum": ["open", "closed", "all"],
+            "default": "open"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum number of issues to return",
+            "default": 10
+          }
+        },
+        "required": ["repo"]
+      },
+      "handler": "handlers/issue_list.js",
+      "returnType": "object"
+    },
+    {
+      "id": "gh_issue_create",
+      "name": "github_issue_create",
+      "description": "Create a new issue",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Repository in format owner/repo"
+          },
+          "title": {
+            "type": "string",
+            "description": "Issue title"
+          },
+          "body": {
+            "type": "string",
+            "description": "Issue body/description"
+          },
+          "labels": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Labels to apply"
+          }
+        },
+        "required": ["repo", "title"]
+      },
+      "handler": "handlers/issue_create.js",
+      "returnType": "object"
+    },
+    {
+      "id": "gh_run_list",
+      "name": "github_run_list",
+      "description": "List recent workflow runs",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Repository in format owner/repo"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum number of runs to return",
+            "default": 10
+          }
+        },
+        "required": ["repo"]
+      },
+      "handler": "handlers/run_list.js",
+      "returnType": "object"
+    },
+    {
+      "id": "gh_run_view",
+      "name": "github_run_view",
+      "description": "View details of a workflow run",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Repository in format owner/repo"
+          },
+          "run_id": {
+            "type": "string",
+            "description": "Run ID"
+          }
+        },
+        "required": ["repo", "run_id"]
+      },
+      "handler": "handlers/run_view.js",
+      "returnType": "object"
+    }
+  ],
+  "config": {
+    "schema": {
+      "default_repo": {
+        "type": "string",
+        "description": "Default repository to use (owner/repo format)"
+      }
+    },
+    "defaults": {}
+  },
+  "runtime": {
+    "language": "javascript",
+    "sandbox": {
+      "enabled": false
+    }
+  },
+  "dependencies": {},
+  "permissions": {
+    "filesystem": [],
+    "network": false,
+    "shell": true,
+    "envVars": ["GH_TOKEN", "GITHUB_TOKEN"]
+  },
+  "metadata": {
+    "tags": ["github", "git", "ci", "issues", "prs"],
+    "category": "development",
+    "icon": "git-branch",
+    "color": "#333333"
+  }
+}

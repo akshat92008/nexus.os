@@ -131,6 +131,48 @@ async function initHeavyServices() {
         await mcpManager.initialize();
         console.log('[Boot] 🔌 MCP Bridge ready');
 
+        // 7. Canvas / Live Document System
+        const { canvasManager } = await import('./canvas/canvasManager.js');
+        await canvasManager.initialize();
+        console.log('[Boot] 🎨 Canvas System ready');
+
+        // 8. Voice / Audio Pipeline
+        const { voiceManager } = await import('./voice/voiceManager.js');
+        await voiceManager.initialize();
+        console.log('[Boot] 🎙️ Voice Pipeline ready');
+
+        // 9. TUI (Terminal UI) System
+        const { tuiManager } = await import('./tui/tuiManager.js');
+        await tuiManager.initialize();
+        console.log('[Boot] 🖥️ TUI System ready');
+
+        // 10. Docker Sandbox
+        const { dockerSandbox } = await import('./sandbox/dockerSandbox.js');
+        await dockerSandbox.initialize();
+        console.log('[Boot] 📦 Docker Sandbox ready');
+
+        // 11. i18n / Localization
+        const { i18nManager } = await import('./i18n/i18nManager.js');
+        await i18nManager.initialize();
+        i18nManager.setLocale((process.env.NEXUS_LOCALE as any) || 'en');
+        console.log('[Boot] 🌍 i18n ready (' + i18nManager.getLocale() + ')');
+
+        // 12. Daemon Mode
+        const { daemonManager } = await import('./daemon/daemonManager.js');
+        await daemonManager.initialize();
+        if (daemonManager.isRunningAsDaemon()) {
+            console.log('[Boot] 👻 Daemon mode active');
+        }
+
+        // 13. Register additional channel adapters
+        const { EmailAdapter } = await import('./channels/adapters/emailAdapter.js');
+        const { WhatsAppAdapter } = await import('./channels/adapters/whatsappAdapter.js');
+        const { SmsAdapter } = await import('./channels/adapters/smsAdapter.js');
+        channelManager.registerAdapter('email', new EmailAdapter());
+        channelManager.registerAdapter('whatsapp', new WhatsAppAdapter());
+        channelManager.registerAdapter('sms', new SmsAdapter());
+        console.log('[Boot] 📧 Email / WhatsApp / SMS adapters registered');
+
         // ═══════════════════════════════════════════════════════════════
 
         // Intelligence & Orchestration
@@ -621,6 +663,210 @@ async function initHeavyServices() {
             } catch (err: any) {
                 res.status(400).json({ error: err.message });
             }
+        });
+
+        // --- CANVAS / LIVE DOCUMENT ROUTES ---
+        app.post('/api/canvas/create', async (req: any, res: any) => {
+            try {
+                const { canvasManager } = await import('./canvas/canvasManager.js');
+                const doc = await canvasManager.createDocument(req.body);
+                res.json({ success: true, document: doc });
+            } catch (err: any) {
+                res.status(400).json({ error: err.message });
+            }
+        });
+
+        app.get('/api/canvas/:id', async (req: any, res: any) => {
+            const { canvasManager } = await import('./canvas/canvasManager.js');
+            const doc = canvasManager.getDocument(req.params.id);
+            if (!doc) return res.status(404).json({ error: 'Document not found' });
+            res.json(doc);
+        });
+
+        app.get('/api/canvas', async (_req: any, res: any) => {
+            const { canvasManager } = await import('./canvas/canvasManager.js');
+            res.json(canvasManager.getDocuments());
+        });
+
+        app.post('/api/canvas/:id/operation', async (req: any, res: any) => {
+            try {
+                const { canvasManager } = await import('./canvas/canvasManager.js');
+                const doc = await canvasManager.applyOperation(req.params.id, req.body);
+                res.json({ success: true, document: doc });
+            } catch (err: any) {
+                res.status(400).json({ error: err.message });
+            }
+        });
+
+        app.post('/api/canvas/:id/generate', async (req: any, res: any) => {
+            try {
+                const { canvasManager } = await import('./canvas/canvasManager.js');
+                const block = await canvasManager.aiGenerateBlock(req.params.id, req.body.prompt, req.user?.id || 'system');
+                res.json({ success: true, block });
+            } catch (err: any) {
+                res.status(400).json({ error: err.message });
+            }
+        });
+
+        app.get('/api/canvas/:id/render', async (req: any, res: any) => {
+            try {
+                const { canvasManager } = await import('./canvas/canvasManager.js');
+                const html = await canvasManager.renderToHtml(req.params.id);
+                res.set('Content-Type', 'text/html').send(html);
+            } catch (err: any) {
+                res.status(400).json({ error: err.message });
+            }
+        });
+
+        // --- VOICE / AUDIO ROUTES ---
+        app.post('/api/voice/start', async (req: any, res: any) => {
+            try {
+                const { voiceManager } = await import('./voice/voiceManager.js');
+                const session = await voiceManager.startSession(req.body);
+                res.json({ success: true, session });
+            } catch (err: any) {
+                res.status(400).json({ error: err.message });
+            }
+        });
+
+        app.post('/api/voice/:id/listen', async (req: any, res: any) => {
+            const { voiceManager } = await import('./voice/voiceManager.js');
+            await voiceManager.startListening(req.params.id);
+            res.json({ success: true, status: 'listening' });
+        });
+
+        app.post('/api/voice/:id/stop', async (req: any, res: any) => {
+            const { voiceManager } = await import('./voice/voiceManager.js');
+            const transcript = await voiceManager.stopListening(req.params.id);
+            res.json({ success: true, transcript });
+        });
+
+        app.post('/api/voice/:id/process', async (req: any, res: any) => {
+            try {
+                const { voiceManager } = await import('./voice/voiceManager.js');
+                const response = await voiceManager.processTranscript(req.params.id, req.body.transcript);
+                res.json({ success: true, response });
+            } catch (err: any) {
+                res.status(400).json({ error: err.message });
+            }
+        });
+
+        app.post('/api/voice/:id/speak', async (req: any, res: any) => {
+            const { voiceManager } = await import('./voice/voiceManager.js');
+            await voiceManager.speak(req.params.id, req.body.text);
+            res.json({ success: true, spoken: true });
+        });
+
+        app.get('/api/voice/sessions', async (_req: any, res: any) => {
+            const { voiceManager } = await import('./voice/voiceManager.js');
+            res.json(voiceManager.getActiveSessions());
+        });
+
+        // --- TUI ROUTES ---
+        app.get('/api/tui/screens', async (_req: any, res: any) => {
+            const { tuiManager } = await import('./tui/tuiManager.js');
+            res.json(tuiManager.getScreens().map(s => ({ id: s.id, title: s.title, type: s.type })));
+        });
+
+        app.get('/api/tui/render', async (req: any, res: any) => {
+            const { tuiManager } = await import('./tui/tuiManager.js');
+            const screen = await tuiManager.renderScreen(req.query.screen);
+            res.set('Content-Type', 'application/json').send(screen);
+        });
+
+        app.get('/api/tui/notifications', async (_req: any, res: any) => {
+            const { tuiManager } = await import('./tui/tuiManager.js');
+            res.json(tuiManager.getNotifications());
+        });
+
+        // --- DOCKER SANDBOX ROUTES ---
+        app.post('/api/sandbox/create', async (req: any, res: any) => {
+            try {
+                const { dockerSandbox } = await import('./sandbox/dockerSandbox.js');
+                const instance = await dockerSandbox.createSandbox(req.body);
+                res.json({ success: true, sandbox: instance });
+            } catch (err: any) {
+                res.status(400).json({ error: err.message });
+            }
+        });
+
+        app.post('/api/sandbox/:id/exec', async (req: any, res: any) => {
+            try {
+                const { dockerSandbox } = await import('./sandbox/dockerSandbox.js');
+                const result = await dockerSandbox.executeInSandbox(req.params.id, req.body.command);
+                res.json({ success: true, result });
+            } catch (err: any) {
+                res.status(400).json({ error: err.message });
+            }
+        });
+
+        app.post('/api/sandbox/:id/stop', async (req: any, res: any) => {
+            const { dockerSandbox } = await import('./sandbox/dockerSandbox.js');
+            await dockerSandbox.stopSandbox(req.params.id);
+            res.json({ success: true });
+        });
+
+        app.get('/api/sandbox/running', async (_req: any, res: any) => {
+            const { dockerSandbox } = await import('./sandbox/dockerSandbox.js');
+            res.json(dockerSandbox.getRunningSandboxes());
+        });
+
+        // --- I18N / LOCALIZATION ROUTES ---
+        app.get('/api/i18n/locales', async (_req: any, res: any) => {
+            const { i18nManager } = await import('./i18n/i18nManager.js');
+            res.json(i18nManager.getAvailableLocales());
+        });
+
+        app.get('/api/i18n/current', async (_req: any, res: any) => {
+            const { i18nManager } = await import('./i18n/i18nManager.js');
+            res.json({ locale: i18nManager.getLocale(), direction: i18nManager.getTextDirection() });
+        });
+
+        app.post('/api/i18n/set', async (req: any, res: any) => {
+            const { i18nManager } = await import('./i18n/i18nManager.js');
+            i18nManager.setLocale(req.body.locale);
+            res.json({ success: true, locale: i18nManager.getLocale() });
+        });
+
+        app.get('/api/i18n/translate', async (req: any, res: any) => {
+            const { i18nManager } = await import('./i18n/i18nManager.js');
+            const text = i18nManager.t(req.query.key, req.query.params ? JSON.parse(req.query.params) : undefined);
+            res.json({ key: req.query.key, translation: text });
+        });
+
+        // --- DAEMON MODE ROUTES ---
+        app.get('/api/daemon/status', async (_req: any, res: any) => {
+            const { daemonManager } = await import('./daemon/daemonManager.js');
+            const status = daemonManager.getStatus();
+            res.json({
+                runningAsDaemon: daemonManager.isRunningAsDaemon(),
+                launchedAtBoot: daemonManager.wasLaunchedAtBoot(),
+                status
+            });
+        });
+
+        app.post('/api/daemon/start', async (_req: any, res: any) => {
+            const { daemonManager } = await import('./daemon/daemonManager.js');
+            const success = await daemonManager.startDaemon();
+            res.json({ success });
+        });
+
+        app.post('/api/daemon/stop', async (_req: any, res: any) => {
+            const { daemonManager } = await import('./daemon/daemonManager.js');
+            const success = await daemonManager.stopDaemon();
+            res.json({ success });
+        });
+
+        app.post('/api/daemon/install-launch-agent', async (_req: any, res: any) => {
+            const { daemonManager } = await import('./daemon/daemonManager.js');
+            const success = await daemonManager.installLaunchAgent();
+            res.json({ success });
+        });
+
+        app.post('/api/daemon/uninstall-launch-agent', async (_req: any, res: any) => {
+            const { daemonManager } = await import('./daemon/daemonManager.js');
+            const success = await daemonManager.uninstallLaunchAgent();
+            res.json({ success });
         });
 
         // ═════════════════════════════════════════════════════════════════

@@ -1,0 +1,56 @@
+{
+  "id": "trello",
+  "name": "Trello",
+  "version": "1.0.0",
+  "description": "Create, list, and manage Trello cards and boards",
+  "author": "nexus-os",
+  "source": "bundled",
+  "type": "system",
+  "tools": [
+    {
+      "id": "trello_list_boards",
+      "name": "trello_list_boards",
+      "description": "List all Trello boards",
+      "parameters": { "type": "object", "properties": {} },
+      "handler": "handlers/list_boards.js",
+      "returnType": "object"
+    },
+    {
+      "id": "trello_list_cards",
+      "name": "trello_list_cards",
+      "description": "List cards in a board list",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": { "type": "string", "description": "Trello list ID" }
+        },
+        "required": ["list_id"]
+      },
+      "handler": "handlers/list_cards.js",
+      "returnType": "object"
+    },
+    {
+      "id": "trello_create_card",
+      "name": "trello_create_card",
+      "description": "Create a new card",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_id": { "type": "string", "description": "List ID" },
+          "name": { "type": "string", "description": "Card name" },
+          "desc": { "type": "string", "description": "Card description" },
+          "due": { "type": "string", "description": "Due date (ISO 8601)" },
+          "labels": { "type": "array", "items": { "type": "string" }, "description": "Label colors" }
+        },
+        "required": ["list_id", "name"]
+      },
+      "handler": "handlers/create_card.js",
+      "returnType": "object"
+    }
+  ],
+  "config": { "schema": {}, "defaults": {} },
+  "runtime": { "language": "javascript", "sandbox": { "enabled": false } },
+  "dependencies": {},
+  "permissions": { "filesystem": [], "network": true, "shell": false, "envVars": ["TRELLO_API_KEY", "TRELLO_TOKEN"] },
+  "metadata": { "tags": ["trello", "project-management", "kanban"], "category": "productivity", "icon": "layout", "color": "#0079BF" }
+}

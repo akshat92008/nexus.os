@@ -1,0 +1,61 @@
+{
+  "id": "session-logs",
+  "name": "Session Logs",
+  "version": "1.0.0",
+  "description": "Capture, search, and manage session/terminal logs",
+  "author": "nexus-os",
+  "source": "bundled",
+  "type": "system",
+  "tools": [
+    {
+      "id": "logs_capture",
+      "name": "session_logs_capture",
+      "description": "Capture current tmux or terminal session output",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session": { "type": "string", "description": "Tmux session name" },
+          "lines": { "type": "number", "description": "Lines to capture", "default": 100 }
+        }
+      },
+      "handler": "handlers/capture.js",
+      "returnType": "object"
+    },
+    {
+      "id": "logs_search",
+      "name": "session_logs_search",
+      "description": "Search within session logs",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "description": "Search query (regex)" },
+          "log_path": { "type": "string", "description": "Path to log file" }
+        },
+        "required": ["query", "log_path"]
+      },
+      "handler": "handlers/search.js",
+      "returnType": "object"
+    },
+    {
+      "id": "logs_save",
+      "name": "session_logs_save",
+      "description": "Save terminal output to a file",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "content": { "type": "string", "description": "Log content" },
+          "output_path": { "type": "string", "description": "Output file path" },
+          "append": { "type": "boolean", "description": "Append instead of overwrite", "default": false }
+        },
+        "required": ["content", "output_path"]
+      },
+      "handler": "handlers/save.js",
+      "returnType": "object"
+    }
+  ],
+  "config": { "schema": {}, "defaults": {} },
+  "runtime": { "language": "javascript", "sandbox": { "enabled": false } },
+  "dependencies": {},
+  "permissions": { "filesystem": ["/tmp/*"], "network": false, "shell": true, "envVars": [] },
+  "metadata": { "tags": ["logs", "terminal", "session"], "category": "system", "icon": "scroll-text", "color": "#6B7280" }
+}
