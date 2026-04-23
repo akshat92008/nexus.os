@@ -64,11 +64,28 @@ impl GuiEngine {
         let title_attr = CFString::from_static_string("AXTitle");
         AXUIElementCopyAttributeValue(element, title_attr.as_CFTypeRef(), &mut title);
 
+        let mut identifier: CFTypeRef = ptr::null_mut();
+        let id_attr = CFString::from_static_string("AXIdentifier");
+        AXUIElementCopyAttributeValue(element, id_attr.as_CFTypeRef(), &mut identifier);
+
+        let id_str = if identifier.is_null() {
+            String::new()
+        } else {
+            Self::cfstring_to_rust(identifier)
+        };
+
         let role_str = if role.is_null() { "Unknown" } else { "Element" };
-        let title_str = if title.is_null() { "" } else { " - Title: ..." };
+        let title_str = if title.is_null() {
+            String::new()
+        } else {
+            Self::cfstring_to_rust(title)
+        };
+
+        let match_key = if !id_str.is_empty() { id_str } else { title_str };
+        let marker = if depth == 0 { "🏁" } else { "🔹" };
 
         let indent = "  ".repeat(depth);
-        output.push_str(&format!("{}{} [{}] {}\n", indent, if depth == 0 { "🏁" } else { "🔹" }, role_str, title_str));
+        output.push_str(&format!("{}{} [{}] key={}\n", indent, marker, role_str, match_key));
 
         // Get children
         let mut children: CFTypeRef = ptr::null_mut();
@@ -82,10 +99,41 @@ impl GuiEngine {
         }
     }
 
+    fn cfstring_to_rust(cfstr: CFTypeRef) -> String {
+        if cfstr.is_null() { return String::new(); }
+        unsafe {
+            let length = core_foundation::string::CFStringGetLength(cfstr as _);
+            if length == 0 { return String::new(); }
+            let mut buf = vec![0u8; (length * 4) as usize];
+            let mut used_len = 0;
+            let success = core_foundation::string::CFStringGetBytes(
+                cfstr as _,
+                core_foundation::base::CFRange { location: 0, length },
+                core_foundation::string::kCFStringEncodingUTF8,
+                0,
+                false as _,
+                buf.as_mut_ptr(),
+                buf.len() as _,
+                &mut used_len
+            );
+            if success != 0 {
+                buf.truncate(used_len as usize);
+                String::from_utf8_lossy(&buf).into_owned()
+            } else {
+                String::new()
+            }
+        }
+    }
+
     /// Performs a click on an element (Simplified for bootstrap)
-    pub fn click_element(_label: &str) -> Result<String, String> {
-        // Real implementation would find element by label then AXUIElementPerformAction
-        Ok(format!("✅ Target logic ready: Simulating click on '{}'", _label))
+    pub fn click_element(label: &str) -> Result<String, String> {
+        // Build a composite key for matching: prefer AXIdentifier, fall back to AXTitle
+        // In a full implementation, we'd iterate the AX tree and check:
+        // let match_key = if !id_str.is_empty() { id_str } else { title_str };
+        // if match_key == label { ... click ... }
+
+        // Simplified for bootstrap
+        Ok(format!("✅ Target logic ready: Simulating click on element matching key '{}'", label))
     }
 
     /// Injects text into the focused field

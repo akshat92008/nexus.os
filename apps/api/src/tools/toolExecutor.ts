@@ -10,6 +10,17 @@ import { eventBus } from '../events/eventBus.js';
 import { nexusStateStore } from '../storage/nexusStateStore.js';
 import { sagaManager } from '../services/SagaManager.js';
 import type { TypedArtifact } from '@nexus-os/types';
+import { rm, writeFile, readFile } from 'fs/promises';
+import path from 'path';
+
+function safePath(inputPath: string, allowedRoot: string): string {
+  const resolved = path.resolve(inputPath);
+  if (!resolved.startsWith(path.resolve(allowedRoot))) {
+    throw new Error(`[Security] Path traversal blocked: ${inputPath}`);
+  }
+  return resolved;
+}
+
 
 export interface ToolCall {
   toolName: string;
@@ -87,7 +98,7 @@ class ToolExecutor {
               undoParams = { path: args.path, original_content: null }; // Indicates file didn't exist
           }
       } else {
-          undoParams = this.calculateUndoParams(toolName, args);
+          undoParams = await this.calculateUndoParams(toolName, args);
       }
 
       // 6. Log Action to Saga Store
@@ -137,46 +148,40 @@ class ToolExecutor {
       throw new Error(`Action "${action.tool_id}" has no registered undo parameters.`);
     }
 
-    let undoTool: string;
-    let undoArgs: any;
-
-    // Mapping tool IDs to their inverse operations
     switch (action.tool_id) {
-      case 'create_folder':
-        // Inverse of create_folder is a safe directory removal
-        undoTool = 'delete_folder'; 
-        undoArgs = { path: action.undo_params.path };
+      case 'create_folder': {
+        const safe = safePath(action.undo_params.path, process.cwd());
+        await rm(safe, { recursive: true, force: false }); // force:false = won't silently eat errors
         break;
-      case 'write_file':
-        // Inverse of write_file is restoring previous content or deleting if it was new
-        if (action.undo_params.original_content === null) {
-            undoTool = 'delete_file';
-            undoArgs = { path: action.undo_params.path };
+      }
+      case 'write_file': {
+        const safe = safePath(action.undo_params.path, process.cwd());
+        if (action.undo_params.original_content !== undefined && action.undo_params.original_content !== null) {
+          await writeFile(safe, action.undo_params.original_content, 'utf8');
         } else {
-            undoTool = 'write_file';
-            undoArgs = { path: action.undo_params.path, content: action.undo_params.original_content };
+          await rm(safe, { force: false });
         }
         break;
+      }
       default:
         throw new Error(`Critical: Undo logic not yet implemented for tool "${action.tool_id}"`);
     }
-
-    const tool = toolRegistry.getTool(undoTool);
-    if (!tool) throw new Error(`Inverse tool "${undoTool}" not found in registry.`);
-    
-    return await tool.handler(undoArgs, { userId: 'system' });
   }
 
   /**
    * Calculates the parameters required to reverse an action.
    */
-  private calculateUndoParams(tool: string, params: any): any {
+  private async calculateUndoParams(tool: string, params: any): Promise<any> {
     switch (tool) {
       case 'create_folder': 
         return { path: params.path, action: 'delete' };
-      case 'write_file': 
-        // Note: Real-time snapshotting logic would capture the actual content here
-        return { path: params.path, action: 'restore', original_content: '...' }; 
+      case 'write_file': {
+        let original_content: string | undefined;
+        try {
+          original_content = await readFile(params.path, 'utf8');
+        } catch { original_content = undefined; } // file didn't exist before
+        return { path: params.path, original_content };
+      }
       default: 
         return null;
     }
