@@ -51,8 +51,8 @@ export const ChiefOfStaffBriefing = () => {
             Chief of Staff Insight
           </h3>
           <p className="text-white/80 leading-relaxed max-w-2xl">
-            "Your 10:00 AM meeting with the venture team has been prepped with a 1-page summary of their latest fund performance. 
-            I've also drafted follow-ups for the 12 non-critical emails received overnight, focusing on the Q3 partnership inquiries."
+            &quot;Your 10:00 AM meeting with the venture team has been prepped with a 1-page summary of their latest fund performance.
+            I&apos;ve also drafted follow-ups for the 12 non-critical emails received overnight, focusing on the Q3 partnership inquiries.&quot;
           </p>
           <button className="mt-6 bg-white text-black font-bold px-6 py-2 rounded-lg hover:bg-blue-400 hover:text-white transition-all">
             Review Prep Docs
