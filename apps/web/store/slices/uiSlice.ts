@@ -18,6 +18,13 @@ export interface UISlice {
     invoicingViewOpen: boolean;
     calendarViewOpen: boolean;
     graphViewOpen: boolean;
+    missionPanelOpen: boolean;
+    integrationsViewOpen: boolean;
+    settingsViewOpen: boolean;
+    codeReviewOpen: boolean;
+    gitPanelOpen: boolean;
+    projectOnboardingOpen: boolean;
+    terminalOpen: boolean;
     isOnboardingComplete: boolean;
     layoutMode: 'command-center' | 'focus-graph' | 'focus-workspace' | 'focus-telemetry';
   };
@@ -44,6 +51,13 @@ export interface UISlice {
   toggleGraphView: () => void;
   closeAllModals: () => void;
   setAppLauncherOpen: (v: boolean) => void;
+  toggleMissionPanel: () => void;
+  toggleIntegrationsView: () => void;
+  toggleSettings: () => void;
+  toggleCodeReview: () => void;
+  toggleGitPanel: () => void;
+  toggleProjectOnboarding: () => void;
+  toggleTerminal: () => void;
   setOnboardingComplete: () => void;
   setLayoutMode: (mode: 'command-center' | 'focus-graph' | 'focus-workspace' | 'focus-telemetry') => void;
 }
@@ -70,6 +84,13 @@ export const createUISlice: StateCreator<
     invoicingViewOpen: false,
     calendarViewOpen: false,
     graphViewOpen: false,
+    missionPanelOpen: false,
+    integrationsViewOpen: false,
+    settingsViewOpen: false,
+    codeReviewOpen: false,
+    gitPanelOpen: false,
+    projectOnboardingOpen: false,
+    terminalOpen: false,
     isOnboardingComplete: false,
     layoutMode: 'command-center',
   },
@@ -210,6 +231,14 @@ export const createUISlice: StateCreator<
     }
   })),
 
+  toggleMissionPanel: () => set((s) => ({ ui: { ...s.ui, missionPanelOpen: !s.ui.missionPanelOpen } })),
+  toggleIntegrationsView: () => set((s) => ({ ui: { ...s.ui, integrationsViewOpen: !s.ui.integrationsViewOpen } })),
+  toggleSettings: () => set((s) => ({ ui: { ...s.ui, settingsViewOpen: !s.ui.settingsViewOpen } })),
+  toggleCodeReview: () => set((s) => ({ ui: { ...s.ui, codeReviewOpen: !s.ui.codeReviewOpen } })),
+  toggleGitPanel: () => set((s) => ({ ui: { ...s.ui, gitPanelOpen: !s.ui.gitPanelOpen } })),
+  toggleProjectOnboarding: () => set((s) => ({ ui: { ...s.ui, projectOnboardingOpen: !s.ui.projectOnboardingOpen } })),
+  toggleTerminal: () => set((s) => ({ ui: { ...s.ui, terminalOpen: !s.ui.terminalOpen } })),
+
   closeAllModals: () => set((s) => ({
     ui: {
       ...s.ui,
@@ -224,6 +253,13 @@ export const createUISlice: StateCreator<
       invoicingViewOpen: false,
       calendarViewOpen: false,
       graphViewOpen: false,
+      missionPanelOpen: false,
+      integrationsViewOpen: false,
+      settingsViewOpen: false,
+      codeReviewOpen: false,
+      gitPanelOpen: false,
+      projectOnboardingOpen: false,
+      terminalOpen: false,
     }
   })),
   setOnboardingComplete: () => {

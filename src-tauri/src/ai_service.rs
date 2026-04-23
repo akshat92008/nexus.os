@@ -39,7 +39,7 @@ pub struct AIService {
 impl AIService {
     pub fn new() -> Self {
         // Default to local dev brain, can be overridden by env
-        let base_url = env::var("BRAIN_URL").unwrap_or_else(|_| "http://localhost:8000".to_string());
+        let base_url = env::var("BRAIN_URL").unwrap_or_else(|_| "http://localhost:3006".to_string());
         Self {
             client: Client::new(),
             base_url,

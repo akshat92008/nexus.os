@@ -23,6 +23,13 @@ const CommandCenter = dynamic(() => import('./CommandCenter').then(mod => mod.Co
 const AgentMarketplace = dynamic(() => import('../market/AgentMarketplace').then(mod => mod.AgentMarketplace), { ssr: false });
 const LibraryView = dynamic(() => import('./LibraryView').then(mod => mod.LibraryView), { ssr: false });
 const WorkspaceHistorySidebar = dynamic(() => import('./WorkspaceHistorySidebar').then(mod => mod.WorkspaceHistorySidebar), { ssr: false });
+const MissionExecutionPanel = dynamic(() => import('./MissionExecutionPanel').then(mod => mod.MissionExecutionPanel), { ssr: false });
+const SettingsView = dynamic(() => import('./SettingsView').then(mod => mod.SettingsView), { ssr: false });
+const CodeReviewPanel = dynamic(() => import('./CodeReviewPanel').then(mod => mod.CodeReviewPanel), { ssr: false });
+const GitPanel = dynamic(() => import('./GitPanel').then(mod => mod.GitPanel), { ssr: false });
+const ProjectOnboarding = dynamic(() => import('./ProjectOnboarding').then(mod => mod.ProjectOnboarding), { ssr: false });
+const IntegrationsView = dynamic(() => import('./IntegrationsView').then(mod => mod.IntegrationsView), { ssr: false });
+const TerminalView = dynamic(() => import('./TerminalView').then(mod => mod.TerminalView), { ssr: false });
 
 import { useNexusStore, selectIsRunning } from '../../store/nexusStore';
 
@@ -42,6 +49,13 @@ export function Workspace() {
   const setUserId = useNexusStore((s) => s.setUserId);
   const setShowAuth = useNexusStore((s) => s.setShowAuth);
   const toggleInbox = useNexusStore((s) => s.toggleInbox);
+  const toggleMissionPanel = useNexusStore((s) => s.toggleMissionPanel);
+  const toggleSettings = useNexusStore((s) => s.toggleSettings);
+  const toggleIntegrationsView = useNexusStore((s) => s.toggleIntegrationsView);
+  const toggleCodeReview = useNexusStore((s) => s.toggleCodeReview);
+  const toggleGitPanel = useNexusStore((s) => s.toggleGitPanel);
+  const toggleProjectOnboarding = useNexusStore((s) => s.toggleProjectOnboarding);
+  const toggleTerminal = useNexusStore((s) => s.toggleTerminal);
 
   useEffect(() => { 
      const initAuth = async () => { 
@@ -70,7 +84,14 @@ export function Workspace() {
 
       <main className="flex-1 flex flex-col overflow-hidden relative z-10 p-4 pl-0">
         <div className="flex-1 flex flex-col bg-[#121212] rounded-[40px] border border-white/5 overflow-hidden relative shadow-2xl">
-          <CommandCenter />
+          {ui.missionPanelOpen ? <MissionExecutionPanel /> :
+           ui.settingsViewOpen ? <SettingsView /> :
+           ui.integrationsViewOpen ? <IntegrationsView /> :
+           ui.codeReviewOpen ? <CodeReviewPanel /> :
+           ui.gitPanelOpen ? <GitPanel /> :
+           ui.projectOnboardingOpen ? <ProjectOnboarding /> :
+           ui.terminalOpen ? <TerminalView /> :
+           <CommandCenter />}
         </div>
       </main>
 

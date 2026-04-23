@@ -315,12 +315,12 @@ async function initHeavyServices() {
             }
         });
 
-        app.get('/api/events/stream', async (req: any, res: any) => {
-            const { missionId } = req.query;
-            res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' });
-            const handler = (event: any) => res.write(`data: ${JSON.stringify(event)}\n\n`);
-            eventBus.subscribe(missionId, handler);
-            req.on('close', () => eventBus.unsubscribe(missionId, handler));
+        // Integrations
+        app.get('/api/integrations', async (req: any, res: any) => {
+            const supabase = await getSupabase();
+            const { data } = await supabase.from('user_integrations')
+                .select('*').eq('user_id', req.user.id).eq('is_active', true);
+            res.json(data || []);
         });
 
         app.post('/api/agents/spawn', async (req: any, res: any) => {
@@ -764,6 +764,138 @@ async function initHeavyServices() {
         app.get('/api/voice/sessions', async (_req: any, res: any) => {
             const { voiceManager } = await import('./voice/voiceManager.js');
             res.json(voiceManager.getActiveSessions());
+        });
+
+        // ═══════════════════════════════════════════════════════════════
+        // SECTION A9 — MISSIONS, APPROVALS, INTEGRATIONS, SYSTEM
+        // ═══════════════════════════════════════════════════════════════
+
+        // --- MISSIONS V2 ---
+        app.post('/api/missions', async (req: any, res: any) => {
+            const { goal, archMode } = req.body;
+            if (!goal) return res.status(400).json({ error: 'goal is required' });
+            try {
+                const dag = await planMission(goal, archMode || 'os');
+                await nexusStateStore.createMission({
+                    id: dag.missionId, userId: req.user.id, goal, dagData: dag, goalType: dag.goalType
+                });
+                setImmediate(async () => {
+                    const memory = new MissionMemory(dag.missionId, goal);
+                    const registry = new TaskRegistry(dag.missionId);
+                    await orchestrateDAG({ 
+                        dag, memory, registry, userId: req.user.id, sessionId: dag.missionId, 
+                        res: { write: (d: any) => {
+                            const line = d.replace(/^data:\s*/, '').trim();
+                            if (line) eventBus.publish(dag.missionId, JSON.parse(line)).catch(() => {});
+                        }, end: () => {} } as any,
+                        isAborted: () => false
+                    });
+                });
+                res.json({ missionId: dag.missionId, status: 'queued', goal });
+            } catch (err: any) {
+                res.status(500).json({ error: err.message });
+            }
+        });
+
+        app.get('/api/missions/:id', async (req: any, res: any) => {
+            const mission = await nexusStateStore.getMission(req.params.id);
+            if (!mission) return res.status(404).json({ error: 'Mission not found' });
+            res.json(mission);
+        });
+
+        app.get('/api/missions/:id/stream', async (req: any, res: any) => {
+            res.setHeader('Content-Type', 'text/event-stream');
+            res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('Connection', 'keep-alive');
+            const listener = (data: any) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+            eventBus.subscribe(req.params.id, listener);
+            req.on('close', () => eventBus.unsubscribe(req.params.id, listener));
+        });
+
+        app.post('/api/missions/:id/abort', async (req: any, res: any) => {
+            await nexusStateStore.updateMission(req.params.id, { status: 'aborted' });
+            eventBus.publish(req.params.id, { type: 'mission_aborted' });
+            res.json({ status: 'aborted', missionId: req.params.id });
+        });
+
+        // --- APPROVALS ---
+        app.get('/api/approvals/pending', async (req: any, res: any) => {
+            const pending = await sagaManager.getPendingActions(req.user.id);
+            res.json(pending || []);
+        });
+
+        app.post('/api/approve/:missionId/:taskId', async (req: any, res: any) => {
+            const { missionId, taskId } = req.params;
+            await sagaManager.approveAction(missionId, taskId);
+            eventBus.publish(missionId, { type: 'approval_granted', taskId });
+            res.json({ status: 'approved', missionId, taskId });
+        });
+
+        app.post('/api/reject/:missionId/:taskId', async (req: any, res: any) => {
+            const { missionId, taskId } = req.params;
+            await sagaManager.rejectAction(missionId, taskId);
+            eventBus.publish(missionId, { type: 'approval_rejected', taskId });
+            res.json({ status: 'rejected', missionId, taskId });
+        });
+
+        // --- INTEGRATIONS ---
+        app.post('/api/integrations/connect', async (req: any, res: any) => {
+            const { integrationType, credentials } = req.body;
+            const supabase = await getSupabase();
+            const { data, error } = await supabase.from('user_integrations').insert({
+                user_id: req.user.id,
+                integration_type: integrationType,
+                access_token: credentials?.accessToken,
+                refresh_token: credentials?.refreshToken,
+                account_email: credentials?.email,
+                account_name: credentials?.name,
+                scopes: credentials?.scopes || [],
+                metadata: credentials?.metadata || {},
+            }).select().single();
+            if (error) return res.status(500).json({ error: error.message });
+            res.json({ success: true, integration: data });
+        });
+
+        // --- SYSTEM ---
+        app.get('/api/system/status', async (_req: any, res: any) => {
+            res.json({
+                status: 'healthy',
+                version: '2.0.0',
+                uptime: process.uptime(),
+                timestamp: new Date().toISOString(),
+            });
+        });
+
+        app.get('/api/system/costs', async (req: any, res: any) => {
+            try {
+                const { auditLog } = await import('./core/auditLog.js');
+                const summary = await auditLog.getCostSummary(req.user.id);
+                res.json(summary);
+            } catch (err: any) {
+                res.status(500).json({ error: err.message });
+            }
+        });
+
+        // --- USER PREFERENCES ---
+        app.get('/api/user/preferences', async (req: any, res: any) => {
+            const supabase = await getSupabase();
+            const { data, error } = await supabase.from('user_preferences').select('*').eq('user_id', req.user.id).single();
+            if (error && error.code !== 'PGRST116') return res.status(500).json({ error: error.message });
+            res.json(data || { user_id: req.user.id, privacy_mode: false, locale: 'en', notifications_enabled: true });
+        });
+
+        app.put('/api/user/preferences', async (req: any, res: any) => {
+            const supabase = await getSupabase();
+            const { privacy_mode, locale, notifications_enabled } = req.body;
+            const { data, error } = await supabase.from('user_preferences').upsert({
+                user_id: req.user.id,
+                privacy_mode: !!privacy_mode,
+                locale: locale || 'en',
+                notifications_enabled: notifications_enabled !== false,
+                updated_at: new Date().toISOString()
+            }).select().single();
+            if (error) return res.status(500).json({ error: error.message });
+            res.json(data);
         });
 
         // --- TUI ROUTES ---

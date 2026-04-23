@@ -56,6 +56,47 @@ export class SagaManager {
     const supabase = await getSupabase();
     await supabase.from('action_logs').delete().eq('id', actionId);
   }
+
+  /**
+   * Get pending approval actions for a user.
+   */
+  async getPendingActions(userId: string): Promise<ActionLog[]> {
+    const supabase = await getSupabase();
+    const { data, error } = await supabase
+      .from('action_logs')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false });
+    if (error) throw new Error(error.message);
+    return (data || []) as ActionLog[];
+  }
+
+  /**
+   * Mark an action as approved.
+   */
+  async approveAction(goalId: string, actionId: string): Promise<void> {
+    const supabase = await getSupabase();
+    const { error } = await supabase
+      .from('action_logs')
+      .update({ status: 'approved', approved_at: new Date().toISOString() })
+      .eq('id', actionId)
+      .eq('goal_id', goalId);
+    if (error) throw new Error(error.message);
+  }
+
+  /**
+   * Mark an action as rejected.
+   */
+  async rejectAction(goalId: string, actionId: string): Promise<void> {
+    const supabase = await getSupabase();
+    const { error } = await supabase
+      .from('action_logs')
+      .update({ status: 'rejected', rejected_at: new Date().toISOString() })
+      .eq('id', actionId)
+      .eq('goal_id', goalId);
+    if (error) throw new Error(error.message);
+  }
 }
 
 export const sagaManager = new SagaManager();
