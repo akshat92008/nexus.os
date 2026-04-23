@@ -170,6 +170,56 @@ class ToolRegistry {
         return result;
       },
     });
+
+    // Safe folder deletion (undo inverse of create_folder)
+    this.register({
+      name: 'delete_folder',
+      description: 'Safely delete a folder created by an agent. Only deletes within workspace root.',
+      category: 'system',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Path to the folder to delete.' },
+        },
+        required: ['path'],
+      },
+      handler: async ({ path: targetPath }, { userId }) => {
+        const { rm } = await import('fs/promises');
+        const pathModule = await import('path');
+        const workspaceRoot = process.cwd();
+        const resolved = pathModule.default.resolve(targetPath);
+        if (!resolved.startsWith(workspaceRoot)) {
+          throw new Error(`[Security] Path traversal blocked: ${targetPath}`);
+        }
+        await rm(resolved, { recursive: true, force: false });
+        return { deleted: resolved };
+      },
+    });
+
+    // Safe file deletion (undo for new files created by agent)
+    this.register({
+      name: 'delete_file',
+      description: 'Safely delete a file created by an agent. Only deletes within workspace root.',
+      category: 'system',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Path to the file to delete.' },
+        },
+        required: ['path'],
+      },
+      handler: async ({ path: targetPath }, { userId }) => {
+        const { unlink } = await import('fs/promises');
+        const pathModule = await import('path');
+        const workspaceRoot = process.cwd();
+        const resolved = pathModule.default.resolve(targetPath);
+        if (!resolved.startsWith(workspaceRoot)) {
+          throw new Error(`[Security] Path traversal blocked: ${targetPath}`);
+        }
+        await unlink(resolved);
+        return { deleted: resolved };
+      },
+    });
   }
 }
 

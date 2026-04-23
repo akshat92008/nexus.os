@@ -8,8 +8,6 @@
 import { LLMRouter } from '../src/llm/LLMRouter.js';
 import { logger } from '../src/logger.js';
 
-const router = new LLMRouter();
-
 const JUDGE_SYSTEM = `You are a critical synthesis judge. You receive two draft responses to the same prompt.
 Your job is to produce ONE final answer that takes the strongest elements from each draft.
 Rules:
@@ -26,6 +24,8 @@ Rules:
  * @returns        The judge-synthesised answer as a plain string
  */
 export async function runConsensus(prompt: string, context = '', config?: any): Promise<string> {
+  const router = new LLMRouter();
+
   // 🚨 FIX 1: Robust token limit fallback
   const tokenLimit = (typeof config?.token?.limit === 'number' && config.token.limit > 0)
     ? config.token.limit

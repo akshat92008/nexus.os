@@ -9,6 +9,12 @@ import { eventBus } from '../events/eventBus.js';
 import { randomUUID } from 'crypto';
 import { promises as fs } from 'fs';
 import path from 'path';
+import { pitchCoach } from './pitchCoach.js';
+import { revenueEngine } from './revenueEngine.js';
+import { competitorIntel } from './competitorIntel.js';
+import { hiringEngine } from './hiringEngine.js';
+import { legalGuard } from './legalGuard.js';
+import { gtmStrategist } from './gtmStrategist.js';
 
 export type SkillSource = 'bundled' | 'workspace' | 'installed' | 'npm';
 
@@ -108,11 +114,20 @@ export interface SkillRegistry {
   toolMap: Map<string, { skillId: string; toolId: string }>;
 }
 
+export interface FounderSkill {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  [key: string]: any;
+}
+
 class SkillManager {
   private registry: SkillRegistry = {
     skills: new Map(),
     toolMap: new Map()
   };
+  private founderSkills: Map<string, FounderSkill> = new Map();
   private handlers: Map<string, Function> = new Map();
   private workspacePath: string;
   private skillsPath: string;
@@ -140,6 +155,10 @@ class SkillManager {
     
     // Load installed skills from database
     await this.loadInstalledSkills();
+
+    // Founder skills
+    [pitchCoach, revenueEngine, competitorIntel, hiringEngine, legalGuard, gtmStrategist]
+      .forEach(skill => this.registerFounderSkill(skill));
 
     // Subscribe to events
     eventBus.subscribe('skill_install_request', this.handleInstallRequest.bind(this));
@@ -202,6 +221,11 @@ class SkillManager {
       const manifest = data.manifest as SkillManifest;
       await this.registerSkill(manifest, 'installed', data.config || {});
     }
+  }
+
+  registerFounderSkill(skill: FounderSkill) {
+    this.founderSkills.set(skill.id, skill);
+    logger.info(`[SkillManager] Registered founder skill: ${skill.name}`);
   }
 
   async registerSkill(manifest: SkillManifest, source: SkillSource, userConfig: Record<string, any> = {}) {
@@ -421,12 +445,12 @@ class SkillManager {
     return tools;
   }
 
-  getSkills(): SkillInstance[] {
-    return Array.from(this.registry.skills.values());
+  getSkills(): Array<SkillInstance | FounderSkill> {
+    return [...Array.from(this.registry.skills.values()), ...Array.from(this.founderSkills.values())];
   }
 
-  getSkill(id: string): SkillInstance | undefined {
-    return this.registry.skills.get(id);
+  getSkill(id: string): SkillInstance | FounderSkill | undefined {
+    return this.registry.skills.get(id) || this.founderSkills.get(id);
   }
 
   private async installFromNpm(packageName: string): Promise<SkillManifest> {

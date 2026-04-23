@@ -11,6 +11,7 @@ import { sagaManager } from './services/SagaManager.js';
 import { toolExecutor } from './tools/toolExecutor.js';
 import { runSalesFollowUpWorkflow } from './workflows/salesFollowUp.js';
 import { buildAPResolverAwaitingApprovalEvent, runAPResolverWorkflow } from './workflows/apResolver.js';
+import { getHubSpotAuthUrl, exchangeCodeForTokens, storeTokens } from './integrations/hubspotOAuth.js';
 
 console.log('[Boot] 🛰️  Nexus OS Kernel Initializing (TURBO MODE)...');
 
@@ -215,8 +216,169 @@ async function initHeavyServices() {
             }
         });
 
+        // HubSpot OAuth2 — handle callback after user grants permission
+        app.get('/api/integrations/hubspot/callback', async (req, res) => {
+            try {
+                const { code, state } = req.query as { code: string; state: string };
+                const { userId } = JSON.parse(Buffer.from(state, 'base64').toString());
+                const tokens = await exchangeCodeForTokens(code);
+                await storeTokens(userId, tokens);
+                res.redirect('/workspace?integration=hubspot&status=connected');
+            } catch (err: any) {
+                res.status(500).json({ error: err.message });
+            }
+        });
+
         // Protected Routes
         app.use(requireAuth);
+
+    // ── SALES: Lead Capture ──────────────────────────────────────────────
+    const { leadCapture } = await import('./sales/leadCapture.js');
+
+    app.post('/api/sales/leads', async (req: any, res: any) => {
+      try {
+        const lead = await leadCapture.capture(req.user.id, req.body);
+        res.status(201).json(lead);
+      } catch (err: any) {
+        const status = err.message.includes('email') ? 400 : 500;
+        res.status(status).json({ error: err.message });
+      }
+    });
+
+    app.get('/api/sales/leads', async (req: any, res: any) => {
+      try {
+        const filters = {
+          status: req.query.status as string,
+          minScore: req.query.minScore ? parseInt(req.query.minScore as string) : undefined,
+          source: req.query.source as string,
+          limit: req.query.limit ? Math.min(parseInt(req.query.limit as string), 200) : 50,
+          offset: req.query.offset ? parseInt(req.query.offset as string) : 0,
+        };
+        const result = await leadCapture.getLeads(req.user.id, filters);
+        res.json(result);
+      } catch (err: any) {
+        res.status(500).json({ error: err.message });
+      }
+    });
+
+    app.get('/api/sales/leads/:id', async (req: any, res: any) => {
+      try {
+        const lead = await leadCapture.getLead(req.user.id, req.params.id);
+        if (!lead) return res.status(404).json({ error: 'Lead not found' });
+        res.json(lead);
+      } catch (err: any) {
+        res.status(500).json({ error: err.message });
+      }
+    });
+
+    // ── SALES: Qualification ─────────────────────────────────────────────
+    const { leadScorer } = await import('./sales/leadScorer.js');
+
+    app.post('/api/sales/leads/:id/qualify', async (req: any, res: any) => {
+      try {
+        const result = await leadScorer.scoreLead(req.params.id, req.user.id);
+        res.json(result);
+      } catch (err: any) {
+        const status = err.message.includes('not found') ? 404 : 500;
+        res.status(status).json({ error: err.message });
+      }
+    });
+
+    app.post('/api/sales/qualify-batch', async (req: any, res: any) => {
+      try {
+        const limit = Math.min(parseInt(req.body?.limit || '20'), 50);
+        const result = await leadScorer.scoreBatch(req.user.id, limit);
+        res.json(result);
+      } catch (err: any) {
+        res.status(500).json({ error: err.message });
+      }
+    });
+
+    // ── SALES: Follow-up + Approval ──────────────────────────────────────
+    const { salesAgent } = await import('./sales/salesAgent.js');
+
+    app.post('/api/sales/leads/:id/followup', async (req: any, res: any) => {
+      try {
+        const lead = await leadCapture.getLead(req.user.id, req.params.id);
+        if (!lead) return res.status(404).json({ error: 'Lead not found' });
+        const daysSince = req.body?.daysSinceContact || 7;
+        const result = await salesAgent.draftFollowUp(req.params.id, req.user.id, daysSince);
+        res.json(result);
+      } catch (err: any) {
+        const status = err.message.includes('not eligible') || err.message.includes('Max') ? 400 : 500;
+        res.status(status).json({ error: err.message });
+      }
+    });
+
+    app.post('/api/sales/leads/:id/reply', async (req: any, res: any) => {
+      try {
+        const { leadEmail, leadName, leadCompany, inboundMessage } = req.body;
+        if (!leadEmail) return res.status(400).json({ error: 'leadEmail required' });
+        const result = await salesAgent.draftReply(req.params.id, req.user.id, {
+          leadEmail, leadName, leadCompany, inboundMessage
+        });
+        res.json(result);
+      } catch (err: any) {
+        res.status(500).json({ error: err.message });
+      }
+    });
+
+    app.post('/api/sales/approve/:approvalId', async (req: any, res: any) => {
+      try {
+        const result = await salesAgent.sendApproved(req.params.approvalId, req.user.id);
+        res.json(result);
+      } catch (err: any) {
+        const status = err.message.includes('not found') ? 404 : 500;
+        res.status(status).json({ error: err.message });
+      }
+    });
+
+    app.post('/api/sales/followups/run', async (req: any, res: any) => {
+      try {
+        const result = await salesAgent.runScheduledFollowUps(req.user.id);
+        res.json(result);
+      } catch (err: any) {
+        res.status(500).json({ error: err.message });
+      }
+    });
+
+    // ── SALES: Meeting Booking ───────────────────────────────────────────
+    const { bookingEngine } = await import('./sales/bookingEngine.js');
+
+    app.post('/api/sales/book', async (req: any, res: any) => {
+      try {
+        const { leadId, leadEmail, leadName, preferredDate, durationMinutes, meetingTitle } = req.body;
+        if (!leadId || !leadEmail) {
+          return res.status(400).json({ error: 'leadId and leadEmail required' });
+        }
+        const result = await bookingEngine.bookMeeting({
+          leadId, userId: req.user.id, leadEmail, leadName,
+          preferredDate, durationMinutes, meetingTitle
+        });
+        res.json(result);
+      } catch (err: any) {
+        const status = err.message.includes('No available') ? 409 : 500;
+        res.status(status).json({ error: err.message });
+      }
+    });
+
+    app.get('/api/sales/slots', async (req: any, res: any) => {
+      try {
+        const date = req.query.date as string || new Date().toISOString().split('T')[0];
+        const duration = parseInt(req.query.duration as string || '30');
+        const slots = await bookingEngine.findAvailableSlots(req.user.id, date, duration);
+        res.json({ date, duration, slots });
+      } catch (err: any) {
+        res.status(500).json({ error: err.message });
+      }
+    });
+
+        // HubSpot OAuth2 — redirect user to HubSpot consent screen
+        app.get('/api/integrations/hubspot/connect', (req, res) => {
+            const userId = (req as any).user?.id;
+            if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+            res.redirect(getHubSpotAuthUrl(userId));
+        });
 
         app.post('/api/workflows/ap-resolver', async (req: any, res: any) => {
             const { invoiceFilePath, workflowId, publishToMissionId } = req.body || {};

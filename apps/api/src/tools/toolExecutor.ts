@@ -74,21 +74,7 @@ class ToolExecutor {
 
       // 5. Determine Undo Parameters (Saga Pattern)
       let undoParams = null;
-      if (toolName === 'write_file') {
-          try {
-              const current = await tool.handler({ path: args.path }, { userId, workspaceId }); // Assume handler handles read if called with path only? No, use read_file.
-              // Wait, I should use the specific tool for reading.
-              const readTool = toolRegistry.getTool('read_file');
-              if (readTool) {
-                  const current = await readTool.handler({ path: args.path }, { userId, workspaceId });
-                  undoParams = { path: args.path, original_content: current.content || '' };
-              }
-          } catch (e) {
-              undoParams = { path: args.path, original_content: null }; // Indicates file didn't exist
-          }
-      } else {
-          undoParams = this.calculateUndoParams(toolName, args);
-      }
+      undoParams = await this.calculateUndoParams(toolName, args, { userId, workspaceId });
 
       // 6. Log Action to Saga Store
       await sagaManager.logAction(missionId, toolName, args, undoParams);
@@ -170,14 +156,25 @@ class ToolExecutor {
   /**
    * Calculates the parameters required to reverse an action.
    */
-  private calculateUndoParams(tool: string, params: any): any {
+  private async calculateUndoParams(tool: string, params: any, context: { userId: string; workspaceId?: string }): Promise<any> {
     switch (tool) {
-      case 'create_folder': 
+      case 'create_folder':
         return { path: params.path, action: 'delete' };
-      case 'write_file': 
-        // Note: Real-time snapshotting logic would capture the actual content here
-        return { path: params.path, action: 'restore', original_content: '...' }; 
-      default: 
+      case 'write_file': {
+        // Capture the REAL existing content before the write overwrites it
+        try {
+          const readTool = toolRegistry.getTool('fs_read');
+          if (readTool) {
+            const existing = await readTool.handler({ path: params.path }, context);
+            return { path: params.path, original_content: existing.content ?? '' };
+          }
+        } catch {
+          // File doesn't exist yet — undo means delete it
+          return { path: params.path, original_content: null };
+        }
+        return { path: params.path, original_content: null };
+      }
+      default:
         return null;
     }
   }

@@ -47,19 +47,16 @@ export interface Activity {
 }
 
 export class HubSpotDriver {
-  private apiKey: string;
   private baseUrl = 'https://api.hubapi.com';
-
-  constructor(apiKey: string) {
-    this.apiKey = apiKey;
-  }
+  constructor(private accessToken: string) {}
 
   private async request(path: string, options?: RequestInit): Promise<any> {
-    const url = `${this.baseUrl}${path}${path.includes('?') ? '&' : '?'}hapikey=${this.apiKey}`;
+    const url = `${this.baseUrl}${path}`;
     const res = await fetch(url, {
       ...options,
       headers: {
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.accessToken}`,
         ...options?.headers,
       },
     });

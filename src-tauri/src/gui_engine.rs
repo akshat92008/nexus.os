@@ -64,11 +64,24 @@ impl GuiEngine {
         let title_attr = CFString::from_static_string("AXTitle");
         AXUIElementCopyAttributeValue(element, title_attr.as_CFTypeRef(), &mut title);
 
-        let role_str = if role.is_null() { "Unknown" } else { "Element" };
-        let title_str = if title.is_null() { "" } else { " - Title: ..." };
+        // Extract AXIdentifier — stable across locales and duplicates; preferred over AXTitle
+        let mut identifier: CFTypeRef = ptr::null_mut();
+        let id_attr = CFString::from_static_string("AXIdentifier");
+        AXUIElementCopyAttributeValue(element, id_attr.as_CFTypeRef(), &mut identifier);
+
+        let role_str   = if role.is_null()       { "Unknown"  } else { "Element" };
+        let title_str  = if title.is_null()      { ""         } else { " title=..." };
+        let id_str     = if identifier.is_null() { ""         } else { " id=..." };
+
+        // Match key: prefer AXIdentifier (stable) over AXTitle (fragile)
+        let match_key  = if !identifier.is_null() { "id"    } else { "title" };
 
         let indent = "  ".repeat(depth);
-        output.push_str(&format!("{}{} [{}] {}\n", indent, if depth == 0 { "🏁" } else { "🔹" }, role_str, title_str));
+        output.push_str(&format!(
+            "{}{} [{}]{}{} key_type={}\n",
+            indent, if depth == 0 { "🏁" } else { "🔹" },
+            role_str, title_str, id_str, match_key
+        ));
 
         // Get children
         let mut children: CFTypeRef = ptr::null_mut();

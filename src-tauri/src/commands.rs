@@ -2,8 +2,12 @@ use crate::ai_service::{AIService, ChatMessage};
 use crate::execution_engine::ExecutionEngine;
 use crate::gui_engine::GuiEngine;
 use crate::memory::MemoryManager;
+use once_cell::sync::Lazy;
 use serde_json::{json, Value};
+use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, State};
+
+static GUI_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
 #[tauri::command]
 pub async fn execute_mission(
@@ -46,8 +50,21 @@ pub async fn execute_mission(
         let tool = step.tool.clone();
         let params = step.params.clone();
 
+        let is_gui_tool = tool.starts_with("gui_")
+            || tool.starts_with("click_")
+            || tool.starts_with("type_")
+            || tool == "read_gui_state"
+            || tool == "click_gui_element"
+            || tool == "type_into_gui";
+
         let tool_result = tauri::async_runtime::spawn_blocking(move || {
-            run_tool(tool, params)
+            if is_gui_tool {
+                // Serialize all GUI operations — prevents concurrent missions corrupting screen state
+                let _guard = GUI_LOCK.lock().unwrap();
+                run_tool(tool, params)
+            } else {
+                run_tool(tool, params)
+            }
         }).await.unwrap_or_else(|e| Err(format!("Task panic: {:?}", e)));
 
         // Catch errors for Saga Rollback

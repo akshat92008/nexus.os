@@ -26,7 +26,7 @@ export function initWorkspacePermissions(workspaceId: string): void {
 
 // ── Approval Queue ───────────────────────────────────────────────────────────
 
-const approvalQueue: Map<string, PendingApproval> = new Map();
+export const approvalQueue: Map<string, PendingApproval> = new Map();
 
 export function queueApproval(toolId: string, params: ToolParams, workspaceId: string): PendingApproval {
   const approval: PendingApproval = {

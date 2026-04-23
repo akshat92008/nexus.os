@@ -1,44 +1,73 @@
 import { planMission } from '../missionPlanner.js';
 import { routeIntent, type OSMode } from '../intentRouter.js';
+import { llmRouter } from '../llm/LLMRouter.js';
+import { MODEL_FAST } from '../agents/agentConfig.js';
 import type { TaskDAG, GoalType } from '@nexus-os/types';
 
 export type IntentCategory = 'learning' | 'business' | 'productivity' | 'research' | 'coding' | 'general';
 
-/**
- * Detects the core intent category of a user goal.
- * Uses a heuristic match or can be expanded to LLM classification.
- */
-export function detectIntentCategory(goal: string): IntentCategory {
-  const lower = goal.toLowerCase();
-  
-  if (lower.includes('learn') || lower.includes('study') || lower.includes('exam') || lower.includes('assignment')) {
-    return 'learning';
-  }
-  
-  if (lower.includes('business') || lower.includes('startup') || lower.includes('market') || lower.includes('lead')) {
-    return 'business';
-  }
-  
-  if (lower.includes('code') || lower.includes('build') || lower.includes('script') || lower.includes('prototype') || lower.includes('debug') || lower.includes('refactor') || lower.includes('test')) {
-    return 'coding';
+const INTENT_CLASSIFIER_PROMPT = `Classify the user's goal into exactly one category.
+Categories:
+- learning: studying, homework, exams, understanding concepts, assignments
+- business: startups, fundraising, pitch, investors, GTM, revenue, hiring, legal, CRM, sales, leads, competitors, market research, OKRs, equity, burn rate
+- coding: writing code, debugging, refactoring, git, scripts, APIs, testing, CI/CD, architecture
+- research: analysis, industry research, SWOT, trends, finding information
+- productivity: scheduling, tasks, organizing, time management, project management
+- general: everything else
+
+Respond with ONLY valid JSON: {"category": "<one of the 6 categories>", "confidence": <0.0-1.0>}
+No other text. No markdown.`;
+
+// Cache to avoid re-classifying identical goals in the same session
+const classifyCache = new Map<string, IntentCategory>();
+
+export async function detectIntentCategory(goal: string): Promise<IntentCategory> {
+  // Fast path: check cache
+  const cached = classifyCache.get(goal);
+  if (cached) return cached;
+
+  // Fast path: obvious direct actions stay general
+  const lower = goal.toLocaleLowerCase();
+  if (lower.startsWith('open ') || lower.startsWith('launch ') ||
+      lower.startsWith('click ') || lower.startsWith('type ')) {
+    return 'general';
   }
 
-  if (lower.includes('analyze') || lower.includes('research') || lower.includes('find out') || lower.includes('swot') || lower.includes('strategy')) {
-    return 'research';
-  }
-  
-  if (lower.includes('organize') || lower.includes('manage') || lower.includes('schedule')) {
-    return 'productivity';
-  }
+  try {
+    const response = await llmRouter.call({
+      model: MODEL_FAST,
+      system: INTENT_CLASSIFIER_PROMPT,
+      user: goal,
+      temperature: 0.0,
+      maxTokens: 60,
+    });
 
-  return 'general';
+    const raw = response.content.trim().replace(/```json|```/g, '');
+    const parsed = JSON.parse(raw);
+    const category = parsed.category as IntentCategory;
+
+    // Validate it's a known category, fallback to general
+    const valid: IntentCategory[] = ['learning', 'business', 'coding', 'research', 'productivity', 'general'];
+    const result: IntentCategory = valid.includes(category) ? category : 'general';
+
+    // Cache it for this session
+    classifyCache.set(goal, result);
+    return result;
+
+  } catch {
+    // Keyword fallback if LLM is unavailable
+    if (lower.includes('learn') || lower.includes('study') || lower.includes('exam')) return 'learning'; // fallback
+    if (lower.includes('code') || lower.includes('debug') || lower.includes('git')) return 'coding';
+    if (lower.includes('business') || lower.includes('startup') || lower.includes('pitch')) return 'business';
+    return 'general';
+  }
 }
 
 /**
  * The main entry point for planning a mission based on the detected intent.
  */
 export async function planUniversalMission(goal: string, preferredMode?: string): Promise<TaskDAG> {
-  const lower = goal.toLowerCase();
+  const lower = goal.toLocaleLowerCase();
 
   // --- PILLAR: DIRECT OS ACTION BYPASS ---
   // If the user input is a direct "Open/Search/Launch" command, we bypass persona-mashing
@@ -74,7 +103,7 @@ export async function planUniversalMission(goal: string, preferredMode?: string)
     } as any;
   }
 
-  const category = detectIntentCategory(goal);
+  const category = await detectIntentCategory(goal);
   
   // Resolve the active mode
   let activeMode: OSMode = 'student';
