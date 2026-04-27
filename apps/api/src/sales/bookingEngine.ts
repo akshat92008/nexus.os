@@ -3,6 +3,7 @@ import { getSupabase } from '../storage/supabaseClient.js';
 import { logger } from '../logger.js';
 import { randomUUID } from 'crypto';
 import { emailDriver } from '../integrations/drivers/emailDriver.js';
+import { calendarDriver } from '../integrations/drivers/calendarDriver.js';
 
 interface BookingRequest {
   leadId: string;
@@ -23,125 +24,108 @@ interface BookingResult {
 }
 
 export class BookingEngineService {
-  /**
-   * Finds available time slots for a given user and date.
-   * Generates candidate slots every 30 minutes from 09:00 to 16:30.
-   */
-  async findAvailableSlots(userId: string, date: string, durationMinutes: number = 30): Promise<string[]> {
+  async findAvailableSlots(userId: string, date: string, durationMinutes = 30): Promise<string[]> {
     try {
-      // Mock existing events since Google Calendar OAuth is not configured yet
-      const existingEvents: {start: number, end: number}[] = [];
+      // Try to fetch real calendar events if Google Calendar is connected
+      const status = await calendarDriver.getStatus(userId);
+      
+      if (status.connected) {
+        const dayStart = `${date}T00:00:00Z`;
+        const dayEnd = `${date}T23:59:59Z`;
+        const existingEvents = await calendarDriver.listEvents(userId, dayStart, dayEnd);
 
-      const availableSlots: string[] = [];
-      const startTimeRef = new Date(`${date}T09:00:00Z`);
-      const endTimeRef = new Date(`${date}T16:30:00Z`);
+        const slots: string[] = [];
+        let current = new Date(`${date}T09:00:00Z`);
+        const end = new Date(`${date}T17:00:00Z`);
 
-      let currentSlot = new Date(startTimeRef);
+        while (current < end && slots.length < 8) {
+          const slotEnd = new Date(current.getTime() + durationMinutes * 60000);
+          const hasConflict = existingEvents.some((e: any) => {
+            const eStart = new Date(e.start).getTime();
+            const eEnd = new Date(e.end).getTime();
+            return current.getTime() < eEnd && slotEnd.getTime() > eStart;
+          });
 
-      while (currentSlot <= endTimeRef) {
-        const slotStart = currentSlot.getTime();
-        const slotEnd = slotStart + durationMinutes * 60000;
-
-        const isOverlapping = existingEvents.some((event: any) => {
-          return slotStart < event.end && slotEnd > event.start;
-        });
-
-        if (!isOverlapping) {
-          availableSlots.push(currentSlot.toISOString());
+          if (!hasConflict) slots.push(current.toISOString());
+          current = new Date(current.getTime() + 30 * 60000);
         }
 
-        if (availableSlots.length >= 6) break;
-
-        // Increment by 30 minutes
-        currentSlot = new Date(currentSlot.getTime() + 30 * 60000);
+        return slots;
       }
-
-      return availableSlots;
     } catch (err) {
-      logger.warn({ err, userId, date }, '[BookingEngine] Failed to fetch calendar slots, using defaults');
-      // Return 3 default slots (10:00, 11:00, 14:00) as fallback
-      return [
-        `${date}T10:00:00Z`,
-        `${date}T11:00:00Z`,
-        `${date}T14:00:00Z`
-      ];
+      logger.warn({ err }, '[BookingEngine] Calendar unavailable, using defaults');
     }
+
+    // Graceful fallback: return sensible default slots
+    return [
+      `${date}T09:00:00Z`,
+      `${date}T10:00:00Z`,
+      `${date}T11:00:00Z`,
+      `${date}T14:00:00Z`,
+      `${date}T15:00:00Z`,
+    ];
   }
 
-  /**
-   * Books a meeting for a lead.
-   */
   async bookMeeting(request: BookingRequest): Promise<BookingResult> {
     const duration = request.durationMinutes || 30;
     const date = request.preferredDate || new Date(Date.now() + 86400000).toISOString().split('T')[0];
-    
     const slots = await this.findAvailableSlots(request.userId, date, duration);
-    
-    if (!slots || slots.length === 0) {
-      throw new Error(`No available slots on requested date: ${date}`);
-    }
+
+    if (!slots.length) throw new Error('No available slots for requested date');
 
     const startTime = slots[0];
     const endTime = new Date(new Date(startTime).getTime() + duration * 60000).toISOString();
+    const title = request.meetingTitle || `Meeting with ${request.leadName || request.leadEmail}`;
 
-    // Mock calendar event creation (Google Calendar integration pending)
-    let result: any = { id: randomUUID() };
+    let eventId = `local-${randomUUID()}`;
+    let calendarLink: string | undefined;
 
-    // Update leads table
+    // Try to create a real Google Calendar event
+    try {
+      const calStatus = await calendarDriver.getStatus(request.userId);
+      if (calStatus.connected) {
+        const event = await calendarDriver.createEvent(request.userId, {
+          title,
+          startTime,
+          endTime,
+          attendees: [request.leadEmail],
+          description: `Sales meeting booked via Nexus OS AI Employee`,
+        });
+        eventId = event.id;
+        calendarLink = event.htmlLink;
+      }
+    } catch (err) {
+      logger.warn({ err }, '[BookingEngine] Calendar event creation failed, continuing without');
+    }
+
+    // Update lead status to 'booked'
     const supabase = await getSupabase();
-    const { error: updateError } = await supabase
-      .from('leads')
-      .update({
-        status: 'booked',
-        booked_at: new Date().toISOString()
-      })
-      .eq('id', request.leadId);
+    await supabase.from('leads').update({
+      status: 'booked',
+      booked_at: new Date().toISOString(),
+    }).eq('id', request.leadId);
 
-    if (updateError) {
-      logger.error({ err: updateError, leadId: request.leadId }, '[BookingEngine] Failed to update lead status');
-    }
+    // Log event
+    await supabase.from('lead_events').insert({
+      lead_id: request.leadId,
+      event_type: 'meeting_booked',
+      payload: { eventId, startTime, endTime, calendarLink },
+    });
 
-    // Insert lead event
-    const { error: eventError } = await supabase
-      .from('lead_events')
-      .insert({
-        lead_id: request.leadId,
-        event_type: 'booked',
-        payload: { startTime, endTime, eventId: result?.id || result?.eventId }
-      });
-
-    if (eventError) {
-      logger.error({ err: eventError, leadId: request.leadId }, '[BookingEngine] Failed to log lead event');
-    }
-
-    // Send confirmation email (bypass approval)
+    // Send confirmation email
     let confirmationSent = false;
     try {
-      const formattedTime = new Date(startTime).toLocaleString('en-US', { 
-        dateStyle: 'full', 
-        timeStyle: 'short' 
-      });
-      
-      const confirmBody = `Hi ${request.leadName || 'there'},\n\nYour meeting is confirmed for ${formattedTime}.\n\nA calendar invite has been sent to ${request.leadEmail}.\n\nLooking forward to speaking with you!\n\nBest regards,\nNexus OS Sales Team`;
-      
-      const emailResult = await (emailDriver as any).execute({ 
-        to: request.leadEmail, 
-        subject: 'Meeting Confirmed ✓', 
-        body: confirmBody 
+      await (emailDriver as any).execute({
+        to: request.leadEmail,
+        subject: `Meeting Confirmed: ${title}`,
+        body: `Hi ${request.leadName || 'there'},\n\nYour meeting has been confirmed for ${new Date(startTime).toLocaleString()}.\n\n${calendarLink ? `Calendar link: ${calendarLink}` : ''}\n\nLooking forward to speaking with you!`,
       }, request.userId);
-      
-      confirmationSent = emailResult.success;
-    } catch (e) {
-      logger.warn({ err: e }, '[BookingEngine] Confirmation email failed');
-      confirmationSent = false;
+      confirmationSent = true;
+    } catch (err) {
+      logger.warn({ err }, '[BookingEngine] Confirmation email failed');
     }
 
-    return {
-      eventId: result?.id || result?.eventId || randomUUID(),
-      startTime,
-      endTime,
-      confirmationSent
-    };
+    return { eventId, startTime, endTime, calendarLink, confirmationSent };
   }
 }
 

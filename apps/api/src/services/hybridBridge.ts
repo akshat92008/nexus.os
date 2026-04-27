@@ -204,8 +204,9 @@ class HybridBridge {
     );
 
     if (!validation.ok) {
-      sendFrame(ws, buildErrorResponse(frame.id, validation.code, validation.message));
-      ws.close(1008, validation.message);
+      const failure = validation as Extract<typeof validation, { ok: false }>;
+      sendFrame(ws, buildErrorResponse(frame.id, failure.code, failure.message));
+      ws.close(1008, failure.message);
       return;
     }
 
@@ -254,7 +255,8 @@ class HybridBridge {
 
     const authorization = authorizeOperatorScopesForMethod('node.invoke', NEXUS_DEFAULT_OPERATOR_SCOPES);
     if (!authorization.allowed) {
-      throw new Error(`[HybridBridge] Bridge operator is missing ${authorization.missingScope}`);
+      const failure = authorization as Extract<typeof authorization, { allowed: false }>;
+      throw new Error(`[HybridBridge] Bridge operator is missing ${failure.missingScope}`);
     }
 
     const target = this.selectLocalClient(toolId);

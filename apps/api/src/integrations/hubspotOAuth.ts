@@ -38,7 +38,11 @@ export async function exchangeCodeForTokens(code: string): Promise<{
     }),
   });
   if (!res.ok) throw new Error(`HubSpot token exchange failed: ${await res.text()}`);
-  return res.json();
+  return await res.json() as {
+    access_token: string;
+    refresh_token: string;
+    expires_in: number;
+  };
 }
 
 export async function refreshAccessToken(refreshToken: string): Promise<string> {
@@ -53,7 +57,7 @@ export async function refreshAccessToken(refreshToken: string): Promise<string> 
     }),
   });
   if (!res.ok) throw new Error(`HubSpot token refresh failed: ${await res.text()}`);
-  const data = await res.json();
+  const data = await res.json() as { access_token: string };
   return data.access_token;
 }
 

@@ -10,11 +10,12 @@
 import type { Request, Response, NextFunction } from 'express';
 import { getSupabase } from '../storage/supabaseClient.js';
 import { logger } from '../logger.js';
+import { env } from '../config/env.js';
 
 declare global {
   namespace Express {
     interface Request {
-      user?:      { id: string; email: string };
+      user?:      { id: string; email: string; role?: string | null };
       userId?:    string;
       requestId?: string;
     }
@@ -24,7 +25,7 @@ declare global {
 // ── JWT Cache ────────────────────────────────────────────────────────────────
 
 interface CachedUser {
-  user:      { id: string; email: string };
+  user:      { id: string; email: string; role?: string | null };
   expiresAt: number;
 }
 
@@ -36,7 +37,7 @@ const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 let requestsSinceLastCleanup = 0;
 const CLEANUP_THRESHOLD = 50; 
 
-function getCachedUser(token: string): { id: string; email: string } | null {
+function getCachedUser(token: string): { id: string; email: string; role?: string | null } | null {
   const cached = TOKEN_CACHE.get(token);
   if (!cached) return null;
 
@@ -51,7 +52,7 @@ function getCachedUser(token: string): { id: string; email: string } | null {
   return cached.user;
 }
 
-function setCachedUser(token: string, user: { id: string; email: string }): void {
+function setCachedUser(token: string, user: { id: string; email: string; role?: string | null }): void {
   // 🚨 HARDEN: Strict Size Cap
   // Map.keys().next() is O(1) in V8 for deletion of the oldest entry (insertion order).
   while (TOKEN_CACHE.size >= MAX_CACHE_SIZE) {
@@ -101,7 +102,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 
     if (error || !user) {
       logger.warn({ ip: req.ip, path: req.path, error: error?.message }, 'Unauthorized access attempt: Token verification failed');
-      return res.status(401).json({ error: 'Unauthorized: Invalid token' });
+      return res.status(401).json({ error: 'Invalid or expired token' });
     }
 
     // Additional security checks
@@ -110,12 +111,12 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       return res.status(403).json({ error: 'Forbidden: Account suspended' });
     }
 
-    // if (!user.email_confirmed_at && process.env.NODE_ENV === 'production') {
+    // if (!user.email_confirmed_at && env.NODE_ENV === 'production') {
     //   logger.warn({ ip: req.ip, userId: user.id, email: user.email }, 'Unauthorized access attempt: Unverified email');
     //   return res.status(403).json({ error: 'Forbidden: Email verification required' });
     // }
 
-    const authUser = { id: user.id, email: user.email ?? '' };
+    const authUser = { id: user.id, email: user.email ?? '', role: user.role ?? null };
 
     setCachedUser(token, authUser);
 
@@ -143,6 +144,6 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     next();
   } catch (err) {
     logger.error({ ip: req.ip, path: req.path, err: (err as Error).message }, 'Auth middleware verification failed');
-    return res.status(401).json({ error: 'Unauthorized: Auth check failed' });
+    return res.status(401).json({ error: 'Auth verification failed' });
   }
 }

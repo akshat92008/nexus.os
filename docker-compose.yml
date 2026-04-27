@@ -1,18 +1,29 @@
-version: '3.8'
-
 services:
+  api:
+    build: ./apps/api
+    ports:
+      - '3006:3006'
+    env_file:
+      - .env
+    depends_on:
+      - redis
+    volumes:
+      - ./apps/api/src:/app/src
+
+  web:
+    build: ./apps/web
+    ports:
+      - '3000:3000'
+    env_file:
+      - .env
+
   redis:
     image: redis:7-alpine
-    container_name: nexus_redis
-    command: ["redis-server", "--appendonly", "yes"]
+    command: ['redis-server', '--appendonly', 'yes']
     ports:
       - '6379:6379'
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+    volumes:
+      - redis_data:/data
 
-networks:
-  default:
-    name: nexus_network
+volumes:
+  redis_data:

@@ -4,10 +4,10 @@ use crate::gui_engine::GuiEngine;
 use crate::memory::MemoryManager;
 use once_cell::sync::Lazy;
 use serde_json::{json, Value};
-use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, State};
+use tokio::sync::Mutex;
 
-static GUI_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+static GUI_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::const_new(()));
 
 #[tauri::command]
 pub async fn execute_mission(
@@ -57,15 +57,16 @@ pub async fn execute_mission(
             || tool == "click_gui_element"
             || tool == "type_into_gui";
 
-        let tool_result = tauri::async_runtime::spawn_blocking(move || {
-            if is_gui_tool {
-                // Serialize all GUI operations — prevents concurrent missions corrupting screen state
-                let _guard = GUI_LOCK.lock().unwrap();
-                run_tool(tool, params)
-            } else {
-                run_tool(tool, params)
-            }
-        }).await.unwrap_or_else(|e| Err(format!("Task panic: {:?}", e)));
+        let tool_result = if is_gui_tool {
+            let _guard = GUI_LOCK.lock().await;
+            tauri::async_runtime::spawn_blocking(move || run_tool(tool, params))
+                .await
+                .unwrap_or_else(|e| Err(format!("Task panic: {:?}", e)))
+        } else {
+            tauri::async_runtime::spawn_blocking(move || run_tool(tool, params))
+                .await
+                .unwrap_or_else(|e| Err(format!("Task panic: {:?}", e)))
+        };
 
         // Catch errors for Saga Rollback
         match tool_result {
