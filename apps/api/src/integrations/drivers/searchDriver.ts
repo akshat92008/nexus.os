@@ -14,42 +14,64 @@ export const searchDriver: Tool = {
   validate: (p) => p.query ? null : 'Missing required param: query',
   execute: async (params) => {
     const apiKey = process.env.TAVILY_API_KEY;
-    if (!apiKey) throw new Error('TAVILY_API_KEY not set');
+    if (!apiKey) {
+      return {
+        success: true,
+        degraded: true,
+        data: {
+          query: params.query,
+          answer: 'Web search is running in offline mode because TAVILY_API_KEY is not configured.',
+          results: [],
+        },
+      };
+    }
 
-    const res = await fetch('https://api.tavily.com/search', {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json' 
-      },
-      body: JSON.stringify({
-        api_key: apiKey,
-        query: params.query,
-        max_results: params.limit ?? 5,
-        search_depth: "smart",
-        include_images: false,
-        include_answer: true,
-        include_raw_content: false,
-        include_domains: [],
-        exclude_domains: []
-      }),
-    });
-    
-    if (!res.ok) throw new Error(`Tavily API ${res.status}: ${await res.text()}`);
-    
-    const data = await res.json() as any;
-    
-    return {
-      success: true,
-      data: {
-        query: params.query,
-        answer: data.answer,
-        results: (data.results ?? []).map((r: any) => ({
-          title: r.title,
-          url: r.url,
-          snippet: r.content,
-          score: r.score ?? 0,
-        })),
-      },
-    };
+    try {
+      const res = await fetch('https://api.tavily.com/search', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json' 
+        },
+        body: JSON.stringify({
+          api_key: apiKey,
+          query: params.query,
+          max_results: params.limit ?? 5,
+          search_depth: "smart",
+          include_images: false,
+          include_answer: true,
+          include_raw_content: false,
+          include_domains: [],
+          exclude_domains: []
+        }),
+      });
+      
+      if (!res.ok) throw new Error(`Tavily API ${res.status}: ${await res.text()}`);
+      
+      const data = await res.json() as any;
+      
+      return {
+        success: true,
+        data: {
+          query: params.query,
+          answer: data.answer,
+          results: (data.results ?? []).map((r: any) => ({
+            title: r.title,
+            url: r.url,
+            snippet: r.content,
+            score: r.score ?? 0,
+          })),
+        },
+      };
+    } catch (error: any) {
+      return {
+        success: true,
+        degraded: true,
+        data: {
+          query: params.query,
+          answer: `Web search degraded: ${error.message}`,
+          results: [],
+        },
+      };
+    }
   },
 };

@@ -283,6 +283,7 @@ class SubAgentManager {
       system: systemMsg,
       user: userMessages,
       model: session.config.model,
+      maxTokens: 2000,
       temperature: 0.7
     });
 
@@ -427,7 +428,9 @@ class SubAgentManager {
     const response = await llmRouter.call({
       system: 'Summarize the following conversation concisely, preserving key facts and decisions.',
       user: content,
-      model: 'llama-3.3-70b'
+      model: 'llama-3.3-70b',
+      maxTokens: 1200,
+      temperature: 0.2
     });
 
     return response.content || 'Conversation summarized';

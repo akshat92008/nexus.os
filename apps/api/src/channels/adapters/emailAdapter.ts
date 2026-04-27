@@ -13,7 +13,8 @@ export class EmailAdapter implements ChannelAdapter {
     const { imapHost, imapPort, smtpHost, smtpPort, username, password, tls } = config.credentials;
     
     if (!username || !password) {
-      throw new Error('Email username and password required');
+      logger.warn({ channelId: config.id }, '[EmailAdapter] Missing email credentials');
+      return;
     }
 
     // In production, use node-imap for IMAP and nodemailer for SMTP
@@ -49,7 +50,7 @@ export class EmailAdapter implements ChannelAdapter {
     attachments?: any[];
   }): Promise<any> {
     const conn = this.connections.get(channelId);
-    if (!conn) throw new Error(`Email connection ${channelId} not active`);
+    if (!conn) return { error: 'Email not configured' };
 
     const { smtpHost, smtpPort, username, password, tls } = conn.config.credentials;
 

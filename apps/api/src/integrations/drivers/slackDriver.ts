@@ -54,7 +54,7 @@ export class SlackDriver {
       },
       body: body ? JSON.stringify(body) : undefined,
     });
-    const data = await res.json();
+    const data = await res.json() as any;
     if (!data.ok) {
       throw new Error(`Slack API error: ${data.error}`);
     }
@@ -91,10 +91,10 @@ export class SlackDriver {
     form.append('token', this.botToken);
     form.append('channels', channel);
     form.append('filename', filename);
-    form.append('file', new Blob([file as unknown as BlobPart]), filename);
+    form.append('file', new Blob([file as any]), filename);
 
     const res = await fetch(`${this.baseUrl}/files.upload`, { method: 'POST', body: form });
-    const data = await res.json();
+    const data = await res.json() as any;
     if (!data.ok) throw new Error(`Slack file upload error: ${data.error}`);
   }
 

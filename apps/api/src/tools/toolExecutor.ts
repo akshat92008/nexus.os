@@ -76,12 +76,14 @@ class ToolExecutor {
   async undoAction(action: ActionLog): Promise<any> {
     const { tool_id, undo_params } = action;
 
-    const safePath = (inputPath: string): string => {
-      if (!inputPath || typeof inputPath !== 'string') throw new Error('Invalid undo path');
-      if (/[;&|`$<>\\*?!\n\r]/.test(inputPath)) throw new Error(`Unsafe path rejected: ${inputPath}`);
-      const resolved = path.resolve(inputPath);
-      const allowedRoots = [process.env.WORKSPACE_ROOT || process.cwd(), os.homedir()];
-      if (!allowedRoots.some((root) => resolved.startsWith(path.resolve(root)))) {
+    // Sanitize path - reject anything with shell metacharacters
+    const safePath = (p: string): string => {
+      if (!p || typeof p !== 'string') throw new Error('Invalid undo path');
+      if (/[;&|`$<>\\*?!\n\r]/.test(p)) throw new Error(`Unsafe path rejected: ${p}`);
+      const resolved = path.resolve(p);
+      // Ensure path is within allowed workspace roots
+      const ALLOWED_ROOTS = [process.env.WORKSPACE_ROOT || os.homedir()];
+      if (!ALLOWED_ROOTS.some(root => resolved.startsWith(root))) {
         throw new Error(`Path escapes allowed workspace: ${resolved}`);
       }
       return resolved;
@@ -96,46 +98,37 @@ class ToolExecutor {
       case 'write_file': {
         const safe = safePath(undo_params.path);
         if (undo_params.original_content === null || undo_params.original_content === undefined) {
-          await fs.unlink(safe).catch(() => {});
+          await fs.unlink(safe).catch(() => {}); // file didn't exist before
         } else {
-          await fs.mkdir(path.dirname(safe), { recursive: true });
           await fs.writeFile(safe, undo_params.original_content, 'utf-8');
         }
         return { undone: 'write_file', path: safe };
       }
       case 'delete_file': {
-        if (undo_params.original_content !== null && undo_params.original_content !== undefined) {
+        if (undo_params.original_content) {
           const safe = safePath(undo_params.path);
-          await fs.mkdir(path.dirname(safe), { recursive: true });
           await fs.writeFile(safe, undo_params.original_content, 'utf-8');
         }
         return { undone: 'delete_file' };
       }
       default:
-        logger.warn({ tool_id }, '[ToolExecutor] No undo handler for tool');
+        logger.warn({ tool_id }, '[Saga] No undo handler for tool');
         return { undone: false, reason: `No undo for ${tool_id}` };
     }
   }
 
-  private async calculateUndoParams(toolName: string, args: any, ctx: ToolExecutionContext): Promise<any> {
-    switch (toolName) {
+  private async calculateUndoParams(toolName: string, args: any, ctx: any): Promise<any> {
       case 'write_file': {
-        const safe = this.resolveWorkspacePath(args.path, ctx);
         let originalContent: string | null = null;
-        try {
-          originalContent = await fs.readFile(safe, 'utf-8');
-        } catch {}
-        return { path: safe, original_content: originalContent };
+        try { originalContent = await fs.readFile(args.path, 'utf-8'); } catch {}
+        return { path: args.path, original_content: originalContent };
       }
       case 'create_folder':
-        return { path: this.resolveWorkspacePath(args.path, ctx) };
+        return { path: args.path };
       case 'delete_file': {
-        const safe = this.resolveWorkspacePath(args.path, ctx);
         let originalContent: string | null = null;
-        try {
-          originalContent = await fs.readFile(safe, 'utf-8');
-        } catch {}
-        return { path: safe, original_content: originalContent };
+        try { originalContent = await fs.readFile(args.path, 'utf-8'); } catch {}
+        return { path: args.path, original_content: originalContent };
       }
       default:
         return null;

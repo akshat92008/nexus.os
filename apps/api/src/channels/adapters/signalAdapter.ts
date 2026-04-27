@@ -38,10 +38,10 @@ export class SignalAdapter implements ChannelAdapter {
     attachments?: any[];
   }): Promise<any> {
     const conn = this.connections.get(channelId);
-    if (!conn) throw new Error(`Signal connection ${channelId} not active`);
+    if (!conn) return { error: 'Signal not configured' };
 
     const recipient = options?.threadId;
-    if (!recipient) throw new Error('Recipient (threadId) required for Signal messages');
+    if (!recipient) return { error: 'Recipient (threadId) required for Signal messages' };
 
     // In production: send via signald JSON-RPC
     // { "type": "send", "username": conn.account, "recipientAddress": { "number": recipient }, "messageBody": content }

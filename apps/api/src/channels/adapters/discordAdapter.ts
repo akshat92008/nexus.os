@@ -5,14 +5,21 @@ import { type ChannelAdapter, type ChannelConfig, type ChannelMessage, channelMa
 import { logger } from '../../logger.js';
 import { randomUUID } from 'crypto';
 
+async function loadDiscordSdk(): Promise<any> {
+  return Function('specifier', 'return import(specifier)')('discord.js');
+}
+
 export class DiscordAdapter implements ChannelAdapter {
   private clients: Map<string, any> = new Map();
 
   async connect(config: ChannelConfig): Promise<void> {
     const { botToken } = config.credentials;
-    if (!botToken) throw new Error('Discord bot token required');
+    if (!botToken) {
+      logger.warn({ channelId: config.id }, '[DiscordAdapter] Missing Discord bot token');
+      return;
+    }
 
-    const { Client, GatewayIntentBits, Events } = await import('discord.js');
+    const { Client, GatewayIntentBits, Events } = await loadDiscordSdk();
 
     const client = new Client({
       intents: [
@@ -66,14 +73,14 @@ export class DiscordAdapter implements ChannelAdapter {
     embeds?: any[];
   }): Promise<any> {
     const client = this.clients.get(channelId);
-    if (!client) throw new Error(`Discord client for ${channelId} not connected`);
+    if (!client) return { error: 'Discord not configured' };
 
     const targetChannelId = options?.channelId || options?.threadId;
-    if (!targetChannelId) throw new Error('Channel ID required for Discord messages');
+    if (!targetChannelId) return { error: 'Channel ID required for Discord messages' };
 
     const channel = await client.channels.fetch(targetChannelId);
     if (!channel || !channel.isTextBased()) {
-      throw new Error('Target channel not found or not text-based');
+      return { error: 'Target channel not found or not text-based' };
     }
 
     const payload: any = { content };

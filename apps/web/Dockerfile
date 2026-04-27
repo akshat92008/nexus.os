@@ -1,58 +1,31 @@
-# Stage 1: Build
-FROM node:20-slim AS builder
-
-# Install pnpm
-ENV PNPM_HOME="/pnpm"
-ENV PATH="$PNPM_HOME:$PATH"
-RUN corepack enable
+# apps/web/Dockerfile
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy lockfile and workspace config
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
-
-# Copy all package.json files to install dependencies efficiently
+COPY package.json ./
+COPY turbo.json ./
 COPY apps/web/package.json ./apps/web/
 COPY packages/types/package.json ./packages/types/
 
-# Install dependencies
-RUN pnpm install
+RUN npm install
 
-# Copy source code
 COPY . .
 
-# Build-time environment variables for Next.js prerendering
-ARG NEXT_PUBLIC_SUPABASE_URL
-ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
-ARG NEXT_PUBLIC_API_URL
+RUN npm run build --filter=@nexus-os/web
 
-ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
-ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
-
-# Build the web app
-RUN pnpm --filter @nexus-os/web build
-
-# Stage 2: Production
-FROM node:20-slim AS runner
+FROM node:20-alpine AS runner
 
 WORKDIR /app
 
-# Create a non-root user
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
+COPY --from=builder /app/apps/web/.next ./apps/web/.next
+COPY --from=builder /app/apps/web/public ./apps/web/public
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./
 
-# Copy the built application
-# Next.js standalone output maps files relative to the standalone directory
-COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/static ./apps/web/.next/static
-
-USER nextjs
+ENV NODE_ENV=production
+ENV PORT=3000
 
 EXPOSE 3000
 
-ENV PORT=3000
-ENV HOSTNAME="0.0.0.0"
-
-# Note: standalone server.js is located at the root of the standalone folder
-CMD ["node", "apps/web/server.js"]
+CMD ["npm", "start", "--filter=@nexus-os/web"]

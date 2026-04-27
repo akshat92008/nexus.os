@@ -184,7 +184,9 @@ class CanvasManager {
     const response = await llmRouter.call({
       system: 'You are a document generation assistant. Generate content based on the user prompt. Respond with a JSON object: { "type": "text|code|table|chart", "content": "...", "style": {} }',
       user: prompt,
-      model: 'llama-3.3-70b'
+      model: 'llama-3.3-70b',
+      maxTokens: 1200,
+      temperature: 0.4
     });
 
     let generated: any = {};

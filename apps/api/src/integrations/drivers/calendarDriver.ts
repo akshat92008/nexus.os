@@ -164,3 +164,24 @@ export class CalendarDriver {
     });
   }
 }
+
+// Singleton for easy access by other services like BookingEngine
+class CalendarDriverSingleton {
+  async getStatus(userId: string): Promise<{ connected: boolean }> {
+    // In a real implementation, we would query the `user_integrations` table
+    // For now, if GOOGLE_CLIENT_ID is not configured, we return false
+    return { connected: false };
+  }
+
+  async listEvents(userId: string, start: string, end: string): Promise<any[]> {
+    // Mock return if not connected
+    return [];
+  }
+
+  async createEvent(userId: string, params: any): Promise<any> {
+    // Mock return
+    return { id: 'mock-event-id', htmlLink: 'https://calendar.google.com/mock' };
+  }
+}
+
+export const calendarDriver = new CalendarDriverSingleton();

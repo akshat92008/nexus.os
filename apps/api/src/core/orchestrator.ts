@@ -1,4 +1,3 @@
-import { llmRouter } from '../llm/LLMRouter.js';
 import { integrationManager } from '../integrations/integrationManager.js';
 import { logger } from '../logger.js';
 
@@ -10,17 +9,20 @@ export interface WorkflowStep {
 }
 
 class Orchestrator {
-  async executePlan(plan: WorkflowStep[], userId: string): Promise<any[]> {
+  async executePlan(plan: WorkflowStep[], userId: string, isAborted?: () => boolean): Promise<any[]> {
     logger.info(`[Orchestrator] Executing plan with ${plan.length} steps`);
-    const results = [];
+    const results =[];
     
     for (const step of plan) {
+      if (isAborted && isAborted()) {
+        logger.info(`[Orchestrator] Mission aborted, stopping execution`);
+        break;
+      }
+
       logger.info(`[Orchestrator] Step ${step.id}: Executing ${step.action} on ${step.driver}`);
       try {
         const result = await integrationManager.execute(step.driver, step.action, step.payload);
         results.push({ stepId: step.id, status: 'success', result });
-        
-        // Brief delay between steps to simulate real work and avoid rate limits
         await new Promise(r => setTimeout(r, 500));
       } catch (err: any) {
         logger.error(`[Orchestrator] Step ${step.id} failed: ${err.message}`);

@@ -12,7 +12,8 @@ export class MatrixAdapter implements ChannelAdapter {
     const { homeserverUrl, accessToken, userId } = config.credentials;
     
     if (!homeserverUrl || !accessToken) {
-      throw new Error('Matrix homeserver URL and access token required');
+      logger.warn({ channelId: config.id }, '[MatrixAdapter] Missing Matrix credentials');
+      return;
     }
 
     logger.info(`[MatrixAdapter] Connecting to ${homeserverUrl} as ${userId || 'bot'}`);
@@ -46,10 +47,10 @@ export class MatrixAdapter implements ChannelAdapter {
     replyTo?: string; // event ID to reply to
   }): Promise<any> {
     const client = this.clients.get(channelId);
-    if (!client) throw new Error(`Matrix client ${channelId} not connected`);
+    if (!client) return { error: 'Matrix not configured' };
 
     const roomId = options?.threadId;
-    if (!roomId) throw new Error('Room ID (threadId) required for Matrix messages');
+    if (!roomId) return { error: 'Room ID (threadId) required for Matrix messages' };
 
     // In production: await client.matrixClient.sendTextMessage(roomId, content);
     logger.info(`[MatrixAdapter] Sending Matrix message to room ${roomId}`);

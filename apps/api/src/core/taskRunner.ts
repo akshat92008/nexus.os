@@ -36,7 +36,7 @@ class TaskRunner {
     let imported = 0;
     if (params.csv) {
       const result = await leadCapture.importCSV(userId, params.csv);
-      imported = result.count;
+      imported = result.imported;
     }
     
     // Score unscored leads
@@ -46,7 +46,7 @@ class TaskRunner {
     // based on our previous implementation.
     
     return {
-      summary: `Processed leads. Imported ${imported}, scored ${scoreResult.scored}. ${scoreResult.hot} hot leads found and drafts queued.`,
+      summary: `Processed leads. Imported ${imported}, scored ${scoreResult.processed}, errors ${scoreResult.errors}.`,
       details: { imported, ...scoreResult }
     };
   }
