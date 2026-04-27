@@ -1,4 +1,6 @@
 import { getSupabase } from '../storage/supabaseClient.js';
+import { env } from '../config/env.js';
+import { callAI } from '../core/aiProxy/index.js';
 import { llmRouter } from '../llm/LLMRouter.js';
 import { logger } from '../logger.js';
 
@@ -148,7 +150,18 @@ export class AnalyticsEngineService {
     const metricsStr = JSON.stringify(metrics, null, 2);
     
     try {
-      const raw = await llmRouter.callSimple(INSIGHT_PROMPT, metricsStr, 'MODEL_FAST', true);
+      let raw: string;
+      if (env.USE_AI_PROXY) {
+        const aiRes = await callAI({
+          userId,
+          taskType: 'analytics_insights',
+          prompt: metricsStr
+        });
+        if (!aiRes.success) throw new Error(aiRes.error || 'AI Proxy call failed');
+        raw = aiRes.data;
+      } else {
+        raw = await llmRouter.callSimple(INSIGHT_PROMPT, metricsStr, 'MODEL_FAST', true);
+      }
       
       let parsed;
       try {

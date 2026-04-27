@@ -1,7 +1,9 @@
-import { llmRouter } from '../llm/LLMRouter.js';
 import { approvalService } from './approvalService.js';
 import { getSupabase } from '../storage/supabaseClient.js';
 import { logger } from '../logger.js';
+import { env } from '../config/env.js';
+import { callAI } from '../core/aiProxy/index.js';
+import { llmRouter } from '../llm/LLMRouter.js';
 
 const REPLY_PROMPT = `You are a professional B2B sales rep writing on behalf of the business owner.
 Write a short, personalized email reply to this lead. Rules:
@@ -36,7 +38,17 @@ interface DraftResult {
 }
 
 export class SalesAgentService {
-  private async callLLMWithRetry(system: string, user: string, tier: string): Promise<string> {
+  private async callLLMWithRetry(system: string, user: string, tier: string, userId: string, taskType: string): Promise<string> {
+    if (env.USE_AI_PROXY) {
+      const aiRes = await callAI({
+        userId,
+        taskType,
+        prompt: user
+      });
+      if (!aiRes.success) throw new Error(aiRes.error || 'AI Proxy call failed');
+      return aiRes.data;
+    }
+
     const withTimeout = (promise: Promise<any>, ms: number) => {
       let timer: NodeJS.Timeout;
       const timeoutPromise = new Promise((_, reject) => {
@@ -83,7 +95,7 @@ Their message: ${context.inboundMessage || 'No message provided'}
 
 Please draft a response tailored to this lead's role and industry.`;
 
-      const raw = await this.callLLMWithRetry(REPLY_PROMPT, userPrompt, 'MODEL_FAST');
+      const raw = await this.callLLMWithRetry(REPLY_PROMPT, userPrompt, 'MODEL_FAST', userId, 'email_drafting');
       let parsed = { subject: context.subject || `Re: Your inquiry`, body: raw };
       try {
         const cleaned = raw.replace(/```json/g, '').replace(/```/g, '').trim();
@@ -194,7 +206,7 @@ Previous email sent to this lead:
 ${prevBody}
 """
 Please write a DIFFERENT angle based on this context, tailored to their role and industry.`;
-      const raw = await this.callLLMWithRetry(systemPrompt, userPrompt, 'MODEL_FAST');
+      const raw = await this.callLLMWithRetry(systemPrompt, userPrompt, 'MODEL_FAST', userId, 'email_drafting');
       
       let parsed = { subject: step === 2 ? 'Following up' : 'Last note from me', body: raw };
       try {

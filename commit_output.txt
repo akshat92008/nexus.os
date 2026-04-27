@@ -1,0 +1,1 @@
+fatal: sha1 file '/Users/ashishsingh/Desktop/nexus-os/.git/index.lock' write error: Operation timed out

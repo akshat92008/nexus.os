@@ -1,7 +1,9 @@
-import { llmRouter } from '../llm/LLMRouter.js';
 import { getSupabase } from '../storage/supabaseClient.js';
 import { logger } from '../logger.js';
 import { salesAgent } from './salesAgent.js';
+import { env } from '../config/env.js';
+import { callAI } from '../core/aiProxy/index.js';
+import { llmRouter } from '../llm/LLMRouter.js';
 
 const SCORE_PROMPT = `You are a B2B sales qualification expert.
 Score this lead 0-100 based on buying intent and fit.
@@ -49,7 +51,18 @@ Role: ${lead.role || 'unknown'}
 Source: ${lead.source}
 Notes: ${lead.notes || 'none'}`;
 
-      const raw = await llmRouter.callSimple(SCORE_PROMPT, context, 'MODEL_FAST', true);
+      let raw: string;
+      if (env.USE_AI_PROXY) {
+        const aiRes = await callAI({
+          userId,
+          taskType: 'lead_scoring',
+          prompt: context
+        });
+        if (!aiRes.success) throw new Error(aiRes.error || 'AI Proxy call failed');
+        raw = aiRes.data;
+      } else {
+        raw = await llmRouter.callSimple(SCORE_PROMPT, context, 'MODEL_FAST', true);
+      }
       
       let result: ScoreResult;
       try {

@@ -1,32 +1,49 @@
-# Nexus OS — v3.0 'Sovereign' Private Beta
+# Nexus OS
 
-Nexus OS is the first fully autonomous, GUI-aware agentic environment for macOS. It transforms your computer from a tool you use into a partner that works for you.
+Nexus OS is a multi-surface agent runtime: a Node/Express API, a Next.js dashboard, and a Tauri desktop shell with macOS GUI control primitives.
 
-## 🛰️ v3.0 Agentic Architecture
-- **The Nerve (Native Rust)**: High-performance macOS integration via Tauri v2, managing the **AX Tree Eye** for GUI awareness and **Sovereign Memory** (SQLite-vec) for semantic recall.
-- **The Brain (Cloud Kernel)**: Distributed reasoning via Groq, OpenAI, and Gemini, managing complex DAG-based mission planning.
-- **The Trust Layer (Saga)**: Native 'Undo' capability. Every destructive operation is logged and reversible via the Saga Rollback pattern.
-- **The Cyber-Shell**: A premium React dashboard featuring a command-centric HUD, live Mission Logs, and the CEO Authorization gate.
-
-## 🧪 Private Beta Status
-Nexus OS is currently in **Private Beta**. Access is restricted to authorized partners and early-access CEOs via the Waitlist.
-
-### Getting Started (Native Developer Build)
-1. **Prepare Assets**:
+## 5-Minute Quickstart
+1. Copy `.env.example` to `.env`.
+2. For local-only development, set:
+   `STORAGE_STRATEGY=local`
+   `GROQ_API_KEY=<any non-empty placeholder for boot, or a real key for LLM features>`
+3. Start Redis:
    ```bash
-   bash scripts/prepare_build.sh
+   docker compose up redis -d
    ```
-2. **Launch Dev Environment**:
+4. Start the API:
    ```bash
-   pnpm tauri dev
+   cd apps/api
+   npm run dev
    ```
-3. **Generate Production Bundle**:
+5. Start the web app:
    ```bash
-   pnpm tauri build
+   cd apps/web
+   npm run dev
    ```
 
-## 🛡️ Security & Privacy
-Nexus OS prioritizes **Sovereign Privacy**. Your interaction history, file metadata, and gui state are stored in a local **Sovereign Memory** (SQLite-vec) on your machine. All power-lane actions require explicit **CEO Authorization**.
+Default local URLs:
+- API: `http://localhost:3006`
+- Web: `http://localhost:3015`
 
----
-*Nexus OS — Build for the Sovereign Era.*
+## Local Modes
+- `STORAGE_STRATEGY=supabase`: uses Supabase/Postgres for missions, memory, and user state.
+- `STORAGE_STRATEGY=local`: skips cloud persistence and uses degraded/local behavior where available.
+
+## Key API Surfaces
+- `POST /api/missions`
+- `GET /api/missions/:id/stream`
+- `POST /api/skills/v2/execute`
+- `POST /api/memory/store`
+- `POST /api/memory/search`
+- `GET /api/channels`
+- `POST /api/rollback`
+
+## Desktop Build
+```bash
+pnpm tauri dev
+```
+
+```bash
+pnpm tauri build
+```
