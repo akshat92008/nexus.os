@@ -4,7 +4,7 @@
 .pnp.js
 
 # Testing
-/coverage
+**/coverage/
 test-recordings/
 apps/*/test-recordings/
 
@@ -69,3 +69,8 @@ nexus_env/
 *.pid
 *.log
 .DS_Store
+**/.pnpm-store/
+apps/api/data/
+apps/api/src/config/
+nexus-os/
+nexusislive/

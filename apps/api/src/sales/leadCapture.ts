@@ -1,6 +1,7 @@
 import { getSupabase } from '../storage/supabaseClient.js';
 import { logger } from '../logger.js';
 import { randomUUID } from 'crypto';
+import { leadScorer } from './leadScorer.js';
 
 export interface LeadInput {
   email: string;
@@ -35,7 +36,7 @@ export class LeadCaptureService {
         throw new Error('invalid email');
       }
 
-      const supabase = getSupabase();
+      const supabase = await getSupabase();
 
       // Upsert lead
       const { data: lead, error: leadError } = await supabase
@@ -185,6 +186,73 @@ export class LeadCaptureService {
       const msg = error.message.startsWith('[LeadCapture]') ? error.message : `[LeadCapture] ${error.message}`;
       throw new Error(msg);
     }
+  }
+
+  async importCSV(userId: string, csvText: string): Promise<{ imported: number; skipped: number; errors: string[] }> {
+    const lines = csvText.replace(/\r/g, '').trim().split('\n');
+    if (lines.length < 2) throw new Error('CSV must have a header row and at least one data row');
+    if (lines.length > 501) throw new Error('Max 500 rows per import');
+
+    const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/^"(.*)"$/, '$1'));
+    const emailIdx = headers.indexOf('email');
+    if (emailIdx === -1) throw new Error('CSV must contain an "email" column');
+
+    const nameIdx = headers.indexOf('name');
+    const companyIdx = headers.indexOf('company');
+    const roleIdx = headers.indexOf('role');
+    const sourceIdx = headers.indexOf('source');
+    const notesIdx = headers.indexOf('notes');
+
+    let imported = 0;
+    let skipped = 0;
+    const errors: string[] = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+
+      // Simple CSV parse: split by comma, handle quoted fields
+      const fields = line.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g)?.map(f => f.trim().replace(/^"(.*)"$/, '$1')) || [];
+
+      const email = fields[emailIdx]?.trim();
+      if (!email) { errors.push(`Row ${i + 1}: missing email`); continue; }
+
+      const validSources = ['web_form', 'email', 'linkedin', 'manual', 'api'];
+      let rawSource = sourceIdx >= 0 ? fields[sourceIdx]?.toLowerCase() : 'manual';
+      let source = validSources.includes(rawSource) ? rawSource : 'manual';
+
+      try {
+        await this.capture(userId, {
+          email,
+          name: nameIdx >= 0 ? fields[nameIdx] : undefined,
+          company: companyIdx >= 0 ? fields[companyIdx] : undefined,
+          role: roleIdx >= 0 ? fields[roleIdx] : undefined,
+          source: source as any,
+          notes: notesIdx >= 0 ? fields[notesIdx] : undefined,
+        });
+        imported++;
+      } catch (err: any) {
+        if (err.message.includes('duplicate') || err.message.includes('unique')) {
+          skipped++;
+        } else {
+          errors.push(`Row ${i + 1} (${email}): ${err.message}`);
+        }
+      }
+    }
+
+    logger.info(`[LeadCapture] CSV import: ${imported} imported, ${skipped} skipped, ${errors.length} errors`);
+    
+    if (imported > 0) {
+      // Fire and forget auto-scoring in the background
+      setTimeout(() => {
+        logger.info(`[LeadCapture] Triggering auto-score for ${imported} new leads...`);
+        leadScorer.scoreBatch(userId, imported).catch(err => {
+          logger.error(`[LeadCapture] Auto-score background task failed: ${err.message}`);
+        });
+      }, 1000);
+    }
+
+    return { imported, skipped, errors };
   }
 }
 

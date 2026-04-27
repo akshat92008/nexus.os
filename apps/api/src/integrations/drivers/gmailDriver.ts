@@ -134,6 +134,17 @@ export class GmailDriver {
     };
   }
 
+  async createDraft(params: {
+    to: string | string[];
+    subject: string;
+    body: string;
+    replyTo?: string;
+    cc?: string[];
+  }): Promise<Draft> {
+    const recipients = Array.isArray(params.to) ? params.to : [params.to];
+    return this.draftEmail(recipients, params.subject, params.body, params.replyTo, params.cc);
+  }
+
   async sendEmail(draftId: string): Promise<void> {
     await this.request(`/users/me/drafts/send`, {
       method: 'POST',

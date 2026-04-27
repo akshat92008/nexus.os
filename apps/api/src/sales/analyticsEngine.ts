@@ -2,6 +2,8 @@ import { getSupabase } from '../storage/supabaseClient.js';
 import { llmRouter } from '../llm/LLMRouter.js';
 import { logger } from '../logger.js';
 
+const insightsCache = new Map<string, { insights: string[]; actions: string[]; expiresAt: number }>();
+
 interface FunnelMetrics {
   period: string;
   total_leads: number;
@@ -32,7 +34,7 @@ export class AnalyticsEngineService {
       
       const { data: leads, error } = await supabase
         .from('leads')
-        .select('*')
+        .select('id, status, source, score, created_at, booked_at')
         .eq('user_id', userId)
         .gte('created_at', since);
 
@@ -130,6 +132,13 @@ export class AnalyticsEngineService {
   async getInsights(userId: string, days: number = 30): Promise<InsightResult> {
     const metrics = await this.getFunnelMetrics(userId, days);
     
+    const cacheKey = `${userId}_${days}`;
+    const cached = insightsCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      logger.debug(`[AnalyticsEngine] Serving cached insights for ${userId}`);
+      return { metrics, insights: cached.insights, recommended_actions: cached.actions };
+    }
+
     const INSIGHT_PROMPT = `You are a B2B sales analyst. Given these funnel metrics, provide:
         - 3 key insights (what's working, what's broken)
         - 3 specific actions to improve conversion
@@ -152,6 +161,12 @@ export class AnalyticsEngineService {
       const insights = Array.isArray(parsed.insights) ? parsed.insights : [];
       const recommended_actions = Array.isArray(parsed.recommended_actions) ? parsed.recommended_actions : [];
       
+      insightsCache.set(cacheKey, {
+        insights,
+        actions: recommended_actions,
+        expiresAt: Date.now() + 60 * 60 * 1000 // 1 hour TTL
+      });
+
       logger.info(`[AnalyticsEngine] Generated ${insights.length} insights for user ${userId}`);
       
       return { metrics, insights, recommended_actions };
@@ -165,5 +180,6 @@ export class AnalyticsEngineService {
     }
   }
 }
+
 
 export const analyticsEngine = new AnalyticsEngineService();

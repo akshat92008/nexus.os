@@ -1,6 +1,7 @@
 import { llmRouter } from '../llm/LLMRouter.js';
 import { getSupabase } from '../storage/supabaseClient.js';
 import { logger } from '../logger.js';
+import { salesAgent } from './salesAgent.js';
 
 const SCORE_PROMPT = `You are a B2B sales qualification expert.
 Score this lead 0-100 based on buying intent and fit.
@@ -112,7 +113,7 @@ Notes: ${lead.notes || 'none'}`;
     let errors = 0;
 
     try {
-      const supabase = getSupabase();
+      const supabase = await getSupabase();
       const { data: leads, error: fetchError } = await supabase
         .from('leads')
         .select('id')
@@ -132,8 +133,17 @@ Notes: ${lead.notes || 'none'}`;
 
       for (const lead of leads) {
         try {
-          await this.scoreLead(lead.id, userId);
+          const result = await this.scoreLead(lead.id, userId);
           processed++;
+          
+          if (result.score >= 70) {
+            logger.info(`[LeadScorer] Lead ${lead.id} is HOT. Auto-drafting initial outreach...`);
+            // Trigger auto-drafting asynchronously
+            salesAgent.draftFollowUp(lead.id, userId, 0).catch(err => {
+               logger.error(`[LeadScorer] Auto-draft failed for lead ${lead.id}: ${err.message}`);
+            });
+          }
+
           // Sequential delay
           await new Promise(r => setTimeout(r, 200));
         } catch (err: any) {

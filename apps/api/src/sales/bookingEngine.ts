@@ -1,4 +1,3 @@
-import { skillManager } from '../skills/skillManager.js';
 import { salesAgent } from './salesAgent.js';
 import { getSupabase } from '../storage/supabaseClient.js';
 import { logger } from '../logger.js';
@@ -30,17 +29,8 @@ export class BookingEngineService {
    */
   async findAvailableSlots(userId: string, date: string, durationMinutes: number = 30): Promise<string[]> {
     try {
-      // Fetch existing events for the day
-      const events = await skillManager.executeTool('calendar_list_events', {
-        time_min: `${date}T08:00:00Z`,
-        time_max: `${date}T18:00:00Z`,
-        max_results: 20
-      }, { userId });
-
-      const existingEvents = (events || []).map((e: any) => ({
-        start: new Date(e.start?.dateTime || e.start?.date).getTime(),
-        end: new Date(e.end?.dateTime || e.end?.date).getTime()
-      }));
+      // Mock existing events since Google Calendar OAuth is not configured yet
+      const existingEvents: {start: number, end: number}[] = [];
 
       const availableSlots: string[] = [];
       const startTimeRef = new Date(`${date}T09:00:00Z`);
@@ -94,14 +84,8 @@ export class BookingEngineService {
     const startTime = slots[0];
     const endTime = new Date(new Date(startTime).getTime() + duration * 60000).toISOString();
 
-    // Create calendar event
-    const result = await skillManager.executeTool('calendar_create_event', {
-      title: request.meetingTitle || `Meeting with ${request.leadName || request.leadEmail}`,
-      start_time: startTime,
-      end_time: endTime,
-      attendees: [request.leadEmail],
-      description: 'Scheduled via Nexus OS'
-    }, { userId: request.userId });
+    // Mock calendar event creation (Google Calendar integration pending)
+    let result: any = { id: randomUUID() };
 
     // Update leads table
     const supabase = await getSupabase();

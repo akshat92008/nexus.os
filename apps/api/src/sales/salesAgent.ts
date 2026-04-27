@@ -1,9 +1,7 @@
 import { llmRouter } from '../llm/LLMRouter.js';
-import { emailDriver } from '../integrations/drivers/emailDriver.js';
-import { queueApproval, approvalQueue } from '../integrations/approvalSystem.js';
+import { approvalService } from './approvalService.js';
 import { getSupabase } from '../storage/supabaseClient.js';
 import { logger } from '../logger.js';
-import { randomUUID } from 'crypto';
 
 const REPLY_PROMPT = `You are a professional B2B sales rep writing on behalf of the business owner.
 Write a short, personalized email reply to this lead. Rules:
@@ -11,8 +9,10 @@ Write a short, personalized email reply to this lead. Rules:
 - Warm but professional tone
 - End with a clear single call-to-action (book a call, reply with availability, etc.)
 - Do NOT mention AI, automation, or that this was generated
-- Match the lead's level of formality
-Output ONLY the email body text. No subject line. No signature placeholder.`;
+- Match the lead's level of formality. Tailor your language and tone specifically to their role and industry (e.g., formal for enterprise, casual for creatives).
+Output ONLY valid JSON in this exact format:
+{"subject": "compelling subject line here", "body": "email body here"}
+No markdown blocks, no other text.`;
 
 const FOLLOWUP_PROMPT = `You are a B2B sales rep writing a follow-up email.
 This lead has not responded in {days} days. Write a gentle follow-up.
@@ -21,7 +21,10 @@ Rules:
 - Different angle than previous outreach
 - One clear CTA
 - Do NOT say "just checking in" or "circling back"
-Output ONLY email body. No subject line.`;
+- Tailor your language and tone specifically to their role and industry (e.g., formal for enterprise, casual for creatives).
+Output ONLY valid JSON in this exact format:
+{"subject": "compelling subject line here", "body": "email body here"}
+No markdown blocks, no other text.`;
 
 interface DraftResult {
   approvalId: string;
@@ -34,30 +37,73 @@ interface DraftResult {
 
 export class SalesAgentService {
   private async callLLMWithRetry(system: string, user: string, tier: string): Promise<string> {
+    const withTimeout = (promise: Promise<any>, ms: number) => {
+      let timer: NodeJS.Timeout;
+      const timeoutPromise = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('LLM Timeout')), ms);
+      });
+      return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timer));
+    };
+
     try {
-      return await llmRouter.callSimple(system, user, tier);
+      return await withTimeout(llmRouter.callSimple(system, user, tier), 10000);
     } catch (error) {
       logger.warn(`[SalesAgent] LLM call failed, retrying once after 1000ms delay...`);
       await new Promise(resolve => setTimeout(resolve, 1000));
-      return await llmRouter.callSimple(system, user, tier);
+      return await withTimeout(llmRouter.callSimple(system, user, tier), 10000);
     }
   }
+  private async getUserBusinessContext(userId: string): Promise<string> {
+    try {
+      const supabase = await getSupabase();
+      const { data, error } = await supabase.auth.admin.getUserById(userId);
+      if (error || !data.user) return '';
+      return data.user.user_metadata?.business_context || '';
+    } catch (e) {
+      return '';
+    }
+  }
+
 
   async draftReply(
     leadId: string,
     userId: string,
-    context: { leadName?: string; leadCompany?: string; leadEmail: string; inboundMessage?: string; subject?: string; }
+    context: { leadName?: string; leadCompany?: string; leadEmail: string; inboundMessage?: string; subject?: string; role?: string; }
   ): Promise<DraftResult> {
     try {
-      const userPrompt = `Lead: ${context.leadName || 'Unknown'} from ${context.leadCompany || 'Unknown'}
+      const businessContext = await this.getUserBusinessContext(userId);
+      const userPrompt = `Context about the sender's business:
+${businessContext || 'No business context provided.'}
+
+Lead: ${context.leadName || 'Unknown'}
+Company: ${context.leadCompany || 'Unknown'}
+Role: ${context.role || 'Unknown'}
 Email: ${context.leadEmail}
-Their message: ${context.inboundMessage || 'No message provided'}`;
+Their message: ${context.inboundMessage || 'No message provided'}
 
-      const body = await this.callLLMWithRetry(REPLY_PROMPT, userPrompt, 'MODEL_FAST');
-      const subject = context.subject || `Re: Your inquiry`;
+Please draft a response tailored to this lead's role and industry.`;
 
-      // Queue for CEO approval
-      const approval = queueApproval('send_email', { to: context.leadEmail, subject, body }, userId);
+      const raw = await this.callLLMWithRetry(REPLY_PROMPT, userPrompt, 'MODEL_FAST');
+      let parsed = { subject: context.subject || `Re: Your inquiry`, body: raw };
+      try {
+        const cleaned = raw.replace(/```json/g, '').replace(/```/g, '').trim();
+        parsed = JSON.parse(cleaned);
+      } catch (e) {
+        logger.warn(`[SalesAgent] Failed to parse JSON reply: ${raw}`);
+      }
+      
+      const subject = parsed.subject;
+      const body = `${parsed.body}\n\n---\nTo unsubscribe, please reply with "Unsubscribe".`;
+
+      // Queue for approval (persistent)
+      const approval = await approvalService.create({
+        userId,
+        leadId,
+        toEmail: context.leadEmail,
+        subject,
+        body,
+        step: 1
+      });
 
       const supabase = await getSupabase();
       
@@ -70,21 +116,21 @@ Their message: ${context.inboundMessage || 'No message provided'}`;
           step: 1,
           status: 'pending',
           message_subject: subject,
-          message_body: body
+          message_body: body,
+          approval_id: approval.id,
+          scheduled_at: new Date().toISOString()
         });
 
       if (seqError) throw seqError;
 
-      // Insert lead event (emailed)
-      const { error: eventError } = await supabase
+      // Insert lead event
+      await supabase
         .from('lead_events')
         .insert({
           lead_id: leadId,
-          event_type: 'emailed',
+          event_type: 'draft_created',
           payload: { step: 1, approval_id: approval.id }
         });
-
-      if (eventError) throw eventError;
 
       return {
         approvalId: approval.id,
@@ -113,6 +159,7 @@ Their message: ${context.inboundMessage || 'No message provided'}`;
         .from('leads')
         .select('*')
         .eq('id', leadId)
+        .eq('user_id', userId)
         .single();
 
       if (leadError || !lead) throw new Error('Lead not found');
@@ -120,30 +167,55 @@ Their message: ${context.inboundMessage || 'No message provided'}`;
         throw new Error('Lead not eligible for follow-up');
       }
 
-      // Fetch latest follow_up_sequences row for this lead to get step count
-      const { data: latest, error: seqError } = await supabase
+      // Fetch latest step and previous message body
+      const { data: latest } = await supabase
         .from('follow_up_sequences')
-        .select('step')
+        .select('step, message_body')
         .eq('lead_id', leadId)
         .order('step', { ascending: false })
         .limit(1)
         .maybeSingle();
 
-      if (seqError) throw seqError;
-
       const step = (latest?.step || 0) + 1;
-      if (step > 3) {
-        throw new Error('Max follow-up steps reached (3)');
+      if (step > 3) throw new Error('Max follow-up steps reached (3)');
+      const prevBody = latest?.message_body || 'None';
+
+      const businessContext = await this.getUserBusinessContext(userId);
+      const systemPrompt = FOLLOWUP_PROMPT.replace('{days}', daysSinceContact.toString());
+      const userPrompt = `Context about the sender's business:
+${businessContext || 'No business context provided.'}
+
+Lead: ${lead.name || 'Unknown'}
+Company: ${lead.company || 'Unknown'}
+Role: ${lead.role || 'Unknown'}
+
+Previous email sent to this lead:
+"""
+${prevBody}
+"""
+Please write a DIFFERENT angle based on this context, tailored to their role and industry.`;
+      const raw = await this.callLLMWithRetry(systemPrompt, userPrompt, 'MODEL_FAST');
+      
+      let parsed = { subject: step === 2 ? 'Following up' : 'Last note from me', body: raw };
+      try {
+        const cleaned = raw.replace(/```json/g, '').replace(/```/g, '').trim();
+        parsed = JSON.parse(cleaned);
+      } catch (e) {
+        logger.warn(`[SalesAgent] Failed to parse JSON followup: ${raw}`);
       }
 
-      const systemPrompt = FOLLOWUP_PROMPT.replace('{days}', daysSinceContact.toString());
-      const userPrompt = `Lead: ${lead.name || 'Unknown'} from ${lead.company || 'Unknown'}`;
-      const body = await this.callLLMWithRetry(systemPrompt, userPrompt, 'MODEL_FAST');
-      
-      const subject = step === 2 ? 'Following up' : 'Last note from me';
+      const subject = parsed.subject;
+      const body = `${parsed.body}\n\n---\nTo unsubscribe, please reply with "Unsubscribe".`;
 
-      // Queue for CEO approval
-      const approval = queueApproval('send_email', { to: lead.email!, subject, body }, userId);
+      // Queue for approval (persistent)
+      const approval = await approvalService.create({
+        userId,
+        leadId,
+        toEmail: lead.email!,
+        subject,
+        body,
+        step
+      });
 
       // Insert follow-up sequence row
       await supabase.from('follow_up_sequences').insert({
@@ -152,17 +224,12 @@ Their message: ${context.inboundMessage || 'No message provided'}`;
         step,
         status: 'pending',
         message_subject: subject,
-        message_body: body
+        message_body: body,
+        approval_id: approval.id,
+        scheduled_at: new Date().toISOString()
       });
 
-      // Insert lead event
-      await supabase.from('lead_events').insert({
-        lead_id: leadId,
-        event_type: 'emailed',
-        payload: { step, approval_id: approval.id }
-      });
-
-      // Update leads: follow_up_count += 1, last_contacted_at = NOW()
+      // Update leads
       await supabase
         .from('leads')
         .update({
@@ -185,47 +252,6 @@ Their message: ${context.inboundMessage || 'No message provided'}`;
     }
   }
 
-  async sendApproved(approvalId: string, userId: string): Promise<{ sent: boolean }> {
-    try {
-      // Fetch approval from approvalQueue
-      const approval = approvalQueue.get(approvalId);
-      if (!approval || approval.status !== 'pending') {
-        throw new Error('Approval not found or already processed');
-      }
-
-      const { to, subject, body } = approval.params as any;
-
-      // Call emailDriver.execute
-      const result = await (emailDriver as any).execute({
-        to,
-        subject,
-        body,
-        from: process.env.FROM_EMAIL
-      }, userId);
-
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to send email');
-      }
-
-      // Update approval status to 'approved'
-      approval.status = 'approved';
-      approval.resolvedAt = Date.now();
-
-      // Update follow_up_sequences: status='sent', sent_at=NOW() where draft has matching subject
-      const supabase = await getSupabase();
-      await supabase
-        .from('follow_up_sequences')
-        .update({ status: 'sent', sent_at: new Date().toISOString() })
-        .eq('message_subject', subject)
-        .eq('status', 'pending');
-
-      return { sent: true };
-    } catch (error: any) {
-      logger.error(`[SalesAgent] Error in sendApproved: ${error.message}`);
-      throw error;
-    }
-  }
-
   async runScheduledFollowUps(userId: string): Promise<{ triggered: number; skipped: number; errors: number }> {
     let triggered = 0;
     let skipped = 0;
@@ -234,7 +260,7 @@ Their message: ${context.inboundMessage || 'No message provided'}`;
     try {
       const supabase = await getSupabase();
       
-      const { data: sequences, error: seqError } = await supabase
+      const { data: sequences } = await supabase
         .from('follow_up_sequences')
         .select(`
           id,
@@ -254,15 +280,10 @@ Their message: ${context.inboundMessage || 'No message provided'}`;
         .lte('scheduled_at', new Date().toISOString())
         .limit(10);
 
-      if (seqError) throw seqError;
-
       for (const seq of (sequences || [])) {
         try {
           const lead = seq.leads as any;
-          if (!lead) {
-            errors++;
-            continue;
-          }
+          if (!lead) { errors++; continue; }
 
           if (lead.status === 'booked' || lead.status === 'lost') {
             await supabase
@@ -278,14 +299,12 @@ Their message: ${context.inboundMessage || 'No message provided'}`;
 
           await this.draftFollowUp(lead.id, userId, daysSince);
           
-          // Mark as processed to avoid re-triggering the same timer
           await supabase
             .from('follow_up_sequences')
             .update({ status: 'processed' })
             .eq('id', seq.id);
 
           triggered++;
-          await new Promise(resolve => setTimeout(resolve, 500));
         } catch (err: any) {
           logger.error(`[SalesAgent] Error processing scheduled follow-up ${seq.id}: ${err.message}`);
           errors++;
@@ -298,16 +317,6 @@ Their message: ${context.inboundMessage || 'No message provided'}`;
       throw error;
     }
   }
-}
-
-export async function registerFollowUpCron(cronManager: any, userId: string) {
-  await cronManager.schedule({
-    name: `sales-followup-${userId}`,
-    mission_prompt: `Run scheduled follow-up emails for user ${userId}`,
-    schedule_type: 'cron',
-    cron_expression: '0 9 * * *',  // 9am daily
-    is_active: true
-  });
 }
 
 export const salesAgent = new SalesAgentService();

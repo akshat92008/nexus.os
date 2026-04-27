@@ -72,14 +72,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 
   const authHeader = req.headers.authorization;
   
-  // ── Sovereign Trust Bypass (for TUI/System Tools) ──────────────────────────
-  const systemSecret = process.env.SUPABASE_SERVICE_KEY;
-  if (authHeader === `Bearer ${systemSecret}` && systemSecret) {
-    req.userId = 'system_sovereign';
-    req.user = { id: 'system_sovereign', email: 'system@nexus.os' };
-    return next();
-  }
-
+  // Removed Sovereign Trust Bypass (P1-1 Security Fix)
   if (!authHeader?.startsWith('Bearer ')) {
     logger.warn({ ip: req.ip, path: req.path }, 'Unauthorized access attempt: Missing token');
     return res.status(401).json({ error: 'Unauthorized: Missing or malformed token' });
