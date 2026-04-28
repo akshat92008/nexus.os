@@ -1,0 +1,32 @@
+# Nexus OS API - High-Reliability Single-Stage Production Build
+FROM node:20-slim
+
+WORKDIR /app
+
+# Install pnpm for dependency management
+RUN npm install -g pnpm
+
+# Copy workspace configuration
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+
+# Copy internal packages first
+COPY packages ./packages
+
+# Copy API package definition
+COPY apps/api/package.json ./apps/api/
+
+# Install ALL dependencies (in single stage to preserve symlink integrity)
+RUN pnpm install
+
+# Copy API source and build it
+COPY apps/api ./apps/api
+RUN pnpm --filter @nexus-os/api build
+
+# Runtime configuration
+ENV PORT=3001
+ENV NODE_ENV=production
+EXPOSE 3001
+
+# Start the server using the compiled output directly
+# Note: apps/api/dist/index.js is the target since we are in the root
+CMD ["node", "--max-old-space-size=2048", "apps/api/dist/index.js"]

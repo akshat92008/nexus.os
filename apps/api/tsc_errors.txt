@@ -1,0 +1,3 @@
+src/sales/leadCapture.ts(42,10): error TS2339: Property 'from' does not exist on type 'Promise<any>'.
+src/sales/leadCapture.ts(66,10): error TS2339: Property 'from' does not exist on type 'Promise<any>'.
+src/sales/leadScorer.ts(117,10): error TS2339: Property 'from' does not exist on type 'Promise<any>'.

@@ -1,0 +1,13 @@
+[package]
+name = "nexus-api"
+version = "1.0.0"
+edition = "2021"
+authors = ["Nexus OS Team"]
+description = "Native Nexus API Sidecar — High-performance OS monitoring and health service."
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+axum = "0.7"
+tower-http = { version = "0.5", features = ["cors"] }

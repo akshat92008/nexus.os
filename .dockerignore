@@ -1,0 +1,31 @@
+# ⚡ NEXUS OS — DOCKER CONTEXT OPTIMIZATION ⚡
+# This file prevents heavy local files from being sent to the Docker engine.
+
+# Dependency Bloat
+**/node_modules/
+**/dist/
+**/.next/
+**/out/
+**/target/
+
+# Local Dev Environment
+.gemini/
+.idx/
+.devcontainer/
+nexus_env/
+__pycache__/
+*.pyc
+
+# Logs & Temp
+*.log
+*.pid
+scratch/
+.portal_url
+.current_portal_url
+.api_log
+
+# Git
+.git
+.gitignore
+.dockerignore
+.gcloudignore
