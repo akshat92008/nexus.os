@@ -8,8 +8,8 @@ export interface LLMCallOpts {
   system: string;
   user: string;
   model: string;
-  maxTokens: number;
-  temperature: number;
+  maxTokens?: number;
+  temperature?: number;
   jsonMode?: boolean;
   signal?: AbortSignal;
   enableStreaming?: boolean;

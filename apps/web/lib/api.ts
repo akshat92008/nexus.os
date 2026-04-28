@@ -32,7 +32,7 @@ export async function fetchWithAuth(endpoint: string, options: RequestInit = {})
   return response.json();
 }
 
-const NEXUS_API_BASE = process.env.NEXT_PUBLIC_API_URL?.replace('/api/sales', '/api') || 'http://localhost:3006/api';
+const NEXUS_API_BASE = process.env.NEXT_PUBLIC_NEXUS_API_URL || 'http://localhost:3006/api';
 
 export async function fetchNexus(endpoint: string, options: RequestInit = {}) {
   const supabase = createClient();

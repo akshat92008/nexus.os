@@ -167,20 +167,116 @@ export class CalendarDriver {
 
 // Singleton for easy access by other services like BookingEngine
 class CalendarDriverSingleton {
-  async getStatus(userId: string): Promise<{ connected: boolean }> {
-    // In a real implementation, we would query the `user_integrations` table
-    // For now, if GOOGLE_CLIENT_ID is not configured, we return false
-    return { connected: false };
+  /**
+   * Checks if a user has a connected Google Calendar by looking up their
+   * stored OAuth tokens in the user_integrations table.
+   */
+  async getStatus(userId: string): Promise<{ connected: boolean; accessToken?: string }> {
+    // If Google OAuth is not configured at all, return false immediately
+    if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+      return { connected: false };
+    }
+
+    try {
+      const { getSupabase } = await import('../../storage/supabaseClient.js');
+      const supabase = await getSupabase();
+      const { data, error } = await supabase
+        .from('user_integrations')
+        .select('access_token, refresh_token, metadata')
+        .eq('user_id', userId)
+        .eq('integration_type', 'google_calendar')
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (error || !data || !data.access_token) {
+        return { connected: false };
+      }
+
+      return { connected: true, accessToken: data.access_token };
+    } catch (err) {
+      return { connected: false };
+    }
   }
 
+  /**
+   * Lists events from the user's primary Google Calendar.
+   */
   async listEvents(userId: string, start: string, end: string): Promise<any[]> {
-    // Mock return if not connected
-    return [];
+    const status = await this.getStatus(userId);
+    if (!status.connected || !status.accessToken) return [];
+
+    try {
+      const driver = new CalendarDriver(status.accessToken);
+      return await driver.listEvents(new Date(start), new Date(end));
+    } catch (err: any) {
+      console.warn('[CalendarDriver] listEvents failed:', err.message);
+      return [];
+    }
   }
 
-  async createEvent(userId: string, params: any): Promise<any> {
-    // Mock return
-    return { id: 'mock-event-id', htmlLink: 'https://calendar.google.com/mock' };
+  /**
+   * Creates a Google Calendar event for the user.
+   * Falls back to a mock response if the user is not connected.
+   */
+  async createEvent(userId: string, params: {
+    title: string;
+    startTime: string;
+    endTime: string;
+    attendees?: string[];
+    description?: string;
+  }): Promise<{ id: string; htmlLink?: string }> {
+    const status = await this.getStatus(userId);
+
+    if (!status.connected || !status.accessToken) {
+      // Graceful fallback — return a structured mock so the caller doesn't crash
+      const { randomUUID } = await import('crypto');
+      return {
+        id: `nexus-local-${randomUUID()}`,
+        htmlLink: undefined,
+      };
+    }
+
+    try {
+      const driver = new CalendarDriver(status.accessToken);
+      const event = await driver.createEvent({
+        summary: params.title,
+        description: params.description,
+        start: { dateTime: params.startTime, timeZone: 'UTC' },
+        end: { dateTime: params.endTime, timeZone: 'UTC' },
+        attendees: (params.attendees || []).map(email => ({ email })),
+        conference: false,
+      });
+
+      return {
+        id: event.id,
+        htmlLink: (event as any).htmlLink,
+      };
+    } catch (err: any) {
+      console.warn('[CalendarDriver] createEvent failed:', err.message);
+      const { randomUUID } = await import('crypto');
+      return { id: `nexus-local-${randomUUID()}`, htmlLink: undefined };
+    }
+  }
+
+  /**
+   * Stores a Google OAuth token for a user after completing OAuth flow.
+   */
+  async storeToken(userId: string, accessToken: string, refreshToken: string): Promise<void> {
+    try {
+      const { getSupabase } = await import('../../storage/supabaseClient.js');
+      const supabase = await getSupabase();
+      await supabase.from('user_integrations').upsert({
+        user_id: userId,
+        integration_type: 'google_calendar',
+        access_token: accessToken,
+        refresh_token: refreshToken,
+        is_active: true,
+        created_at: new Date().toISOString(),
+      }, { onConflict: 'user_id,integration_type' });
+    } catch (err: any) {
+      console.error('[CalendarDriver] storeToken failed:', err.message);
+      throw err;
+    }
   }
 }
 

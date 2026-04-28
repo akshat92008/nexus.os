@@ -30,7 +30,7 @@ export class GeminiProvider implements AIProvider {
       throw new Error(`Gemini Error ${res.status}: ${errBody}`);
     }
 
-    const data = await res.json();
+    const data = await res.json() as any;
     const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!content) throw new Error('Gemini returned empty content');
 

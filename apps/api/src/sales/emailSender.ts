@@ -53,7 +53,6 @@ export class EmailSenderService {
       await approvalService.markSent(approvalId);
 
       // 4. Update follow_up_sequences
-      const supabase = await getSupabase();
       const { error: seqError } = await supabase
         .from('follow_up_sequences')
         .update({ 

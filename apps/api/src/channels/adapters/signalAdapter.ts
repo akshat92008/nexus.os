@@ -33,26 +33,62 @@ export class SignalAdapter implements ChannelAdapter {
     logger.info(`[SignalAdapter] Disconnected ${channelId}`);
   }
 
-  async sendMessage(channelId: string, content: string, options?: { 
-    threadId?: string; // phone number or group ID
+  async sendMessage(channelId: string, content: string, options?: {
+    threadId?: string;
     attachments?: any[];
   }): Promise<any> {
     const conn = this.connections.get(channelId);
     if (!conn) return { error: 'Signal not configured' };
 
     const recipient = options?.threadId;
-    if (!recipient) return { error: 'Recipient (threadId) required for Signal messages' };
+    if (!recipient) return { error: 'Recipient phone number (options.threadId) is required for Signal' };
 
-    // In production: send via signald JSON-RPC
-    // { "type": "send", "username": conn.account, "recipientAddress": { "number": recipient }, "messageBody": content }
-    logger.info(`[SignalAdapter] Sending Signal message to ${recipient}`);
+    // Signal requires signald daemon: https://signald.org/articles/install/
+    // Once installed, communicate via Unix socket JSON-RPC:
+    //
+    //   const net = await import('net');
+    //   const socket = net.createConnection(conn.config.credentials.socketPath || '/var/run/signald/signald.sock');
+    //   socket.write(JSON.stringify({
+    //     type: 'send',
+    //     username: conn.config.credentials.accountId,
+    //     recipientAddress: { number: recipient },
+    //     messageBody: content,
+    //   }) + '\n');
+    //
+    // Without signald running, we cannot send. Return a clear error.
 
-    return {
-      messageId: randomUUID(),
-      sent: true,
-      to: recipient,
-      note: 'Signal sending requires signald daemon. Install: https://signald.org'
-    };
+    const socketPath = conn.config.credentials.socketPath || '/var/run/signald/signald.sock';
+
+    try {
+      const net = await import('net');
+      await new Promise<void>((resolve, reject) => {
+        const socket = net.default.createConnection(socketPath);
+        socket.setTimeout(3000);
+        socket.on('connect', () => {
+          const msg = JSON.stringify({
+            type: 'send',
+            username: conn.config.credentials.accountId,
+            recipientAddress: { number: recipient },
+            messageBody: content,
+            id: `nexus-${Date.now()}`,
+          }) + '\n';
+          socket.write(msg);
+          socket.end();
+          resolve();
+        });
+        socket.on('error', reject);
+        socket.on('timeout', () => reject(new Error('signald connection timeout')));
+      });
+
+      logger.info(`[SignalAdapter:${channelId}] Message sent to ${recipient}`);
+      return { sent: true, to: recipient };
+    } catch (err: any) {
+      logger.warn(`[SignalAdapter:${channelId}] Failed — is signald running at ${socketPath}?`);
+      return {
+        error: `Signal send failed: ${err.message}. Ensure signald daemon is running at ${socketPath}.`,
+        setupGuide: 'https://signald.org/articles/install/',
+      };
+    }
   }
 
   async getHistory?(channelId: string, limit?: number): Promise<ChannelMessage[]> {

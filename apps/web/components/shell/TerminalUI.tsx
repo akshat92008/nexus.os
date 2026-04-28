@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Terminal, Send, Command, Loader2 } from 'lucide-react';
 import { createClient } from '@/lib/supabase';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL?.replace('/api/sales', '/api') || 'http://localhost:3006/api';
+const API_BASE = process.env.NEXT_PUBLIC_NEXUS_API_URL || 'http://localhost:3006/api';
 
 interface LogEntry {
   type: 'user' | 'system' | 'error';

@@ -33,7 +33,7 @@ export class NvidiaProvider implements AIProvider {
       throw new Error(`NVIDIA Error: ${res.statusText} - ${JSON.stringify(errorData)}`);
     }
 
-    const data = await res.json();
+    const data = await res.json() as any;
     
     return {
       content: data.choices[0].message.content,

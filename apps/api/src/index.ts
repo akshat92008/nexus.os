@@ -133,6 +133,59 @@ async function bootstrap() {
             }
         });
 
+        // Google Calendar OAuth
+        app.get('/api/integrations/google/connect', async (req: any, res: any) => {
+          const userId = req.user?.id;
+          if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+          const clientId = process.env.GOOGLE_CLIENT_ID;
+          const redirectUri = process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3006/api/integrations/google/callback';
+
+          if (!clientId) return res.status(501).json({ error: 'Google OAuth not configured. Set GOOGLE_CLIENT_ID.' });
+
+          const params = new URLSearchParams({
+            client_id: clientId,
+            redirect_uri: redirectUri,
+            response_type: 'code',
+            scope: 'https://www.googleapis.com/auth/calendar',
+            access_type: 'offline',
+            prompt: 'consent',
+            state: Buffer.from(JSON.stringify({ userId })).toString('base64'),
+          });
+
+          res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`);
+        });
+
+        app.get('/api/integrations/google/callback', async (req: any, res: any) => {
+          try {
+            const { code, state } = req.query as { code: string; state: string };
+            const { userId } = JSON.parse(Buffer.from(state, 'base64').toString());
+
+            const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+              body: new URLSearchParams({
+                code,
+                client_id: process.env.GOOGLE_CLIENT_ID || '',
+                client_secret: process.env.GOOGLE_CLIENT_SECRET || '',
+                redirect_uri: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3006/api/integrations/google/callback',
+                grant_type: 'authorization_code',
+              }),
+            });
+
+            const tokens = await tokenRes.json() as any;
+            if (!tokens.access_token) throw new Error('No access token returned from Google');
+
+            const { calendarDriver } = await import('./integrations/drivers/calendarDriver.js');
+            await (calendarDriver as any).storeToken(userId, tokens.access_token, tokens.refresh_token || '');
+
+            res.redirect('/dashboard?integration=google_calendar&status=connected');
+          } catch (err: any) {
+            logger.error({ err }, '[Google OAuth] Callback failed');
+            res.status(500).json({ error: err.message });
+          }
+        });
+
         systemStatus = 'ready';
         console.log('✅ [Boot] Nexus OS Engine is READY.');
 

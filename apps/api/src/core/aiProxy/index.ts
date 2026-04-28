@@ -44,9 +44,15 @@ export async function callAI({ userId, taskType, prompt, metadata }: CallAIParam
     // 4. Validate output format for specific tasks
     if (taskType === 'lead_scoring') {
       try {
-        JSON.parse(aiResult.content); // Throws if invalid JSON
-      } catch (e) {
-        throw new Error('LLM returned invalid JSON format');
+        JSON.parse(aiResult.content);
+      } catch {
+        throw new Error('LLM returned invalid JSON for lead_scoring — check model and prompt');
+      }
+    }
+
+    if (taskType === 'email_drafting') {
+      if (!aiResult.content || aiResult.content.trim().length < 10) {
+        throw new Error('LLM returned empty or too-short email draft — retry');
       }
     }
 

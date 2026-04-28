@@ -118,6 +118,7 @@ class ToolExecutor {
   }
 
   private async calculateUndoParams(toolName: string, args: any, ctx: any): Promise<any> {
+    switch (toolName) {
       case 'write_file': {
         let originalContent: string | null = null;
         try { originalContent = await fs.readFile(args.path, 'utf-8'); } catch {}

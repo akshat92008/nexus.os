@@ -23,7 +23,7 @@ export class GroqProvider implements AIProvider {
     });
 
     if (!res.ok) throw new Error(`Groq Error: ${res.statusText}`);
-    const data = await res.json();
+    const data = await res.json() as any;
     
     return {
       content: data.choices[0].message.content,

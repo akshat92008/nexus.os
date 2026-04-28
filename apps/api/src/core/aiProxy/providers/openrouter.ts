@@ -32,7 +32,7 @@ export class OpenRouterProvider implements AIProvider {
       throw new Error(`OpenRouter Error ${res.status}: ${errBody}`);
     }
 
-    const data = await res.json();
+    const data = await res.json() as any;
     const content = data.choices?.[0]?.message?.content;
     if (!content) throw new Error('OpenRouter returned empty content');
 

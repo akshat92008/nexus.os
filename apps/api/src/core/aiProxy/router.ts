@@ -43,7 +43,7 @@ export async function executeWithFallback(
       const response = await withTimeout(
         provider.generate(modelId, system, prompt, route.defaultMaxTokens), 
         10000 
-      );
+      ) as any;
 
       return {
         content: response.content,
