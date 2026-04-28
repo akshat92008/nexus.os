@@ -23,11 +23,20 @@ const systemHealth: Record<string, 'ok' | 'degraded' | 'offline'> = {};
 
 app.use(helmet({ crossOriginEmbedderPolicy: false }));
 app.use(express.json({ limit: '1mb' }));
-app.use(cors({ 
-    origin: process.env.ALLOWED_ORIGINS?.split(',') || true, 
-    credentials: true,
-    methods:['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-ID']
+app.use(cors({
+  origin: (origin, callback) => {
+    const allowed = env.ALLOWED_ORIGINS.split(',').map(o => o.trim()).filter(Boolean);
+    // Allow requests with no origin (curl, Postman, server-to-server)
+    if (!origin) return callback(null, true);
+    if (allowed.includes(origin) || env.NODE_ENV === 'development') {
+      return callback(null, true);
+    }
+    logger.warn({ origin }, '[CORS] Blocked request from unauthorized origin');
+    return callback(new Error(`CORS: Origin ${origin} not allowed`));
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-ID'],
 }));
 
 app.use((req: any, res: any, next: any) => {
@@ -134,7 +143,24 @@ async function bootstrap() {
     }
 }
 
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`\n🚀 Nexus OS API is LISTENING on http://0.0.0.0:${PORT}\n`);
-    bootstrap();
+// ── Graceful startup — listen ONLY after all middleware is registered ──────
+bootstrap()
+  .then(() => {
+    app.listen(Number(env.PORT), '0.0.0.0', () => {
+      logger.info(`[Server] Nexus OS API running on port ${env.PORT} in ${env.NODE_ENV} mode`);
+    });
+  })
+  .catch((err) => {
+    logger.error({ err }, '[Server] Fatal: Bootstrap failed. Shutting down.');
+    process.exit(1);
+  });
+
+// ── Unhandled rejection safety net ────────────────────────────────────────
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error({ reason, promise }, '[Server] Unhandled Promise Rejection');
+});
+
+process.on('uncaughtException', (err) => {
+  logger.error({ err }, '[Server] Uncaught Exception — shutting down');
+  process.exit(1);
 });

@@ -177,7 +177,7 @@ export class AnalyticsEngineService {
       insightsCache.set(cacheKey, {
         insights,
         actions: recommended_actions,
-        expiresAt: Date.now() + 60 * 60 * 1000 // 1 hour TTL
+        expiresAt: Date.now() + 15 * 60 * 1000 // 15 minute TTL to prevent repeated AI calls
       });
 
       logger.info(`[AnalyticsEngine] Generated ${insights.length} insights for user ${userId}`);

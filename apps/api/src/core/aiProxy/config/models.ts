@@ -7,6 +7,7 @@ export const MODEL_PRICING: Record<string, { input: number; output: number }> = 
   'gemini:gemini-1.5-flash': { input: 0.075, output: 0.30 }, // Great fallback
   'openrouter:gpt-4o-mini': { input: 0.15, output: 0.60 },
   'openrouter:claude-3.5-sonnet': { input: 3.00, output: 15.00 }, // High tier
+  'nvidia:deepseek-ai/deepseek-v4-pro': { input: 0.14, output: 0.14 }, // Very competitive pricing
 };
 
 // Routing definition
@@ -17,13 +18,15 @@ export const TASK_ROUTING: Record<string, { primary: string; fallbacks: string[]
     defaultMaxTokens: 200,
   },
   'email_drafting': {
-    primary: 'openrouter:gpt-4o-mini',
-    fallbacks:['groq:llama3-70b-8192', 'gemini:gemini-1.5-flash'],
+    // Groq is primary: fast, cheap, high quality for email tasks
+    primary: 'groq:llama3-70b-8192',
+    fallbacks:['openrouter:gpt-4o-mini', 'gemini:gemini-1.5-flash'],
     defaultMaxTokens: 800,
   },
   'analytics_insights': {
-    primary: 'openrouter:claude-3.5-sonnet',
-    fallbacks:['groq:llama3-70b-8192'],
-    defaultMaxTokens: 1500,
+    // Use Nvidia DeepSeek as primary, Groq as fallback
+    primary: 'nvidia:deepseek-ai/deepseek-v4-pro',
+    fallbacks:['groq:llama3-70b-8192', 'openrouter:gpt-4o-mini', 'gemini:gemini-1.5-flash'],
+    defaultMaxTokens: 4096,
   }
 };

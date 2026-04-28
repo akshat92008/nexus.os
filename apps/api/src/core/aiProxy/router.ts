@@ -1,13 +1,15 @@
 // apps/api/src/core/aiProxy/router.ts
 import { GroqProvider } from './providers/groq.js';
-// import { OpenRouterProvider } from './providers/openrouter.js';
-// import { GeminiProvider } from './providers/gemini.js';
+import { NvidiaProvider } from './providers/nvidia.js';
+import { OpenRouterProvider } from './providers/openrouter.js';
+import { GeminiProvider } from './providers/gemini.js';
 import { TASK_ROUTING } from './config/models.js';
 
 const providers: Record<string, any> = {
   groq: new GroqProvider(),
-  // openrouter: new OpenRouterProvider(),
-  // gemini: new GeminiProvider()
+  nvidia: new NvidiaProvider(),
+  openrouter: new OpenRouterProvider(),
+  gemini: new GeminiProvider(),
 };
 
 /**

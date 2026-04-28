@@ -33,6 +33,22 @@ const TOKEN_CACHE = new Map<string, CachedUser>();
 const MAX_CACHE_SIZE = 2000;
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
+// Background cache cleanup — runs every 60 seconds regardless of traffic
+// Prevents unbounded memory growth on low-traffic servers between bursts
+setInterval(() => {
+  const now = Date.now();
+  let pruned = 0;
+  for (const [key, val] of TOKEN_CACHE.entries()) {
+    if (val.expiresAt <= now) {
+      TOKEN_CACHE.delete(key);
+      pruned++;
+    }
+  }
+  if (pruned > 0) {
+    // Silent cleanup — no need to log unless debugging
+  }
+}, 60_000).unref(); // .unref() prevents this timer from keeping the process alive
+
 // Janitor state
 let requestsSinceLastCleanup = 0;
 const CLEANUP_THRESHOLD = 50; 
@@ -65,7 +81,7 @@ function setCachedUser(token: string, user: { id: string; email: string; role?: 
 
 // ── Middleware ───────────────────────────────────────────────────────────────
 
-const BYPASS_PATHS = ['/api/health', '/api/ready', '/health'];
+const BYPASS_PATHS = ['/api/health', '/api/ready', '/health', '/api/unsubscribe'];
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (BYPASS_PATHS.includes(req.path)) return next();
@@ -111,10 +127,13 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       return res.status(403).json({ error: 'Forbidden: Account suspended' });
     }
 
-    // if (!user.email_confirmed_at && env.NODE_ENV === 'production') {
-    //   logger.warn({ ip: req.ip, userId: user.id, email: user.email }, 'Unauthorized access attempt: Unverified email');
-    //   return res.status(403).json({ error: 'Forbidden: Email verification required' });
-    // }
+    if (!user.email_confirmed_at && env.NODE_ENV === 'production') {
+      logger.warn({ ip: req.ip, userId: user.id, email: user.email }, '[Auth] Unverified email attempted access');
+      return res.status(403).json({ 
+        error: 'Email verification required. Check your inbox for a verification link.',
+        code: 'EMAIL_NOT_VERIFIED',
+      });
+    }
 
     const authUser = { id: user.id, email: user.email ?? '', role: user.role ?? null };
 

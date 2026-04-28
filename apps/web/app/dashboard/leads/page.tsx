@@ -16,7 +16,17 @@ interface Lead {
   status: string;
   source: string;
   created_at: string;
+  last_contacted_at?: string;
 }
+
+const STATUS_DISPLAY: Record<string, { label: string; color: string }> = {
+  new:           { label: 'New',           color: 'bg-gray-100 text-gray-700' },
+  qualified:     { label: 'AI Scored',     color: 'bg-blue-100 text-blue-700' },
+  contacted:     { label: 'Email Sent',    color: 'bg-indigo-100 text-indigo-700' },
+  booked:        { label: '🗓 Meeting Set', color: 'bg-green-100 text-green-700' },
+  lost:          { label: 'Not interested', color: 'bg-red-100 text-red-600' },
+  unsubscribed:  { label: 'Unsubscribed',  color: 'bg-orange-100 text-orange-700' },
+};
 
 export default function LeadsPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -54,24 +64,30 @@ export default function LeadsPage() {
       await loadLeads();
       setSuccessMsg(`Scored ${result.processed || 0} leads. Check your Approval Queue for hot leads!`);
     } catch (err: any) {
-      alert(`Scoring failed: ${err.message}`);
+      setError(`AI scoring failed: ${err.message || 'Please try again.'}`);
     } finally {
       setScoring(false);
     }
   };
 
   // F-2: Draft Follow-up for a single lead
-  const handleDraftFollowUp = async (leadId: string, leadEmail: string) => {
-    setDraftingId(leadId);
+  const handleDraftFollowUp = async (lead: Lead) => {
+    setDraftingId(lead.id);
     setSuccessMsg(null);
+    
+    // Calculate actual days since last contact
+    const daysSinceContact = lead.last_contacted_at
+      ? Math.floor((Date.now() - new Date(lead.last_contacted_at).getTime()) / (1000 * 60 * 60 * 24))
+      : 0; // 0 = first contact, not a follow-up
+
     try {
-      await fetchWithAuth(`/leads/${leadId}/followup`, {
+      await fetchWithAuth(`/leads/${lead.id}/followup`, {
         method: 'POST',
-        body: JSON.stringify({ daysSinceContact: 3 }),
+        body: JSON.stringify({ daysSinceContact }),
       });
-      setSuccessMsg(`✅ Draft created for ${leadEmail}! Check your Approval Queue.`);
+      setSuccessMsg(`✅ Draft created for ${lead.email}! Check your Approval Queue.`);
     } catch (err: any) {
-      alert(`Draft failed: ${err.message}`);
+      setError(`Couldn't create draft for ${lead.email}. ${err.message || 'Please try again.'}`);
     } finally {
       setDraftingId(null);
     }
@@ -164,9 +180,14 @@ export default function LeadsPage() {
                     </span>
                   </td>
                   <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                    <span className="inline-flex items-center rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-700/10">
-                      {lead.status}
-                    </span>
+                    {(() => {
+                      const s = STATUS_DISPLAY[lead.status] || { label: lead.status, color: 'bg-gray-100 text-gray-700' };
+                      return (
+                        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${s.color}`}>
+                          {s.label}
+                        </span>
+                      );
+                    })()}
                   </td>
                   <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                     {lead.source}
@@ -177,7 +198,7 @@ export default function LeadsPage() {
                   {/* F-2: Draft Follow-up button for each lead */}
                   <td className="whitespace-nowrap px-3 py-4 text-sm">
                     <button
-                      onClick={() => handleDraftFollowUp(lead.id, lead.email)}
+                      onClick={() => handleDraftFollowUp(lead)}
                       disabled={draftingId === lead.id || lead.status === 'booked' || lead.status === 'lost'}
                       className="inline-flex items-center rounded-md bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-600 hover:bg-indigo-100 disabled:opacity-40 disabled:cursor-not-allowed"
                       title={lead.status === 'booked' || lead.status === 'lost' ? 'Not eligible for follow-up' : 'Draft a follow-up email for approval'}

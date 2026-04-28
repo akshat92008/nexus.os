@@ -1,4 +1,6 @@
 import { Express, Request, Response } from 'express';
+import { getSupabase } from '../storage/supabaseClient.js';
+import crypto from 'crypto';
 import { leadCapture } from '../sales/leadCapture.js';
 import { leadScorer } from '../sales/leadScorer.js';
 import { salesAgent } from '../sales/salesAgent.js';
@@ -234,21 +236,65 @@ export function registerSalesRoutes(app: Express): void {
     }
   });
 
-  // POST /api/sales/subscribe (Mock Razorpay Success)
-  app.post('/api/sales/subscribe', async (req: Request, res: Response) => {
+  // POST /api/sales/subscribe — DISABLED until real payment integration is built
+  // DO NOT re-enable without: Razorpay/Stripe webhook signature verification
+  app.post('/api/sales/subscribe', (_req: Request, res: Response) => {
+    return res.status(503).json({
+      error: 'Billing is being configured. Please contact support@yourdomain.com to upgrade your plan.',
+      code: 'BILLING_NOT_READY',
+    });
+  });
+
+  // GET /api/unsubscribe — Public unsubscribe link (no auth required, but HMAC-verified)
+  app.get('/api/unsubscribe', async (req: Request, res: Response) => {
     try {
-      // In a real app, this would verify a Razorpay/Stripe signature payload
-      const { getSupabase } = await import('../storage/supabaseClient.js');
+      const { token, lead } = req.query as { token: string; lead: string };
+      if (!token || !lead) {
+        return res.status(400).send('Invalid unsubscribe link.');
+      }
+
+      // Verify HMAC token to prevent unauthorized unsubscribes
+      const secret = process.env.SUPABASE_SERVICE_KEY?.slice(0, 32) || 'nexus-unsub-secret';
+      // We need the userId to verify — fetch the lead first
       const supabase = await getSupabase();
-      
-      const { error } = await supabase.auth.admin.updateUserById(req.user!.id, {
-        user_metadata: { is_paid: true }
-      });
-      
-      if (error) throw error;
-      res.json({ success: true, message: 'Subscription active' });
+      const { data: leadRow, error: fetchErr } = await supabase
+        .from('leads')
+        .select('id, user_id')
+        .eq('id', lead)
+        .single();
+
+      if (fetchErr || !leadRow) {
+        return res.status(400).send('Invalid unsubscribe link.');
+      }
+
+      const expectedToken = crypto.createHmac('sha256', secret).update(`${lead}:${leadRow.user_id}`).digest('hex').slice(0, 32);
+      if (token !== expectedToken) {
+        return res.status(403).send('Invalid or expired unsubscribe link.');
+      }
+
+      // Mark lead as unsubscribed in DB
+      const { error } = await supabase
+        .from('leads')
+        .update({ status: 'unsubscribed', updated_at: new Date().toISOString() })
+        .eq('id', lead);
+
+      if (error) {
+        return res.status(500).send('Failed to process unsubscribe. Please contact support.');
+      }
+
+      // Return a clean HTML confirmation page
+      return res.status(200).send(`
+      <!DOCTYPE html>
+      <html>
+        <head><title>Unsubscribed</title><meta charset="utf-8"></head>
+        <body style="font-family:sans-serif;max-width:400px;margin:80px auto;text-align:center;color:#333">
+          <h2>You've been unsubscribed</h2>
+          <p>You won't receive any more emails from us. This takes effect immediately.</p>
+        </body>
+      </html>
+    `);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      return res.status(500).send('Something went wrong.');
     }
   });
 

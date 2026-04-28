@@ -9,6 +9,30 @@ export class EmailSenderService {
    */
   async approveAndSend(approvalId: string, userId: string, updatedBody?: string): Promise<{ sent: boolean; error?: string }> {
     try {
+      // 0. Guard: Check if lead has unsubscribed before sending
+      const supabase = await getSupabase();
+      if (approvalId) {
+        // Look up the lead via the approval's lead_id
+        const { data: approvalRow } = await supabase
+          .from('email_approvals')
+          .select('lead_id')
+          .eq('id', approvalId)
+          .single();
+        
+        if (approvalRow?.lead_id) {
+          const { data: leadRow } = await supabase
+            .from('leads')
+            .select('status')
+            .eq('id', approvalRow.lead_id)
+            .single();
+          
+          if (leadRow?.status === 'unsubscribed') {
+            await approvalService.resolve(approvalId, userId, 'reject');
+            return { sent: false, error: 'Lead has unsubscribed — email not sent.' };
+          }
+        }
+      }
+
       // 1. Resolve approval in DB
       const approval = await approvalService.resolve(approvalId, userId, 'approve', updatedBody);
 
@@ -59,13 +83,12 @@ export class EmailSenderService {
           logger.error(`[EmailSender] Failed to insert lead event: ${eventError.message}`);
         }
 
-        // Update lead status to 'contacted'
+        // Update lead status to 'contacted' (but never overwrite booked, lost, or unsubscribed)
         const { error: leadUpdateError } = await supabase
           .from('leads')
           .update({ status: 'contacted' })
           .eq('id', approval.lead_id)
-          .neq('status', 'booked')
-          .neq('status', 'lost');
+          .not('status', 'in', '("booked","lost","unsubscribed")');
 
         if (leadUpdateError) {
           logger.error(`[EmailSender] Failed to update lead status: ${leadUpdateError.message}`);

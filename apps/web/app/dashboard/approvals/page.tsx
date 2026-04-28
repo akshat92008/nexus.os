@@ -42,7 +42,7 @@ export default function ApprovalsPage() {
   }, []);
 
   const handleAction = async (id: string, action: 'approve' | 'reject', toEmail: string) => {
-    if (processingId) return; // Prevent double-click
+    if (processingId) return; // Already processing another — prevent race condition
     setProcessingId(id);
     setSuccessMsg(null);
     try {
@@ -74,6 +74,16 @@ export default function ApprovalsPage() {
 
   const handleBatchApprove = async () => {
     if (batchProcessing || approvals.length === 0) return;
+
+    // Safety confirmation for bulk sends
+    const count = approvals.length;
+    const confirmed = window.confirm(
+      `You are about to send ${count} email${count > 1 ? 's' : ''}.\n\n` +
+      `These will be sent immediately to real leads. This cannot be undone.\n\n` +
+      `Click OK to send all ${count} emails, or Cancel to review them first.` 
+    );
+    if (!confirmed) return;
+
     setBatchProcessing(true);
     setSuccessMsg(null);
     try {

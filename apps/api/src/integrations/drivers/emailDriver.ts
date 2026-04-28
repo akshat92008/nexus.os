@@ -1,5 +1,6 @@
-import { z } from 'zod';
 import { Tool } from '../types.js';
+import { env } from '../../config/env.js';
+import { z } from 'zod';
 
 export const emailDriver: Tool = {
   id:               'send_email',
@@ -27,12 +28,17 @@ export const emailDriver: Tool = {
     return null;
   },
   execute: async (params) => {
+    if (!process.env.SENDGRID_API_KEY && !process.env.RESEND_API_KEY) {
+      throw new Error('No email provider configured. Set SENDGRID_API_KEY or RESEND_API_KEY in your environment.');
+    }
+
+    // Startup guard: prevent sending from unverified dev addresses in production
+    if (env.NODE_ENV === 'production' && env.EMAIL_FROM_ADDRESS.includes('localhost')) {
+      throw new Error('EMAIL_FROM_ADDRESS is set to a localhost address in production. Emails will be rejected. Set a real verified sender address.');
+    }
+
     const sendgridKey = process.env.SENDGRID_API_KEY;
     const resendKey = process.env.RESEND_API_KEY;
-
-    if (!sendgridKey && !resendKey) {
-      throw new Error('Neither SENDGRID_API_KEY nor RESEND_API_KEY is configured on the server.');
-    }
 
     try {
       // Prefer SendGrid if available
@@ -45,7 +51,10 @@ export const emailDriver: Tool = {
           },
           body: JSON.stringify({
             personalizations: [{ to: [{ email: params.to }] }],
-            from: { email: params.from || 'noreply@nexus.os', name: 'Nexus OS' },
+            from: { 
+              email: params.from || env.EMAIL_FROM_ADDRESS, 
+              name: env.EMAIL_FROM_NAME 
+            },
             subject: params.subject,
             content: [{ type: 'text/html', value: params.body }],
           }),
@@ -82,7 +91,7 @@ export const emailDriver: Tool = {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from: params.from || 'Nexus OS <onboarding@resend.dev>',
+          from: params.from || `${env.EMAIL_FROM_NAME} <${env.EMAIL_FROM_ADDRESS}>`,
           to: params.to,
           subject: params.subject,
           html: params.body,
